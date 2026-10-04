@@ -27,12 +27,13 @@ for (const [, tag, attrs] of html.matchAll(/<(\w+)(\s[^>]*)?>/g)) {
   if (id) byId[id] = el;
   if (name) elements[name] = el;
 }
-byId.f.elements = elements;
+byId.f.elements = byId.sf.elements = elements;
 const sent = [];
 const document = { getElementById: id => byId[id] ?? null, createElement: t => new El(t) };
 const page = fetch, ctx = vm.createContext({
   document, setTimeout, URLSearchParams, AbortController, console, navigator: {},
-  fetch: (path, o) => { sent.push(new URL(path, U).searchParams); return page(new URL(path, U), o); },
+  // a browser adds Origin to a POST; Node's fetch does not
+  fetch: (path, o) => { sent.push(new URL(path, U).searchParams); return page(new URL(path, U), o?.method === 'POST' ? { ...o, headers: { ...o.headers, origin: new URL(U).origin } } : o); },
 });
 vm.runInContext(/<script>([\s\S]*)<\/script>/.exec(html)[1], ctx);
 
@@ -72,3 +73,15 @@ console.log(`on ${byId.step.checked}, ${byId.ends.children.length} ends, ${state
 example('who calls it (--reverse)');
 console.log(`on ${byId.step.checked}, ${byId.ends.children.length} ends, ${state()}`);
 console.log(await search());
+
+// the settings panel: opening it reads the settings, Save writes them and shows the new state, a key never comes back
+const settings = () => `url "${elements['set-url'].value}" ${byId['src-url'].textContent}; model "${elements['set-model'].value}" ${byId['src-model'].textContent}; key "${elements['set-key'].value}" ${elements['set-key'].placeholder}, ${byId['src-key'].textContent}; opts ${JSON.stringify(elements['set-opts'].value)}`;
+byId.sd.open = true;
+byId.sd.ontoggle();
+while (!byId['src-url'].textContent) await new Promise(r => setTimeout(r, 20));
+console.log(`opened: ${settings()}`);
+Object.assign(elements['set-model'], { value: 'm7' });
+Object.assign(elements['set-key'], { value: 'k7' });
+Object.assign(elements['set-opts'], { value: '-n\n --level \nstrict\n' });
+await byId.save.onclick();
+console.log(`${byId.sst.textContent}: ${settings()}`);

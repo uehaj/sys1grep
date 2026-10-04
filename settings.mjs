@@ -1,7 +1,8 @@
 // ~/.config/sys1grep/settings.json: the defaults for sys1grep's environment variables, one field each. Every field is
 // optional; a variable set in the environment wins over its field.
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { dirname } from 'node:path';
 
 export const SETTINGS_FILE = `${homedir()}/.config/sys1grep/settings.json`;
 export const SETTINGS_SHOWN = '~/.config/sys1grep/settings.json';
@@ -19,6 +20,15 @@ export const parseSettings = text => {
       throw new Error(`${k} must be ${k === 'opts' ? 'an array of strings' : 'a string'}`);
   }
   return s;
+};
+// Writes s after the same checks, as a whole new file (0600, its directory 0700) renamed over the old one, so a reader
+// never sees half a file and the key is never readable by others, not even for a moment.
+export const writeSettings = s => {
+  const text = `${JSON.stringify(parseSettings(JSON.stringify(s)), null, 2)}\n`, tmp = `${SETTINGS_FILE}.${process.pid}.tmp`;
+  mkdirSync(dirname(SETTINGS_FILE), { recursive: true, mode: 0o700 });
+  rmSync(tmp, { force: true });
+  writeFileSync(tmp, text, { mode: 0o600, flag: 'wx' });
+  renameSync(tmp, SETTINGS_FILE);
 };
 export const readSettings = () => {
   let text;

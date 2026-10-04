@@ -13,6 +13,11 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   An unknown field, a wrong type or a file that is not JSON is an error naming the file and the field, never a value;
   a key in a file others can read gets a warning. `--verbose` / `--dry-run` name a value's field and the file
   (`key: key (~/.config/sys1grep/settings.json)`, `(settings.json opts)`). The no-key error points at the file.
+- `--serve`: a Settings panel edits `~/.config/sys1grep/settings.json` and saves it for the next search. Each field says
+  where the value in effect comes from (command line, environment variable, settings.json, `.env`, default), so a save
+  that an environment variable would override says so. A key is only ever sent in, never shown: the panel says whether
+  one is saved. Saving is a `POST` with the page's token in a header and the page's own `Origin`; the file is written
+  whole at 0600 (directory 0700) and renamed into place, and a value that fails the file's checks is refused.
 - `--format=html` marks what matched with `<mark>` (the regex matches, else the matching sentences, else the whole matching line);
   `--color=never` turns it off. `--serve` shows the colors of `--color=always` on the matches in file order, and the marks on the cards, by default.
 - `--serve[=PORT]` serves a search page on `127.0.0.1` (#166): a box for the meanings, `--rank` / `--summarize` and the other

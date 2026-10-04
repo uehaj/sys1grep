@@ -2,8 +2,48 @@
 // with the launch arguments plus what the page's controls changed, so the page cannot do what the command line cannot.
 import { createServer } from 'node:http';
 import { execFile } from 'node:child_process';
-import { parseArgs } from 'node:util';
+import { parseArgs, parseEnv } from 'node:util';
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { FIELDS, readSettings, writeSettings } from './settings.mjs';
+
+// The settings panel's view of ~/.config/sys1grep/settings.json, one tuple per field: [the saved value (for a key, only
+// whether one is saved), where the value a search uses comes from: cmd | env | settings | .env | default, the variable
+// when env]. It follows sys1grep's own order (command line, environment, settings.json, .env), so the page can say when
+// something it saves would not take effect.
+const KEYS = new Set(['key', 'summarizerKey']);
+const settingsView = cli => {
+  const s = readSettings() ?? {};
+  let dotenv = {};
+  try { dotenv = parseEnv(readFileSync(`${homedir()}/.config/sys1grep/.env`, 'utf8')); } catch {}
+  return Object.fromEntries(Object.entries(FIELDS).map(([f, v]) => {
+    const names = [`SYS1GREP_${v}`, `SEMGREP_${v}`, ...(f === 'key' ? ['TYPESAFE_API_KEY'] : [])];
+    const env = names.find(n => process.env[n] !== undefined);
+    const saved = KEYS.has(f) ? s[f] !== undefined : s[f] ?? null;
+    const src = cli[f] !== undefined ? ['cmd'] : env ? ['env', env] : s[f] !== undefined ? ['settings'] : names.some(n => dotenv[n] !== undefined) ? ['.env'] : ['default'];
+    return [f, [saved, ...src]];
+  }));
+};
+// A POST's body: the fields to change. A string or a non-empty array sets one, null, '' or [] removes it, and a field
+// left out stays as it is (so the page sends a key only when one is typed).
+const saveSettings = patch => {
+  if (patch === null || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('not a JSON object');
+  const next = readSettings() ?? {};
+  for (const [k, v] of Object.entries(patch)) {
+    if (!Object.hasOwn(FIELDS, k)) throw new Error(`unknown field ${k}`);
+    if (v === null || v === '' || (Array.isArray(v) && !v.length)) delete next[k];
+    else next[k] = v;
+  }
+  writeSettings(next);
+};
+const body = req => new Promise((resolve, reject) => {
+  let b = '';
+  req.setEncoding('utf8');
+  req.on('data', c => { b += c; if (b.length > 1 << 16) { reject(new Error('too large')); req.destroy(); } });
+  req.on('end', () => resolve(b));
+  req.on('error', reject);
+});
 
 // The page's controls. toArgv() (below) turns their values into command-line tokens, in the server to run a search and
 // in the browser to print the command: one function, so the two cannot drift. A value equal to its launch value is left out.
@@ -110,6 +150,7 @@ export function serve(argv) {
   if (bad) throw new Error(`--serve: ${bad.split('=')[0]} is not for --serve (the page sets the meaning and shows the results as html)`);
   const init = { ...initOf(launch), 'summarize-prompt': prompt ?? '' };
   const secret = key === undefined ? [] : [`--sys1-api-key=${key}`];
+  const cli = { url: lift(launch, 'sys1-url')[1], model: lift(launch, 'sys1-model')[1], key };
   const token = randomBytes(16).toString('hex');
   const summarizeAsked = init.summarize;
   const script = process.argv[1];
@@ -138,6 +179,23 @@ export function serve(argv) {
     // a page on another site (or a rebound name) must not be able to start a search
     if (host !== `127.0.0.1:${server.address().port}` && host !== `localhost:${server.address().port}`) return send(403, 'text/plain', 'forbidden');
     if (url.pathname === '/') return send(200, 'text/html', page({ init, launch, after, token }));
+    // The settings panel. It changes a file, so beyond the Host check above: the token in a header (which a page on
+    // another site cannot send without a preflight this server never answers), and for a write, POST with a JSON body
+    // from this very origin. A key goes in, never out.
+    if (url.pathname === '/settings') {
+      if (req.headers['x-sys1grep-token'] !== token) return send(404, 'text/plain', 'not found');
+      const answer = (code, x) => send(code, 'application/json', JSON.stringify(x));
+      try {
+        if (req.method === 'POST') {
+          if (![`http://127.0.0.1:${server.address().port}`, `http://localhost:${server.address().port}`].includes(req.headers.origin)) return send(403, 'text/plain', 'forbidden');
+          if (!/^application\/json(;|$)/.test(req.headers['content-type'] ?? '')) return send(415, 'text/plain', 'JSON only');
+          let patch;
+          try { patch = JSON.parse(await body(req)); } catch { return answer(400, { error: 'not valid JSON' }); }
+          try { saveSettings(patch); } catch (e) { return answer(400, { error: e.message }); }
+        } else if (req.method !== 'GET') return send(405, 'text/plain', 'GET or POST');
+        return answer(200, settingsView(cli));
+      } catch (e) { return answer(500, { error: `~/.config/sys1grep/settings.json: ${e.message}` }); }
+    }
     const kind = url.pathname.slice(1);
     if (!['results', 'summary', 'dry'].includes(kind) || ['cross-site', 'same-site'].includes(req.headers['sec-fetch-site']) || url.searchParams.get('k') !== token) return send(404, 'text/plain', 'not found');
     const p = fromQuery(url.searchParams, init);
@@ -205,7 +263,17 @@ iframe { width: 100%; border: 0; min-height: 80px; } pre.out { white-space: pre-
 <label>unit <select name="unit"><option>line</option><option>sentence-by-jev</option><option>sentence-by-rule</option></select></label>
 <label>--include <input name="include"></label><label>--exclude <input name="exclude"></label>
 <label>--changed-within <input name="changed-within" placeholder="2h, 7d, a date"></label><label class="chk"><input type="checkbox" name="g"> -g git log</label>
-</div></details></form></div></header>
+</div></details></form>
+<details id="sd"><summary>Settings</summary><form id="sf" autocomplete="off" onsubmit="return false"><div class="grid">
+<label>url <input name="set-url" placeholder="https://api.typesafe.ai/v1/systemone"><small class="note" id="src-url"></small></label>
+<label>model <input name="set-model" placeholder="jev-latest"><small class="note" id="src-model"></small></label>
+<label>key <input type="password" name="set-key" autocomplete="new-password"><small class="note" id="src-key"></small><span class="chk"><input type="checkbox" name="clear-key"> remove</span></label>
+<label>opts, one argument per line <textarea name="set-opts" rows="3"></textarea><small class="note" id="src-opts"></small></label>
+<label>summarizer <input name="set-summarizer" placeholder="claude"><small class="note" id="src-summarizer"></small></label>
+<label>summarizerModel <input name="set-summarizerModel"><small class="note" id="src-summarizerModel"></small></label>
+<label>summarizerKey <input type="password" name="set-summarizerKey" autocomplete="new-password"><small class="note" id="src-summarizerKey"></small><span class="chk"><input type="checkbox" name="clear-summarizerKey"> remove</span></label>
+</div><div class="row"><button type="button" id="save">Save to ~/.config/sys1grep/settings.json</button><span class="note" id="sst"></span></div></form></details>
+</div></header>
 <main id="m"><div id="left"></div><div id="right" hidden></div></main>
 <script>
 const CONTROLS = ${json(CONTROLS)}, INIT = ${json(init)}, LAUNCH = ${json(launch)}, AFTER = ${json(after)}, TOKEN = ${json(token)}, EXAMPLES = ${json(EXAMPLES)};
@@ -307,4 +375,32 @@ document.getElementById('copy').onclick = e => navigator.clipboard.writeText(cmd
 f.addEventListener('input', show); f.addEventListener('change', show);
 for (const c of [...CONTROLS, { k: 'summarize', bool: true }, { k: 'rank' }, { k: 'summarize-prompt' }]) { const el = f.elements[c.k]; if (c.bool) el.checked = !!INIT[c.k]; else el.value = INIT[c.k]; }
 addField().lastChild.focus(); addField('e', '', ends);
+// the settings panel: read when opened, saved on the button; a key field stays empty (a key never comes back from the server)
+const sf = document.getElementById('sf'), sd = document.getElementById('sd'), sst = document.getElementById('sst');
+const SFIELDS = ['url', 'model', 'key', 'opts', 'summarizer', 'summarizerModel', 'summarizerKey'], SKEYS = ['key', 'summarizerKey'];
+const SAID = { cmd: () => 'the command line wins over this', env: n => n + ' in the environment wins over this', settings: () => 'in effect', '.env': () => 'in effect: ~/.config/sys1grep/.env', default: () => 'not set: the default' };
+const fillSettings = view => {
+  for (const k of SFIELDS) {
+    const [saved, src, name] = view[k], el = sf.elements['set-' + k];
+    if (SKEYS.includes(k)) { el.value = ''; el.placeholder = saved ? 'saved; type to replace' : 'not saved'; sf.elements['clear-' + k].checked = false; }
+    else el.value = k === 'opts' ? (saved ?? []).join('\\n') : saved ?? '';
+    document.getElementById('src-' + k).textContent = SAID[src](name);
+  }
+};
+const settingsReq = async (method, body) => {
+  const r = await fetch('/settings', { method, body, headers: { 'x-sys1grep-token': TOKEN, 'content-type': 'application/json' } });
+  const j = await r.json().catch(() => ({ error: r.status + ' ' + r.statusText }));
+  if (!r.ok) throw new Error(j.error);
+  return j;
+};
+sd.ontoggle = () => { if (sd.open) settingsReq('GET').then(fillSettings, e => { sst.textContent = e.message; }); };
+document.getElementById('save').onclick = () => {
+  const p = {};
+  for (const k of SFIELDS) {
+    const v = sf.elements['set-' + k].value;
+    if (SKEYS.includes(k)) { if (sf.elements['clear-' + k].checked) p[k] = null; else if (v) p[k] = v; }
+    else p[k] = k === 'opts' ? v.split('\\n').map(a => a.trim()).filter(Boolean) : v.trim();
+  }
+  return settingsReq('POST', JSON.stringify(p)).then(view => { fillSettings(view); sst.textContent = 'saved; the next search uses it'; }, e => { sst.textContent = 'not saved: ' + e.message; });
+};
 </script></body></html>`;

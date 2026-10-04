@@ -830,6 +830,14 @@ API settings and `--summarize`'s TOOL are fixed at launch: the page can narrow w
 over the cost guard fails on the page, as it does without a terminal; launch with `-y` to let it through.
 The meanings come from the page, so `-e -a -v -Q --step-to` and `-l -c -q -o -z -i --format --color --dry-run` are refused at launch.
 
+**Settings** edits `~/.config/sys1grep/settings.json` (see [Install](#install)): `url`, `model`, the key, `opts` (one argument
+per line) and the summarizer's three. Save writes the file, and the next search uses it, as does every later `sys1grep`
+run. Next to each field the page says where the value a search uses comes from, and says so when an environment variable or a
+launch option wins over the file, since then saving does not change the search. A key never comes back from the server:
+the field shows only whether one is saved; type a new one to replace it, or tick remove. The save is a `POST` with the
+page's token in a header and this page's `Origin`, and the file is written whole (0600, its directory 0700) and renamed
+into place, so a reader never sees half of it.
+
 ### Best first (`--rank`)
 
 Matches print in file order, as grep prints them. With many, `--rank` prints the results best first, each under a

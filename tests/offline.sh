@@ -1480,6 +1480,34 @@ eq "$(curl -s "${U}dry?k=$K&x=e:cat" | grep -c 'dry-run\|requests')" "1" "--serv
 eq "$(curl -s -o /dev/null -w '%{http_code}' "${U}results?x=e:cat")" "404" "--serve: a search without the token is refused"
 eq "$(curl -s -o /dev/null -w '%{http_code}' -H "Host: localhost:${U##*:}" "$U")" "403" "--serve: localhost with the wrong port is refused"
 eq "$(curl -s -H 'Sec-Fetch-Site: same-site' -o /dev/null -w '%{http_code}' "${U}results?k=$K&x=e:cat")" "404" "--serve: a same-site search is refused"
+# the settings panel: GET /settings says each field's saved value and where the value in effect comes from, a key only
+# as saved or not; POST writes ~/.config/sys1grep/settings.json, only with the token and this page's Origin
+SK="x-sys1grep-token: $K" SO="Origin: ${U%/}" SJ="content-type: application/json"
+field() { node -pe "const j = JSON.parse(require('fs').readFileSync(0)); [$1].map(v => JSON.stringify(v)).join(' ')"; }
+rm -rf "$tmp/.config/sys1grep"
+eq "$(curl -s -o /dev/null -w '%{http_code}' "${U}settings")" "404" "--serve settings: GET without the token"
+eq "$(curl -s -H "$SK" "${U}settings" | field 'j.url, j.key, j.opts')" '[null,"env","SYS1GREP_URL"] [false,"default"] [null,"env","SYS1GREP_OPTS"]' "--serve settings: GET, the sources (an empty variable counts)"
+post() { curl -s -o "$tmp/post.out" -w '%{http_code}' -X POST "$@" --data-binary @"$tmp/post.json" "${U}settings"; }
+printf '{"key":"sekrit9","model":"m9","opts":["-n"]}' >"$tmp/post.json"
+eq "$(post -H "$SO" -H "$SJ")" "404" "--serve settings: POST without the token"
+eq "$(post -H "$SK" -H "$SJ")" "403" "--serve settings: POST without an Origin"
+eq "$(post -H "$SK" -H "$SJ" -H 'Origin: http://evil.example')" "403" "--serve settings: POST from another Origin"
+eq "$(post -H "$SK" -H "$SO" -H 'content-type: text/plain')" "415" "--serve settings: POST that is not JSON"
+[ ! -e "$HS" ] || fail "--serve settings: a refused POST writes nothing"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "200" "--serve settings: POST"
+eq "$(field 'j.key, j.model, j.opts' <"$tmp/post.out")" '[true,"settings"] ["m9","settings"] [["-n"],"env","SYS1GREP_OPTS"]' "--serve settings: POST answers the new state"
+[ "$(grep -c sekrit9 "$tmp/post.out")" = 0 ] || fail "--serve settings: the answer never holds the key"
+[ "$(curl -s -H "$SK" "${U}settings" | grep -c sekrit9)" = 0 ] || fail "--serve settings: GET never holds the key"
+eq "$(node -p "[require('fs').statSync('$HS').mode, require('fs').statSync('$tmp/.config/sys1grep').mode].map(m => (m & 0o777).toString(8)).join()")" "600,700" "--serve settings: the file 0600, its directory 0700"
+reset; curl -s "${U}results?k=$K&x=e:cat&rank=" >/dev/null; eq "$(stat auth) $(stat model)" "Bearer sekrit9 m9" "--serve settings: the next search uses what was saved"
+printf '{"opts":"-n"}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ") $(field j.error <"$tmp/post.out")" '400 "opts must be an array of strings"' "--serve settings: a bad value is refused"
+printf '{"__proto__":{"key":"x"}}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: an unknown field is refused"
+eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '{"key":"sekrit9","model":"m9","opts":["-n"]}' "--serve settings: a refused POST leaves the file as it was"
+printf '{"key":null,"opts":[]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ") $(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '200 {"model":"m9"}' "--serve settings: null and [] remove a field"
+rm -f "$HS"
 eq "$(curl -s "${U}results?k=$K&x=e:cat&x=S:&x=e:owl&rank=jev&dedup=always" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); j.error || 'ok'")" "ok" "--serve: --step-to drops rank and dedup"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 # launch values the page must carry: -g unchecked, a summary instruction, the key kept out of the page
@@ -1488,6 +1516,7 @@ serve=$!
 i=0; while [ ! -s "$tmp/serve2.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (launch options) did not start"; sleep 0.05; done
 U=$(cat "$tmp/serve2.url"); K=$(curl -s "$U" | sed -n 's/.*TOKEN = "\([0-9a-f]*\)".*/\1/p')
 eq "$(curl -s "$U" | grep -c SECRETKEY123 || true)" "0" "--serve: the key is not in the page"
+eq "$(curl -s -H "x-sys1grep-token: $K" "${U}settings" | field 'j.key')" '[false,"cmd"]' "--serve settings: a launch --sys1-api-key wins, by source only"
 eq "$(curl -s "$U" | grep -c -- '--summarize-prompt' || true)" "1" "--serve: the launch summary instruction is a control's value"
 eq "$(curl -s "${U}results?k=$K&x=e:cat&rank=&summarize=0" | node -pe "JSON.parse(require('fs').readFileSync(0)).error || 'ok'")" "ok" "--serve: results with a launch --summarize-prompt"
 eq "$(curl -s "${U}results?k=$K&x=e:cat&x=S:&x=e:owl&rank=" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); (j.error || 'ok').replace(/.*cannot be combined.*/, 'combined')")" "ok" "--serve: --step-to with a launch --dedup"
@@ -1525,7 +1554,11 @@ x=e:/def main/ hops=1..2 -> 1 lines
 steps shown: -e '/def main/' --step-to -e '/raise /' --hops=1..2
 on true, 2 ends, steps shown: -e '/^ *def main/' --step-to -e '/raise /' -e '/sys\\.exit/'
 on true, 1 ends, steps shown: -e '/^ *def helper/' --step-to -e '/^ *def main/' --reverse
-x=e:/^ *def helper/|S:|e:/^ *def main/ hops=0.. -> 2 lines" "--serve: the multi-step toggle and its examples"
+x=e:/^ *def helper/|S:|e:/^ *def main/ hops=0.. -> 2 lines
+opened: url \"\" SYS1GREP_URL in the environment wins over this; model \"\" not set: the default; key \"\" not saved, not set: the default; opts \"\"
+saved; the next search uses it: url \"\" SYS1GREP_URL in the environment wins over this; model \"m7\" in effect; key \"\" saved; type to replace, in effect; opts \"-n\\n--level\\nstrict\"" "--serve: the multi-step toggle and its examples, the settings panel"
+eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '{"model":"m7","key":"k7","opts":["-n","--level","strict"]}' "--serve settings: what the panel saved"
+rm -f "$HS"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 code 2 "--serve refuses -e" -- $J --serve -e cat "$F"
 code 2 "--serve refuses --format" -- $J --serve --format=html "$F"
