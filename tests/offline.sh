@@ -1417,6 +1417,7 @@ case $U in http://127.0.0.1:*/) ;; *) fail "--serve prints its URL: $U" ;; esac
 K=$(curl -s "$U" | sed -n 's/.*TOKEN = "\([0-9a-f]*\)".*/\1/p')
 [ -n "$K" ] || fail "--serve: the page carries a token"
 eq "$(curl -s "$U" | grep -c 'id="cmd"')" "1" "--serve: the page"
+eq "$(curl -s "$U" | grep -c 'SUGGEST = \[\["Q","why did it fail"\]')" "1" "--serve: suggested questions by default"
 eq "$(curl -s "${U}results?k=$K&x=e:cat&rank=" | node -pe "JSON.parse(require('fs').readFileSync(0)).text" | sed "s/$(printf '\033')\\[[0-9;]*m//g")" "cat
 cat dog" "--serve: rank off, matches in file order"
 eq "$(curl -s "${U}results?k=$K&x=e:cat&rank=jev" | node -pe "const h = JSON.parse(require('fs').readFileSync(0)).html; [h.includes('Result 1'), h.includes('.bar{display:none}')].join()")" "true,true" "--serve: rank on, the search template's cards"
@@ -1434,12 +1435,13 @@ eq "$(curl -s -H 'Sec-Fetch-Site: same-site' -o /dev/null -w '%{http_code}' "${U
 eq "$(curl -s "${U}results?k=$K&x=e:cat&x=S:&x=e:owl&rank=jev&dedup=always" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); j.error || 'ok'")" "ok" "--serve: --step-to drops rank and dedup"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 # launch values the page must carry: -g unchecked, a summary instruction, the key kept out of the page
-$E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve -n --dedup=always --summarize=cat --summarize-prompt=hello --sys1-api-key=SECRETKEY123 "$F" >"$tmp/serve2.url" 2>/dev/null &
+$E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve -n --dedup=always --summarize=cat --summarize-prompt=hello --suggest='Q:why is it slow' --suggest=e:disk\ full --sys1-api-key=SECRETKEY123 "$F" >"$tmp/serve2.url" 2>/dev/null &
 serve=$!
 i=0; while [ ! -s "$tmp/serve2.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (launch options) did not start"; sleep 0.05; done
 U=$(cat "$tmp/serve2.url"); K=$(curl -s "$U" | sed -n 's/.*TOKEN = "\([0-9a-f]*\)".*/\1/p')
 eq "$(curl -s "$U" | grep -c SECRETKEY123 || true)" "0" "--serve: the key is not in the page"
-eq "$(curl -s "$U" | grep -c -- '--summarize-prompt' || true)" "1" "--serve: the launch summary instruction is a control's value"
+eq "$(curl -s "$U" | grep -c 'SUGGEST = \[\["Q","why is it slow"\],\["e","disk full"\]\]')" "1" "--serve: --suggest, as pills"
+eq "$(curl -s "$U" | grep -c '"summarize-prompt":"hello"' || true)" "1" "--serve: the launch summary instruction is a control's value"
 eq "$(curl -s "${U}results?k=$K&x=e:cat&rank=&summarize=0" | node -pe "JSON.parse(require('fs').readFileSync(0)).error || 'ok'")" "ok" "--serve: results with a launch --summarize-prompt"
 eq "$(curl -s "${U}results?k=$K&x=e:cat&x=S:&x=e:owl&rank=" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); (j.error || 'ok').replace(/.*cannot be combined.*/, 'combined')")" "ok" "--serve: --step-to with a launch --dedup"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true

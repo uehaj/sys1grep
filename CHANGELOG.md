@@ -6,6 +6,7 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 ## [Unreleased]
 
 ### Added
+- `--serve`: the first field is a question (`-Q`), pills of suggested questions (`--suggest=Q:TEXT` / `--suggest=e:TEXT`, repeatable) fill it and search, and every control, field and area has a hover text. Fixes the text of a second field (`-a`, `-v`, ...) not being read.
 - `--format=html` marks what matched with `<mark>` (the regex matches, else the matching sentences, else the whole matching line);
   `--color=never` turns it off. `--serve` shows the colors of `--color=always` on the matches in file order, and the marks on the cards, by default.
 - `--serve[=PORT]` serves a search page on `127.0.0.1` (#166): a box for the meanings, `--rank` / `--summarize` and the other

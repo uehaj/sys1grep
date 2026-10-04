@@ -798,7 +798,7 @@ The page has the meaning fields (`+` adds one; each takes `-e`, `-a`, `-v`, `-Q`
 the results the **command line** for the controls as they are now, with a Copy button; pasted in a terminal it runs the
 same search. An option at its launch value is left out of what the controls add. `rank` off shows the matches in file order
 as text, on shows the ranked cards; `summarize` adds a right column (it runs the search once more, so it costs one more
-request). Estimate cost is `--dry-run`. While a search runs, Search and Estimate are disabled and **Stop** ends it (the child process is killed). The matches are colored as `--color=always` colors them (file names, line numbers, regex matches), the cards mark them with `<mark>`.
+request). Estimate cost is `--dry-run`. The first field is a question (`-Q`) by default. Under the fields are pills of suggested questions: click one to fill the field and search. `--suggest=Q:TEXT` / `--suggest=e:TEXT` (repeat it; a bare TEXT is a question) sets them, with `-Q` or `-e`; without it three generic ones show. Every control and area has a hover text saying what it is. While a search runs, Search and Estimate are disabled and **Stop** ends it (the child process is killed). The matches are colored as `--color=always` colors them (file names, line numbers, regex matches), the cards mark them with `<mark>`.
 
 Each search runs sys1grep itself (the options given at launch, then the controls'), so everything the command line does
 the page does, and only that. The server listens on `127.0.0.1` only, answers only to that host name, and the page never
