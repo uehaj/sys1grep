@@ -1,5 +1,5 @@
 // node serve-page.mjs URL: runs the --serve page's script against a small DOM made from the page's own tags, drives the
-// multi-step toggle, and prints what the page shows and what the server answered, one line per step.
+// multi-step toggle and the example buttons, and prints what the page shows and what the server answered, one line per step.
 import vm from 'node:vm';
 
 const U = process.argv[2], html = await (await fetch(U)).text();
@@ -41,7 +41,7 @@ const search = async () => {
   byId.f.onsubmit({ preventDefault() {} });
   while (byId.go.disabled) await new Promise(r => setTimeout(r, 20));
   const q = sent.at(-1);
-  return `x=${q.getAll('x').join('|')} hops=${q.get('hops')} -> ${text(byId.left).split('\n').filter(Boolean).length} lines`;
+  return `x=${q.getAll('x').join('|')} hops=${q.get('hops')} reverse=${q.get('reverse')} -> ${text(byId.left).split('\n').filter(Boolean).length} lines`;
 };
 const state = () => `steps ${!byId.steps ? 'missing' : byId.steps.hidden ? 'hidden' : 'shown'}: ${byId.cmd.textContent.replace(/^sys1grep \S+ /, '')}`;
 
@@ -72,3 +72,24 @@ console.log(`on ${byId.step.checked}, ${byId.ends.children.length} ends, ${state
 example('who calls it (--reverse)');
 console.log(`on ${byId.step.checked}, ${byId.ends.children.length} ends, ${state()}`);
 console.log(await search());
+const sentBefore = sent.length;
+example('raise or exit (two ends)');
+for (const r of byId.ends.children) r.children[1].value = '';
+fire();
+byId.f.onsubmit({ preventDefault() {} });
+console.log(`empty end: ${text(byId.left)}, ${sent.length - sentBefore} sent`);
+const pills = byId.ex.children.filter(b => b.tagName === 'button');
+console.log(`groups: ${byId.ex.children.map(b => (b.tagName === 'button' ? 'b' : `[${b.textContent}]`)).join(' ')}`);
+const n0 = sent.length;
+for (const b of pills) b.onclick();
+console.log(`pressing every example sends ${sent.length - n0}`);
+example('who calls it (--reverse)');
+example('exclude with -v');
+console.log(`on ${byId.step.checked}, ${state()}`);
+console.log(await search());
+for (const b of pills) {
+  b.onclick();
+  const c = state();
+  await search();
+  console.log(`${b.textContent}: ${c} -> ${byId.left.children.some(e => e.className === 'err') ? 'error ' + text(byId.left) : 'ok'}`);
+}

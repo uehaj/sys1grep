@@ -14,6 +14,10 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 - `--serve`: a multi-step switch takes the place of the `--step-to:` field kind. On, it shows the ends (`--step-to`, one or
   more meanings) and the edges (`--hops`, `--reverse`); off, they leave the command line and the search. Example buttons turn it
   on with a walk filled in. A meaning field added with `+` is now searched (it was read from its remove button).
+- `--serve`: eight example buttons for ordinary searches, from the README and docs/use-cases.md (a meaning, `-Q`, two
+  meanings with `-p`, `-v`, a regex with a meaning, `--level strict`, `--dedup`, `--unit=sentence-by-jev`), before the
+  multi-step ones. Each fills the fields and the controls it needs, puts the rest back to their launch values (a plain
+  example turns multi-step off), and sends nothing until Search.
 - `-r` and `git sys1grep` warn before sending a large tree through a term no regex narrows (#138). When such a
   term is about to send more than 10,000 units, one stderr line before the judging requests gives the totals
   `--dry-run` would (units, files, estimated input tokens and, for TypeSafe itself, the price), names the term and
