@@ -861,9 +861,9 @@ Measured on 24 generated logs of failed jobs, six per kind of cause, 10,008 line
 | cause | cause is result 1, `--rank` | cause is result 1, `--rank=match` | otherwise |
 |---|---|---|---|
 | a configuration, endpoint or credential switched | 5 of 6 | 5 of 6 | 1 not matched |
-| an input empty or short | 2 of 6 | 2 of 6 | 2 at results 62 and 81 (`match`: 191-219, 343-371); 2 not matched |
+| an input empty or short | 2 of 6 | 2 of 6 | 2 at results 62 (`match`: 343-371) and 81 (`match`: 191-219); 2 not matched |
 | a default used instead of the real value | 6 of 6 | 5 of 6 | `match`: 2-9 (one result above it, seven tied with it at 0.90) |
-| a line that never came (a start with no finish) | 0 of 6 | 0 of 6 | the start line never matched |
+| a line that never came (a start with no finish) | 0 of 6 | 0 of 6 | the start line never a result |
 
 A log cost about $0.088 (2.1M input tokens, 644 requests) and 16 to 17 s. `--rank` (`jev`) adds one question per
 result: on one log with 398 results, 14 requests, about 58k input tokens ($0.0024, 3%) and 1 s more than
@@ -877,7 +877,8 @@ When the top results look unrelated (rotations, refreshes, the final error itsel
   (`-e "the job connected to a read-only replica instead of the primary database"`) matched nothing either. Search
   for the thing the error names instead (`-e '/snapshot|replica/'`) and read the numbers.
 - **A line that never came**: a worker that claimed a shard and never finished it, a step or a migration that started
-  and never ended. On all six such logs the start line did not match. The top result was a routine line, the final
+  and never ended. On all six such logs the start line was not among the results; judged on its own in a 31-line
+  window, its best score on the four meanings was 0.43. The top result was a routine line, the final
   error, or once the previous run's `alias products switched to products-20260927`, whose 09-28 counterpart never
   came. A meaning for it (`-e "a worker, step or upload started but never reported that it finished"`) put the final
   error first on the two logs it was tried on; `--dedup` folded `part 7 of 8 upload started` into `part 5 of 8 upload started (×3 like it)`, since the
