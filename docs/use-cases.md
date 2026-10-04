@@ -9,12 +9,14 @@ Each entry gives the job, the command, the data, what it found and missed, how a
 what the run cost. Entries that did not work are in [Tried, not recommended](#tried-not-recommended).
 
 **How the numbers were taken.** Each command was run as `node sys1grep.mjs --verbose -y ARGS`; `--verbose`
-prints the summary line when stdout is not a terminal. The token counts are the `usage.input_tokens` Jev
+prints the summary line on stderr even when stderr is not a terminal. The token counts are the `usage.input_tokens` Jev
 returned, priced at TypeSafe's list price ($0.042 per million input tokens). Times are wall-clock for the
 whole run, round trips to the API included, from one machine on one day.
 
-**Data.** Logs are the 2,000-line samples from [LogHub](https://github.com/logpai/loghub) (real system logs
-published for research). Issues are public GitHub issues fetched with `gh` on 2026-10-04; refetching later gets
+**Data.** Logs are the 2,000-line samples from [LogHub](https://github.com/logpai/loghub), real system logs
+published for research use; Zhu et al., "Loghub: A Large Collection
+of System Log Datasets for AI-driven Log Analytics", ISSRE 2023. This page quotes only a few lines of them: ten
+OpenSSH lines and some message templates. Issues are public GitHub issues fetched with `gh` on 2026-10-04; refetching later gets
 newer issues, so counts will differ. Git history is this repository's (229 commits at `2d0b009`). Code is this
 repository's and the Python 3.13.3 standard library.
 
@@ -54,10 +56,12 @@ same template got different answers (40 of 489 sshd lines kept), because the lin
 other's context. Read the result as "templates worth a look", not as a count.
 
 `--dedup` folded nothing here. Jev answered that the meaning reads numbers and URLs, so lines that differ only in
-a pid or a host stayed apart. `--dry-run` assumes nothing is kept apart and estimated 153 lines and ~16k
+a pid or a host stayed apart. The part of the summary line cut at `…` is therefore a negative saving
+(`~-N input tokens / ~$-x saved, -P%`): with nothing folded, the tokens `--dedup` spent on its own questions count
+against it. `--dry-run` assumes nothing is kept apart and estimated 153 lines and ~16k
 tokens; the run sent 2,000 lines and 255k tokens. Under `--dedup`, take the dry-run figure as a lower bound.
 
-On LogHub `Apache_2k.log` (2,000 lines, 7 templates) the same meaning without `-v` did fold:
+On LogHub `Apache_2k.log` (2,000 lines, 6 templates by LogHub's own `Apache_2k.log_templates.csv`) the same meaning without `-v` did fold:
 
 ```sh
 sys1grep --dedup -c -e "an error the operator must act on" Apache_2k.log
@@ -113,14 +117,14 @@ Cost and time: $0.0006 and 0.4 s.
 ```sh
 gh issue list -R ollama/ollama --state all --limit 300 --json number,title,body,labels > issues.json
 jq -j '.[] | select([.labels[].name] | (index("bug") != null) != (index("feature request") != null))
-       | "#\(.number) \(.title)\n\(.body[:2000])\u0000"' issues.json > triage.z
+       | "#\(.number) \(.title)\n\((.body // "")[:2000])\u0000"' issues.json > triage.z
 sys1grep -z -e "the reporter asks for a new feature or an improvement, not a fix for something that is broken" < triage.z
 ```
 
 Data: the 300 most recent `ollama/ollama` issues, of which 133 carry exactly one of the labels `bug` (101) and
 `feature request` (32). The labels are the reference; the text sent is the title and the first 2,000 characters
-of the body, one record per issue. (The run built `triage.z` with a Python script; this `jq` filter produces the
-same bytes.)
+of the body, one record per issue. (The run built `triage.z` with a Python script; this `jq` filter does the same, but
+was not checked to produce the same bytes.)
 
 ```
 33 of 133 records matched; 133 sent to Jev in 9 requests, 62916 input tokens, ~$0.002642
@@ -132,8 +136,8 @@ same bytes.)
 | keywords: `feature\|support for\|please add\|would be (nice\|great)\|add support\|request` | 60 | 17 | 43 | 15 | 0.28 | 0.53 |
 | records without the bug template's `What is the issue?` heading | 41 | 32 | 9 | 0 | 0.78 | 1.00 |
 
-The four bugs it flagged read like requests (#18352 "Can not inccrease Context to 1 M limited 256K", #18595 "no
-garbage collection for orphaned blobs"). Of the three it missed, two are questions ("Does latest Ollama support
+The four bugs it flagged read like requests (#18352 "Can not inccrease Context to 1 M limited 256K", #18595 "macOS
+0.33.0: no garbage collection for orphaned blobs — found a live 21GB orphan via manifest audit"). Of the three it missed, two are questions ("Does latest Ollama support
 Parallel inference with Qwen 3.6 & 3.8 series?") and one is a bare title, `Support CLAUDE_CODE_AUTO_MODE_SERVER=1`. Keywords do
 badly because bug reports say "support" and "request" too. This repository uses issue forms, so the form's own
 heading already separates most of the classes; the meaning is for an inbox with no form, such as mail.
@@ -165,7 +169,7 @@ the summarizer cost, and we did not measure it. The run took 58.6 s, almost all 
 
 ```sh
 gh issue list -R ollama/ollama --state all --limit 300 --json number,title,body > issues.json
-jq -j '.[] | "#\(.number) \(.title)\n\(.body[:2000])\u0000"' issues.json > issues.z
+jq -j '.[] | "#\(.number) \(.title)\n\((.body // "")[:2000])\u0000"' issues.json > issues.z
 sys1grep -z -e "the user says they will stop using the tool, or have switched to another one" < issues.z
 ```
 
@@ -190,7 +194,7 @@ Cost and time: $0.0066 and 0.9 s.
 
 ```sh
 gh issue list -R lobehub/lobe-chat --state all --limit 200 --json number,title,body,labels > lobe.json
-jq -j '.[] | "#\(.number) \(.title)\n\(.body[:1500])\u0000"' lobe.json > lobe.z
+jq -j '.[] | "#\(.number) \(.title)\n\((.body // "")[:1500])\u0000"' lobe.json > lobe.z
 sys1grep -z -p -e "ユーザーがログインできない、または認証に失敗している" < lobe.z
 ```
 
@@ -315,8 +319,10 @@ Cost and time: $0.0003 and 0.7 s.
 sys1grep -r -n -p --include='*.md' -Q "what did we decide about reading a .env file in the current directory, and why" .
 ```
 
-Data: this repository's Markdown, 10 files, 2,925 lines, English and Japanese (CHANGELOG, both READMEs, CONTEXT,
-the agent docs).
+Data: this repository's Markdown at `2d0b009`, 10 files, 2,925 lines, English and Japanese (CHANGELOG, both
+READMEs, CONTEXT, CLAUDE, RELEASING, the agent docs, `tests/report.md`). The line numbers below are that tree's;
+the commit that adds this page also adds two lines to each README, before its line 300, so `README.md:737` is line 739
+after it.
 
 ```
 ./CHANGELOG.md:210:- **Breaking:** `./.env` in the current directory is no longer read, as in 0.3.1 (see there).	[0.74]
@@ -425,6 +431,16 @@ Cost and time: $0.0026 and 0.8 s.
   their output cannot be published here.
 - **IMAP fetched per message, a ticket API, a delivery-time mail filter**: these hand sys1grep one message at a
   time, so there is no batch for the requests to share. Not measured.
+- **Other candidates from #119**, not tried this time for lack of data, time, or budget. Nothing here says whether
+  they work:
+  - "the customer thanks us" over a support inbox;
+  - "the assistant admitted it was wrong" over a JSONL chat export, one message per record;
+  - "a decision and its reason" over ADRs and meeting notes (the `.env` entry above asks a question of the docs,
+    not this proposition over a decision log);
+  - a proposition over `gh pr list`, one pull request per record;
+  - sys1grep after a desktop search (`mdfind`, `recoll`) that narrows the files first;
+  - Loki or ClickHouse exports;
+  - a side-by-side comparison with embedding search on the same data.
 
 ## Cost of this page
 
