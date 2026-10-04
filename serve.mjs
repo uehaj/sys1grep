@@ -119,7 +119,7 @@ export function serve(argv) {
     if (kind === 'dry') args.push('--dry-run', '--no-summarize');
     else if (kind === 'summary') args.push('--format=plain');
     else if (!step && (pk.rank ?? init.rank)) args.push('--format=html', ...tpl);
-    const { code, out, err } = await run(['--color=never', ...args], signal);
+    const { code, out, err } = await run([`--color=${kind === 'results' ? 'always' : 'never'}`, ...args], signal);
     if (code > 1) return { error: err.trim() || `exit ${code}` };
     if (code === 1 && !out) return { none: true, note: err.trim() };
     return kind === 'results' && !step && (p.rank ?? init.rank) ? { html: out.replace('</head>', '<style>.bar{display:none}</style></head>') } : { text: out };
@@ -170,6 +170,7 @@ summary.dot::after { content: " \\25CF"; color: var(--link); }
 main { padding: 0 16px 48px; display: grid; gap: 16px; grid-template-columns: 1fr; } main.two { grid-template-columns: 3fr 2fr; }
 @media (max-width: 800px) { main.two { grid-template-columns: 1fr; } }
 iframe { width: 100%; border: 0; min-height: 80px; } pre.out { white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.5 ui-monospace, Menlo, monospace; }
+.c32 { color: #188038; } .c35 { color: #a142f4; } .c36 { color: #129eaf; } .c31 { color: #d93025; } .c33 { color: #b06000; } .c01_31 { color: #d93025; font-weight: 700; } .c01_33 { color: #b06000; font-weight: 700; background: #fff3b055; }\n@media (prefers-color-scheme: dark) { .c32 { color: #81c995; } .c35 { color: #d7aefb; } .c36 { color: #78d9ec; } .c31, .c01_31 { color: #f28b82; } .c33, .c01_33 { color: #fdd663; } }\nbutton:disabled { opacity: .45; cursor: default; }
 .err { color: #d93025; white-space: pre-wrap; } .note { color: var(--muted); }
 #right { border-left: 1px solid var(--rule); padding-left: 16px; }
 </style></head><body>
@@ -180,7 +181,7 @@ iframe { width: 100%; border: 0; min-height: 80px; } pre.out { white-space: pre-
 <label>rank <select name="rank"><option value="">off</option><option value="jev">jev</option><option value="match">match</option></select></label>
 <label><input type="checkbox" name="summarize"> summarize</label>
 <input type="text" name="summarize-prompt" placeholder="summary instruction" style="display:none;flex:1;min-width:160px">
-<button type="submit" id="go">Search</button><button type="button" id="est">Estimate cost</button></div>
+<button type="submit" id="go">Search</button><button type="button" id="est">Estimate cost</button><button type="button" id="stop" disabled>Stop</button></div>
 <div class="row"><pre id="cmd"></pre><button type="button" id="copy">Copy</button></div>
 <details id="d"><summary id="ds">Details</summary><div class="grid">
 <label>level <select name="level"><option>loose</option><option>normal</option><option>strict</option></select></label>
@@ -225,20 +226,46 @@ const show = () => {
   return p;
 };
 const query = p => { const q = new URLSearchParams({ k: TOKEN }); for (const x of p.x) q.append('x', x); for (const [k, v] of Object.entries(p)) if (k !== 'x') q.set(k, v === true ? '1' : v === false ? '0' : v); return q; };
+const ansi = (text, into) => { // the SGR colors of --color=always, as spans; nothing but text goes in
+  let cls = '';
+  for (const part of text.split(/(\\x1b\\[[\\d;]*m)/)) {
+    const m = /^\\x1b\\[([\\d;]*)m$/.exec(part);
+    if (m) cls = m[1] === '0' || m[1] === '' ? '' : 'c' + m[1].replace(/;/g, '_');
+    else if (part) { const s = document.createElement('span'); s.className = cls; s.textContent = part; into.append(s); }
+  }
+};
 let gen = 0;
+let ctl = null, running = 0;
+const busy = on => { for (const id of ['go', 'est']) document.getElementById(id).disabled = on; document.getElementById('stop').disabled = !on; };
 const get = async (kind, p, into) => {
-  const mine = gen, r = await fetch('/' + kind + '?' + query(p)), j = await r.json().catch(() => ({ error: 'bad answer' }));
-  if (mine !== gen) return;
+  const mine = gen;
+  running++;
+  try {
+    const r = await fetch('/' + kind + '?' + query(p), { signal: ctl.signal }), j = await r.json().catch(() => ({ error: 'bad answer' }));
+    if (mine === gen) show1(j, into);
+  } catch (e) {
+    if (mine === gen) show1({ error: String(e) }, into);
+  } finally {
+    running = Math.max(0, running - 1);
+    if (running === 0 && mine === gen) busy(false);
+  }
+};
+const show1 = (j, into) => {
   into.textContent = '';
   if (j.error) { const e = document.createElement('div'); e.className = 'err'; e.textContent = j.error; into.append(e); }
   else if (j.none) { const e = document.createElement('div'); e.className = 'note'; e.textContent = 'no matches' + (j.note ? ' (' + j.note + ')' : ''); into.append(e); }
   else if (j.html) { const i = document.createElement('iframe'); i.sandbox = 'allow-same-origin'; i.srcdoc = j.html; i.onload = () => { i.style.height = i.contentDocument.documentElement.scrollHeight + 'px'; }; into.append(i); }
-  else { const e = document.createElement('pre'); e.className = 'out'; e.textContent = j.text; into.append(e); }
+  else { const e = document.createElement('pre'); e.className = 'out'; ansi(j.text, e); into.append(e); }
+};
+document.getElementById('stop').onclick = () => {
+  ctl.abort(); gen++; running = 0; busy(false);
+  for (const el of [document.getElementById('left'), document.getElementById('right')]) if (!el.hidden && /\.\.\.$/.test(el.textContent)) el.textContent = 'stopped';
 };
 const run = kind => {
   const p = show(), left = document.getElementById('left'), right = document.getElementById('right');
+  if (running) return;
   if (!p.x.some(x => x[0] !== 'S')) { left.textContent = 'Enter a meaning.'; return; }
-  gen++;
+  gen++; ctl = new AbortController(); busy(true);
   left.textContent = 'searching...';
   const sum = kind === 'results' && p.summarize && !p.x.some(x => x[0] === 'S');
   document.getElementById('m').className = sum ? 'two' : '';
