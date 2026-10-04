@@ -63,7 +63,7 @@ const fromEnv = (name, ...more) => {
 };
 const envURL = fromEnv('URL'), envMODEL = fromEnv('MODEL'), envAPI_KEY = fromEnv('API_KEY', 'TYPESAFE_API_KEY'), envOPTS = fromEnv('OPTS'),
   envSUMMARIZER = fromEnv('SUMMARIZER'), envSUMMARIZER_MODEL = fromEnv('SUMMARIZER_MODEL'), envSUMMARIZER_API_KEY = fromEnv('SUMMARIZER_API_KEY');
-const SYS1GREP_URL = envURL.value, SYS1GREP_MODEL = envMODEL.value, SYS1GREP_API_KEY = envAPI_KEY.value,
+const SYS1GREP_URL = envURL.value, SYS1GREP_MODEL = envMODEL.value,
   SYS1GREP_SUMMARIZER = envSUMMARIZER.value, SYS1GREP_SUMMARIZER_MODEL = envSUMMARIZER_MODEL.value;
 // The default options: SYS1GREP_OPTS split on spaces, or settings.json's opts as they are. OPTS_NAME names them in
 // messages and in --verbose's "(SOURCE)" tags.
@@ -758,7 +758,7 @@ const customUrl = opt['sys1-url'] || SYS1GREP_URL;
 const apiUrl = customUrl || 'https://api.typesafe.ai/v1/systemone';
 const apiHost = (() => { try { return new URL(apiUrl).host; } catch { die(`not a URL: ${apiUrl} (--sys1-url / SYS1GREP_URL)`); } })();
 const model = opt['sys1-model'] || SYS1GREP_MODEL || 'jev-latest';
-const credential = opt['sys1-api-key'] || SYS1GREP_API_KEY;
+const credential = opt['sys1-api-key'] || envAPI_KEY.value;
 if (credential && new URL(apiUrl).protocol === 'http:' && !/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(apiHost))
   console.error(`sys1grep: warning: the API key goes to ${apiHost} over plain http`);
 // --dry-run prints the files and the requests that would be sent, to stdout, and sends nothing. --verbose prints
