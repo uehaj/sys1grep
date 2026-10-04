@@ -856,7 +856,12 @@ $ sys1grep -n --dedup --level strict --rank \
 ```
 
 Measured on 24 generated logs of failed jobs, six per kind of cause, 10,008 lines each, with these four meanings
-(`npm run cause-eval`, rows in `tests/cause-results.tsv`). Each search returned 366 to 464 results:
+(`npm run cause-eval`, rows in `tests/cause-results.tsv`; an earlier version of the script wrote its 24 rows, and
+the `top 2 jev` column is filled only in the two rerun rows). Each search returned 366 to 464 results. The
+`--rank=match` column is not a separate run: it is recomputed from the `-p` columns of the `--rank` run, since
+`--rank=match` scores a result by the highest of them. That recomputation was checked against a real `--rank=match`
+run only on config-5, where the cause was not a result. A cause "not matched" may have been judged below `strict` or
+folded by `--dedup` into a like line; the rows do not tell the two apart.
 
 | cause | cause is result 1, `--rank` | cause is result 1, `--rank=match` | otherwise |
 |---|---|---|---|
@@ -865,26 +870,29 @@ Measured on 24 generated logs of failed jobs, six per kind of cause, 10,008 line
 | a default used instead of the real value | 6 of 6 | 5 of 6 | `match`: 2-9 (one result above it, seven tied with it at 0.90) |
 | a line that never came (a start with no finish) | 0 of 6 | 0 of 6 | the start line never a result |
 
-A log cost about $0.088 (2.1M input tokens, 644 requests) and 16 to 17 s. `--rank` (`jev`) adds one question per
-result: on one log with 398 results, 14 requests, about 58k input tokens ($0.0024, 3%) and 1 s more than
-`--rank=match`. It put the cause higher than `--rank=match` on three logs and lower on none.
+A log cost about $0.088 (2.1M input tokens, 643 to 646 requests) and 16 to 17 s. `--rank` (`jev`) adds one question
+per result, about 3% more input tokens than `--rank=match` (one log run both ways; not recorded in the TSV). It put
+the cause higher than `--rank=match` on three logs and lower on none.
 
 When the top results look unrelated (rotations, refreshes, the final error itself), the cause is likely one of these:
 
 - **A line that states only a value**: `stock snapshot downloaded: 1204 bytes`, `input directory ... holds 2 files`,
   `resolved db-primary.internal to 10.0.4.22 (replica-2)`. Nothing in the line says it is wrong, so no hypothesis
-  holds: judged in a 31-line window, their best scores on the four meanings were 0.58, 0.08 and 0.19, and a meaning written from each final error
-  (`-e "the job connected to a read-only replica instead of the primary database"`) matched nothing either. Search
-  for the thing the error names instead (`-e '/snapshot|replica/'`) and read the numbers.
+  holds, nor did a meaning written from the final error
+  (`-e "the job connected to a read-only replica instead of the primary database"`). Search for the thing the error
+  names instead (`-e '/snapshot|replica/'`) and read the numbers.
 - **A line that never came**: a worker that claimed a shard and never finished it, a step or a migration that started
-  and never ended. On all six such logs the start line was not among the results; judged on its own in a 31-line
-  window, its best score on the four meanings was 0.43. The top result was a routine line, the final
-  error, or once the previous run's `alias products switched to products-20260927`, whose 09-28 counterpart never
-  came. A meaning for it (`-e "a worker, step or upload started but never reported that it finished"`) put the final
-  error first on the two logs it was tried on; `--dedup` folded `part 7 of 8 upload started` into `part 5 of 8 upload started (×3 like it)`, since the
-  starts look alike and only the missing finish tells them apart. Compare starts with finishes by eye or with grep.
+  and never ended. On all six such logs the start line was not among the results. The top result was a routine line,
+  the final error, or once the previous run's `alias products switched to products-20260927`, whose 09-28
+  counterpart never came. A meaning for it
+  (`-e "a worker, step or upload started but never reported that it finished"`) put the final error first, not the
+  start, and `--dedup` can fold one start into a like one, since only the missing finish tells them apart. Compare
+  starts with finishes by eye or with grep.
 - **The score will not tell you**: where the cause was result 1 it scored 0.93 to 0.97 under `--rank`; on two logs
   where it never matched, the top result scored 0.88 and 0.91.
+
+The follow-ups behind the first two points (key lines judged alone in a 31-line window, the meanings written from
+the error or for a missing finish) are in the description of PR #192; `tests` holds no way to rerun them.
 
 Every searched line goes to Jev (TypeSafe, or whatever `SYS1GREP_URL` names), and with `--summarize` the matching
 lines go to its TOOL's provider as well. Build logs and job logs often hold tokens, passwords and customer data.

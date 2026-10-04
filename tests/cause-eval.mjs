@@ -7,8 +7,11 @@
 // -p columns (--rank=match's score is the highest of them), as a range when the cause ties at two decimals.
 //   node tests/cause-eval.mjs [--lines=10000] [--only=ID,...] [--budget=USD] [--write=DIR] [--dry-run]
 // Needs the API key (as sys1grep reads it). Costs about $0.09 a 10,000-line log; a row goes to stdout (TSV) as each
-// log finishes, and no log starts once the next one could pass --budget (default 3). Each log and its ranked output
-// (ID.log, ID.out) stay in a temp dir, named on stderr. --write=DIR only writes the logs there, sending nothing.
+// log finishes. Before the first log, stderr gets the first log's --dry-run estimate and that times the logs. No log
+// starts once the spend plus 1.3 times the larger of that estimate and the dearest log so far would pass --budget
+// (default 3), so --budget=0 sends nothing; that stop exits 2, a failed sys1grep exits 1. Each log and its ranked output (ID.log,
+// ID.out) stay in a temp dir, named on stderr. --dry-run sends nothing and prints each log's estimate and the total.
+// --write=DIR only writes the logs there, sending nothing.
 import { execFile } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -146,11 +149,24 @@ function parse(stdout) {
 }
 
 const run = promisify(execFile);
-const sys1grep = new URL('../sys1grep.mjs', import.meta.url).pathname;
+const SYS1GREP = new URL('../sys1grep.mjs', import.meta.url).pathname;
+// -y: never wait on sys1grep's cost question, there is no terminal to answer it; --budget is the cap
+const ARGS = ['-n', '-p', '--verbose', '--dedup', '--level', 'strict', '--rank=jev', '-y', ...HYPOTHESES.flatMap(h => ['-e', h])];
+async function sys1grep(id, ...args) {
+  const r = await run('node', [SYS1GREP, ...ARGS, ...args], { env: { ...process.env, SYS1GREP_OPTS: '' }, maxBuffer: 1 << 28 }).catch(e => e);
+  if (r instanceof Error && r.code !== 1) { console.error(`cause-eval: ${id}: sys1grep failed (exit ${r.code})\n${(r.stderr || r.message).slice(-2000)}`); process.exit(1); }
+  return r;
+}
+async function estimate(id, file) {
+  const { stdout, stderr } = await sys1grep(id, '--dry-run', file), out = stdout + stderr;
+  const tokens = out.match(/^sys1grep: dry run: .*~(\d+) input tokens/m)?.[1];
+  if (!tokens) { console.error(`cause-eval: ${id}: no dry run line\n${out.slice(-2000)}`); process.exit(1); }
+  return { line: out.split('\n').filter(l => /dry run:|rank:/.test(l)).join(' | '), usd: tokens * PRICE };
+}
 const work = dir ?? mkdtempSync(`${tmpdir()}/cause-eval-`);
 mkdirSync(work, { recursive: true });
 const picked = SCENARIOS.filter(s => !only || only.includes(s[0]));
-let spent = 0, worst = 0;
+let spent = 0, worst = 0, estimated = 0;
 console.error(`cause-eval: logs and ranked output in ${work}`);
 if (!dir) console.log(['id', 'kind', 'lines', 'results', 'jev rank', 'match rank', 'key p', 'key jev', 'top 2 jev', 'requests', 'input tokens', 'usd', 'seconds', 'top result'].join('\t'));
 for (const [n, s] of picked.entries()) {
@@ -158,15 +174,23 @@ for (const [n, s] of picked.entries()) {
   const file = `${work}/${s[0]}.log`;
   writeFileSync(file, text);
   if (dir) continue;
-  if (!dry && spent + worst * 1.3 > BUDGET) { console.error(`cause-eval: stopped before ${s[0]}: $${spent.toFixed(4)} spent, the next could pass --budget ${BUDGET}`); break; }
-  const args = ['-n', '-p', '--verbose', '--dedup', '--level', 'strict', '--rank=jev', '-y', '--max-cost', '1', ...HYPOTHESES.flatMap(h => ['-e', h]), file];
-  if (dry) args.splice(0, 0, '--dry-run');
+  if (dry) {
+    const e = await estimate(s[0], file);
+    estimated += e.usd;
+    console.error(`${s[0]}: ${e.line}`);
+    if (n === picked.length - 1) console.error(`cause-eval: ${picked.length} logs, ~$${estimated.toFixed(4)} estimated, nothing sent`);
+    continue;
+  }
+  if (!worst) {
+    worst = (await estimate(s[0], file)).usd;
+    console.error(`cause-eval: ~$${worst.toFixed(4)} a log by ${s[0]}'s --dry-run, ~$${(worst * picked.length).toFixed(2)} for ${picked.length}; --budget ${BUDGET}`);
+  }
+  if (spent + worst * 1.3 > BUDGET) { console.error(`cause-eval: stopped before ${s[0]}: $${spent.toFixed(4)} spent, the next could pass --budget ${BUDGET}`); process.exit(2); }
   const t0 = Date.now();
-  const { stdout, stderr } = await run('node', [sys1grep, ...args], { env: { ...process.env, SYS1GREP_OPTS: '' }, maxBuffer: 1 << 28 }).catch(e => e);
+  const { stdout, stderr } = await sys1grep(s[0], file);
   const seconds = ((Date.now() - t0) / 1000).toFixed(0);
-  if (dry) { console.error(`${s[0]}: ${(stdout + stderr).split('\n').filter(l => /dry run:|rank:/.test(l)).join(' | ')}`); continue; }
   const sum = stderr.match(/(\d+) of \d+ lines matched; .* in (\d+) requests?, (\d+) input tokens/);
-  if (!sum) { console.error(`cause-eval: ${s[0]}: no summary line\n${stderr.slice(-2000)}`); process.exit(2); }
+  if (!sum) { console.error(`cause-eval: ${s[0]}: no summary line\n${stderr.slice(-2000)}`); process.exit(1); }
   const tokens = +sum[3], usd = tokens * PRICE;
   spent += usd; worst = Math.max(worst, usd);
   writeFileSync(`${work}/${s[0]}.out`, stdout);
