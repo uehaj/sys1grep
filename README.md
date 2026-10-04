@@ -796,7 +796,8 @@ $ sys1grep --serve=8080 -y --level=strict -r src/     # a fixed port; the option
 
 The page has the meaning fields (`+` adds one; each takes `-e`, `-a`, `-v` or `-Q`), `rank`, `summarize`, a **multi-step**
 switch (on, it shows the end fields, `--step-to` and one or more meanings, and the edges, `--hops` and `--reverse`; off, they
-leave the command and the search and keep their values), example buttons that turn multi-step on and fill it in, a
+leave the command and the search and keep their values), example buttons (searches from this README and
+[docs/use-cases.md](docs/use-cases.md), then multi-step walks; one fills the fields and the controls it needs, puts the rest back to their launch values, and waits for Search), a
 **Details** fold with the other options (`--level`, `-t`/`-T`, `-C`, `--auto-scope`, `-n`, `-p`, `--dedup`, `--unit`,
 `--include`, `--exclude`, `--changed-within`, `-g`), and above
 the results the **command line** for the controls as they are now, with a Copy button; pasted in a terminal it runs the

@@ -1461,22 +1461,40 @@ eq "$(pgrep -f "$F.*color=always" | wc -l | tr -d ' ')" "0" "--serve: an abandon
 kill $serve $hang 2>/dev/null; wait $serve $hang 2>/dev/null || true
 # the multi-step toggle: off, the page has no end fields and no --step-to; on, the end and --hops reach the command and
 # the search; off again, both leave (the values stay for the next time on); an example turns it on and fills it.
-# Regular expressions only, so nothing is sent
+# An empty end is refused before sending; pressing examples sends nothing, and each puts the page in its own state
+# (a plain example turns multi-step off and resets --reverse), and its search runs without an error.
 printf '%s\n' 'def main():' '  helper()' 'def helper():' '  raise X' >"$tmp/m.py"
 $E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$tmp/m.py" >"$tmp/serve4.url" 2>/dev/null &
 serve=$!
 i=0; while [ ! -s "$tmp/serve4.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (multi-step) did not start"; sleep 0.05; done
 eq "$(node serve-page.mjs "$(cat "$tmp/serve4.url")")" "steps hidden: -e '/def main/'
-x=e:/def main/ hops=0.. -> 1 lines
+x=e:/def main/ hops=0.. reverse=0 -> 1 lines
 steps shown: -e '/def main/' --step-to
 steps shown: -e '/def main/' --step-to -e '/raise /' --hops=1..2
-x=e:/def main/|S:|e:/raise / hops=1..2 -> 2 lines
+x=e:/def main/|S:|e:/raise / hops=1..2 reverse=0 -> 2 lines
 steps hidden: -e '/def main/'
-x=e:/def main/ hops=1..2 -> 1 lines
+x=e:/def main/ hops=1..2 reverse=0 -> 1 lines
 steps shown: -e '/def main/' --step-to -e '/raise /' --hops=1..2
 on true, 2 ends, steps shown: -e '/^ *def main/' --step-to -e '/raise /' -e '/sys\\.exit/'
 on true, 1 ends, steps shown: -e '/^ *def helper/' --step-to -e '/^ *def main/' --reverse
-x=e:/^ *def helper/|S:|e:/^ *def main/ hops=0.. -> 2 lines" "--serve: the multi-step toggle and its examples"
+x=e:/^ *def helper/|S:|e:/^ *def main/ hops=0.. reverse=1 -> 2 lines
+empty end: Enter an end (--step-to)., 0 sent
+groups: b b b b b b b b [multi-step] b b b b
+pressing every example sends 0
+on false, steps hidden: -e 'network or remote connection failure' -v 'a retry is happening or was attempted' -n
+x=e:network or remote connection failure|v:a retry is happening or was attempted hops=0.. reverse=0 -> 1 lines
+meaning, not words: steps hidden: -e 'customer is angry or frustrated' -n -> ok
+a question (-Q): steps hidden: -Q 'whether the server is down' -n -> ok
+either meaning, with scores (-p): steps hidden: -e 'customer is asking for a refund' -e 'delivery address change request' -n -p -> ok
+exclude with -v: steps hidden: -e 'network or remote connection failure' -v 'a retry is happening or was attempted' -n -> ok
+regex and meaning together: steps hidden: -e /catch/ -a 'the error is ignored' -n -p -> ok
+stricter (--level strict): steps hidden: -e 'a security risk or dangerous destructive operation' --level=strict -n -> ok
+one line per template (--dedup): steps hidden: -e 'a request failed' --dedup=always -n -> ok
+one sentence at a time: steps hidden: -e 'the author admits they made a mistake' --unit=sentence-by-jev -n -> ok
+calls that raise: steps shown: -e '/^ *def main/' --step-to -e '/raise /' -> ok
+1 to 2 calls away: steps shown: -e '/^ *def main/' --step-to -e '/raise /' --hops=1..2 -> ok
+who calls it (--reverse): steps shown: -e '/^ *def helper/' --step-to -e '/^ *def main/' --reverse -> ok
+raise or exit (two ends): steps shown: -e '/^ *def main/' --step-to -e '/raise /' -e '/sys\\.exit/' -> ok" "--serve: the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs)"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 code 2 "--serve refuses -e" -- $J --serve -e cat "$F"
 code 2 "--serve refuses --format" -- $J --serve --format=html "$F"

@@ -27,8 +27,17 @@ const CONTROLS = [
   { k: 'reverse', flag: '--reverse', neg: '--no-reverse', bool: true, step: true, def: false },
 ];
 const FIELD = /^[eavQS]:/; // an expression field: e:MEANING (-e), a, v, Q (-Q), S: (--step-to)
-// The example buttons: each turns multi-step on and fills the fields (x, as the page sends it) and the edge controls.
+// The example buttons, each from README, docs/use-cases.md or --help: x as the page sends it, then the controls it sets (by k).
+// Pressing one puts the page in that state: the rest go back to their launch values; an S: in x turns multi-step on.
 const EXAMPLES = [
+  { h: 'meaning, not words', x: ['e:customer is angry or frustrated'], n: true },
+  { h: 'a question (-Q)', x: ['Q:whether the server is down'], n: true },
+  { h: 'either meaning, with scores (-p)', x: ['e:customer is asking for a refund', 'e:delivery address change request'], n: true, p: true },
+  { h: 'exclude with -v', x: ['e:network or remote connection failure', 'v:a retry is happening or was attempted'], n: true },
+  { h: 'regex and meaning together', x: ['e:/catch/', 'a:the error is ignored'], n: true, p: true },
+  { h: 'stricter (--level strict)', x: ['e:a security risk or dangerous destructive operation'], level: 'strict', n: true },
+  { h: 'one line per template (--dedup)', x: ['e:a request failed'], dedup: 'always', n: true },
+  { h: 'one sentence at a time', x: ['e:the author admits they made a mistake'], unit: 'sentence-by-jev', n: true },
   { h: 'calls that raise', x: ['e:/^ *def main/', 'S:', 'e:/raise /'] },
   { h: '1 to 2 calls away', x: ['e:/^ *def main/', 'S:', 'e:/raise /'], hops: '1..2' },
   { h: 'who calls it (--reverse)', x: ['e:/^ *def helper/', 'S:', 'e:/^ *def main/'], reverse: true },
@@ -177,7 +186,7 @@ summary.dot::after { content: " \\25CF"; color: var(--link); }
 main { padding: 0 16px 48px; display: grid; gap: 16px; grid-template-columns: 1fr; } main.two { grid-template-columns: 3fr 2fr; }
 @media (max-width: 800px) { main.two { grid-template-columns: 1fr; } }
 iframe { width: 100%; border: 0; min-height: 80px; } pre.out { white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.5 ui-monospace, Menlo, monospace; }
-.c32 { color: #188038; } .c35 { color: #a142f4; } .c36 { color: #129eaf; } .c31 { color: #d93025; } .c33 { color: #b06000; } .c01_31 { color: #d93025; font-weight: 700; } .c01_33 { color: #b06000; font-weight: 700; background: #fff3b055; }\n@media (prefers-color-scheme: dark) { .c32 { color: #81c995; } .c35 { color: #d7aefb; } .c36 { color: #78d9ec; } .c31, .c01_31 { color: #f28b82; } .c33, .c01_33 { color: #fdd663; } }\nbutton:disabled { opacity: .45; cursor: default; } #ex button { border-radius: 999px; }
+.c32 { color: #188038; } .c35 { color: #a142f4; } .c36 { color: #129eaf; } .c31 { color: #d93025; } .c33 { color: #b06000; } .c01_31 { color: #d93025; font-weight: 700; } .c01_33 { color: #b06000; font-weight: 700; background: #fff3b055; }\n@media (prefers-color-scheme: dark) { .c32 { color: #81c995; } .c35 { color: #d7aefb; } .c36 { color: #78d9ec; } .c31, .c01_31 { color: #f28b82; } .c33, .c01_33 { color: #fdd663; } }\nbutton:disabled { opacity: .45; cursor: default; } #ex button { border-radius: 999px; } #ex .grp { border-left: 1px solid var(--rule); padding-left: 8px; }
 .err { color: #d93025; white-space: pre-wrap; } .note { color: var(--muted); }
 #right { border-left: 1px solid var(--rule); padding-left: 16px; }
 </style></head><body>
@@ -214,6 +223,8 @@ const quote = (s, force) => (!force && /^[\\w@%+=:,./-]+$/.test(s) ? s : "'" + s
 const shown = argv => argv.map((t, i) => (/^-[eavQ]$/.test(argv[i - 1] ?? '') ? quote(t, t[0] === '-') : /^--[a-z-]+=/.test(t) ? t.replace(/=([\\s\\S]*)/, (_, v) => '=' + quote(v)) : quote(t)));
 const f = document.getElementById('f'), fields = document.getElementById('fields'), cmd = document.getElementById('cmd');
 const step = document.getElementById('step'), steps = document.getElementById('steps'), ends = document.getElementById('ends');
+const ALL = [...CONTROLS, { k: 'summarize', bool: true }, { k: 'rank' }, { k: 'summarize-prompt' }];
+const setControls = v => { for (const c of ALL) { const el = f.elements[c.k], x = v[c.k] ?? INIT[c.k]; if (c.bool) el.checked = !!x; else el.value = x; } };
 const LABELS = { e: '-e meaning', a: '-a and', v: '-v and not', Q: '-Q question' };
 const addField = (k = 'e', t = '', into = fields) => {
   const r = document.createElement('div'); r.className = 'row'; r.innerHTML = '<select>' + Object.entries(LABELS).map(([k, l]) => '<option value="' + k + '">' + l + '</option>').join('') + '</select><input type="text" placeholder="meaning">';
@@ -226,16 +237,16 @@ const addField = (k = 'e', t = '', into = fields) => {
 const terms = box => [...box.children].map(r => r.firstChild.value + ':' + r.children[1].value.trim()).filter(x => x.length > 2);
 const read = () => {
   const p = { x: [...terms(fields), ...(step.checked ? ['S:', ...terms(ends)] : [])] };
-  for (const c of [...CONTROLS, { k: 'summarize', bool: true }, { k: 'rank' }, { k: 'summarize-prompt' }]) { const el = f.elements[c.k]; p[c.k] = c.bool ? el.checked : el.value; }
+  for (const c of ALL) { const el = f.elements[c.k]; p[c.k] = c.bool ? el.checked : el.value; }
   return p;
 };
 const show = () => {
-  const p = read(), step = p.x.some(x => x[0] === 'S');
-  steps.hidden = !step;
-  f.elements.rank.disabled = f.elements.summarize.disabled = step;
-  f.elements['summarize-prompt'].style.display = p.summarize && !step ? '' : 'none';
+  const p = read(), multi = p.x.some(x => x[0] === 'S');
+  steps.hidden = !multi;
+  f.elements.rank.disabled = f.elements.summarize.disabled = multi;
+  f.elements['summarize-prompt'].style.display = p.summarize && !multi ? '' : 'none';
   cmd.textContent = ['sys1grep', ...LAUNCH.map(t => quote(t)), ...shown(toArgv(p, INIT)), ...AFTER.map(t => quote(t))].join(' ');
-  document.getElementById('ds').className = CONTROLS.some(c => !['rank'].includes(c.k) && !c.step && p[c.k] !== INIT[c.k] && !(c.nostep && step)) ? 'dot' : '';
+  document.getElementById('ds').className = CONTROLS.some(c => !['rank'].includes(c.k) && !c.step && p[c.k] !== INIT[c.k] && !(c.nostep && multi)) ? 'dot' : '';
   return p;
 };
 const query = p => { const q = new URLSearchParams({ k: TOKEN }); for (const x of p.x) q.append('x', x); for (const [k, v] of Object.entries(p)) if (k !== 'x') q.set(k, v === true ? '1' : v === false ? '0' : v); return q; };
@@ -293,18 +304,21 @@ f.onsubmit = e => { e.preventDefault(); go(); return false; };
 document.getElementById('est').onclick = () => run('dry');
 document.getElementById('add').onclick = () => addField('a').children[1].focus();
 document.getElementById('addend').onclick = () => addField('e', '', ends).children[1].focus();
+let grp = null;
 for (const ex of EXAMPLES) {
+  const s = ex.x.indexOf('S:'), row = document.getElementById('ex');
+  if (s >= 0 && !grp) { grp = document.createElement('span'); grp.className = 'note grp'; grp.textContent = 'multi-step'; row.append(grp); }
   const b = document.createElement('button'); b.type = 'button'; b.textContent = ex.h;
   b.onclick = () => {
-    const s = ex.x.indexOf('S:');
-    step.checked = true; fields.textContent = ''; ends.textContent = '';
-    ex.x.forEach((t, i) => i !== s && addField(t[0], t.slice(2), i < s ? fields : ends));
-    f.elements.hops.value = ex.hops ?? INIT.hops; f.elements.reverse.checked = ex.reverse ?? INIT.reverse; show();
+    step.checked = s >= 0; fields.textContent = ''; ends.textContent = '';
+    ex.x.forEach((t, i) => i !== s && addField(t[0], t.slice(2), s >= 0 && i > s ? ends : fields));
+    if (s < 0) addField('e', '', ends);
+    setControls(ex); show();
   };
-  document.getElementById('ex').append(b);
+  row.append(b);
 }
 document.getElementById('copy').onclick = e => navigator.clipboard.writeText(cmd.textContent).then(() => { e.target.textContent = 'Copied'; setTimeout(() => { e.target.textContent = 'Copy'; }, 1200); });
 f.addEventListener('input', show); f.addEventListener('change', show);
-for (const c of [...CONTROLS, { k: 'summarize', bool: true }, { k: 'rank' }, { k: 'summarize-prompt' }]) { const el = f.elements[c.k]; if (c.bool) el.checked = !!INIT[c.k]; else el.value = INIT[c.k]; }
+setControls(INIT);
 addField().lastChild.focus(); addField('e', '', ends);
 </script></body></html>`;
