@@ -6,6 +6,8 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 ## [Unreleased]
 
 ### Added
+- `--format=html` marks what matched with `<mark>` (the regex matches, else the matching sentences, else the whole matching line);
+  `--color=never` turns it off. `--serve` shows the colors of `--color=always` on the matches in file order, and the marks on the cards, by default.
 - `--serve[=PORT]` serves a search page on `127.0.0.1` (#166): a box for the meanings, `--rank` / `--summarize` and the other
   options as controls, results as the `--rank --format=html` cards, and the command line for the current controls with a Copy
   button. Each search runs sys1grep with the launch options plus the controls' changes. `node:http` only.

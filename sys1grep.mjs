@@ -383,8 +383,8 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
   --summarize-prompt=TEXT  the user's own instruction, added after the fixed one in --summarize's system
                prompt (how long, what to focus on, ...). Needs --summarize; empty TEXT is the same as none
   --format=FORMAT  plain (default) / markdown / html. With --rank, sys1grep writes the results itself: markdown a
-               ## heading and a fenced block per result, html one document from --template, escaped,
-               uncolored. With --summarize it is asked of TOOL instead (plain: no Markdown), and its
+               ## heading and a fenced block per result, html one document from --template, escaped, the
+               matches in <mark> (regex matches, else matching sentences, else the whole matching line; --color=never: none). With --summarize it is asked of TOOL instead (plain: no Markdown), and its
                answer prints as it comes, unchecked; html: TOOL writes plain text, which goes escaped into
                --template's {{answer}} and prints when TOOL is done. Before --summarize-prompt's TEXT, which can override it. Needs
                --rank (not with -l) or --summarize, except in SYS1GREP_OPTS. (It replaces --summarize-format.)
@@ -635,7 +635,7 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
   --summarize-prompt=TEXT  --summarize のシステムプロンプトに、固定の指示に続けて足すユーザー自身の指示
                (長さ・観点など)。--summarize が要る。空の TEXT は指定しないのと同じ
   --format=FORMAT  plain (既定) / markdown / html。--rank では sys1grep 自身が結果を書く。markdown は結果ごとに
-               ## 見出しとコードブロック、html は --template の 1 つの文書で、文字はエスケープし色は付けない。
+               ## 見出しとコードブロック、html は --template の 1 つの文書で、文字はエスケープし、一致は <mark> で示す (正規表現の一致、無ければ一致した文、無ければ一致した行全体。--color=never なら示さない)。
                --summarize では代わりに TOOL に頼み (plain は Markdown なし)、答えは確かめずにそのまま表示する。
                html は TOOL に平文を書かせ、エスケープして --template の {{answer}} に入れ、TOOL が終わってから表示する。
                --summarize-prompt の TEXT より前に置くので TEXT で上書きできる。
@@ -724,7 +724,8 @@ const parseTemplate = (text, where) => {
   return { head, item, tail };
 };
 const esc = t => t.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const fillPart = (part, vars) => part.replace(/\{\{(\w+)\}\}/g, (m, k) => (Object.hasOwn(vars, k) ? esc(String(vars[k])) : m));
+// {{lines}}: the \u0001 / \u0002 that markup() put around a match become <mark> (a source's own ones are stripped there)
+const fillPart = (part, vars) => part.replace(/\{\{(\w+)\}\}/g, (m, k) => (Object.hasOwn(vars, k) ? (k === 'lines' ? esc(String(vars[k])).replace(/\u0001/g, '<mark>').replace(/\u0002/g, '</mark>') : esc(String(vars[k]))) : m));
 
 const customUrl = opt['sys1-url'] || SYS1GREP_URL;
 const apiUrl = customUrl || 'https://api.typesafe.ai/v1/systemone';
@@ -2128,6 +2129,14 @@ spin.stop();
 const outFormat = opt.rank && !summarizer ? opt.format : 'plain';
 const color = !summarizer && outFormat === 'plain' && (opt.color === 'always' || (opt.color === 'auto' && process.stdout.isTTY && !process.env.NO_COLOR));
 const paint = (code, s) => (color ? `\x1b[${code}m${s}\x1b[0m` : s);
+// --format=html marks what matched with <mark> unless --color=never: the regex matches, else the matching sentences,
+// else the whole line of a match (a meaning matches a line, not a part of it). Context lines are not marked.
+const marking = outFormat === 'html' && opt.color !== 'never';
+const markup = (text, spans) => {
+  let out = '', at = 0;
+  for (const [a, b] of [...spans].sort((x, y) => x[0] - y[0])) if (b > at) { const s = Math.max(a, at); out += `${text.slice(at, s)}\u0001${text.slice(s, b)}\u0002`; at = b; }
+  return out + text.slice(at);
+};
 const paintProb = x => paint(x >= tPos ? 32 : x < tNeg ? 31 : 33, x.toFixed(2));
 // -p: one column per literal, in the order it was written. Regex: 1.00/0.00 for whether it matched.
 // Meaning: the answer, or 0 if no surviving term of this unit ever asked it.
@@ -2251,6 +2260,9 @@ for (const file of opt.quiet || dry ? [] : targets) {
       if (partsOnly && matches.length) {
         let end = -1; // a match overlapping the last one printed is skipped; a skipped one does not hide later ones
         for (const [a, b] of matches) if (a >= end) { r.rows.push(prefix + paint('01;31', text.slice(a, b)) + tail + like + EOL); end = b; }
+      } else if (marking) {
+        const spans = !p ? [] : matches.length ? matches : sentences && opt.unit !== 'function' ? sentences.map(([a, b]) => [a, b]) : text ? [[0, text.length]] : [];
+        r.rows.push(prefix + (/[\u0001\u0002]/.test(text) ? text.replace(/[\u0001\u0002]/g, '') : markup(text, spans)) + tail + like + EOL);
       } else r.rows.push(prefix + highlight(text, sentences, matches) + tail + like + EOL);
       r.texts.push(text);
       if (p) r.hits.add(p);

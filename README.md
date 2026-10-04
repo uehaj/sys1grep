@@ -798,7 +798,7 @@ The page has the meaning fields (`+` adds one; each takes `-e`, `-a`, `-v`, `-Q`
 the results the **command line** for the controls as they are now, with a Copy button; pasted in a terminal it runs the
 same search. An option at its launch value is left out of what the controls add. `rank` off shows the matches in file order
 as text, on shows the ranked cards; `summarize` adds a right column (it runs the search once more, so it costs one more
-request). Estimate cost is `--dry-run`.
+request). Estimate cost is `--dry-run`. While a search runs, Search and Estimate are disabled and **Stop** ends it (the child process is killed). The matches are colored as `--color=always` colors them (file names, line numbers, regex matches), the cards mark them with `<mark>`.
 
 Each search runs sys1grep itself (the options given at launch, then the controls'), so everything the command line does
 the page does, and only that. The server listens on `127.0.0.1` only, answers only to that host name, and the page never
@@ -833,7 +833,8 @@ tickets/a.txt-13-We will check it.
 - `-p` puts the score on the header (`1. [0.96] tickets/b.txt`). `-l` lists the files by their best result.
 - `--format=markdown` writes a `## 1. tickets/b.txt` heading and a fenced block per result; `--format=html` one
   self-contained HTML document from a template (below), light and dark, with a relevance bar per result. The lines
-  are as they print, escaped and uncolored.
+  are as they print, escaped; what matched is in `<mark>` (the regex matches, else the matching sentences, else the whole
+  matching line; context lines are not marked; `--color=never` turns it off).
 - `--summarize` gets the results in ranked order; with `--dedup` a representative is one result.
 - It needs a meaning (a regex, `!` or `-v` alone ranks nothing), and cannot be combined with `-c`, `-o` or `-q`.
   `--no-rank` turns off an earlier one, from `SYS1GREP_OPTS` say.

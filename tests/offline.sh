@@ -963,7 +963,7 @@ out=$($J -n --rank=match --format=html --color=always -e cat "$tmp/rkf.txt")
 eq "$(echo "$out" | head -1)$(echo "$out" | tail -1)" '<!doctype html></html>' "--rank --format=html: a whole document"
 eq "$(echo "$out" | grep -c '<!doctype html>')" "1" "--rank --format=html: one document"
 echo "$out" | grep -qF '<title>sys1grep: &quot;cat&quot;</title>' || fail "--rank --format=html: the title: $out"
-echo "$out" | grep -qF '>1:cat &lt;b&gt;&amp;amp;' || fail "--rank --format=html: escaped: $out"
+echo "$out" | grep -qF '>1:<mark>cat &lt;b&gt;&amp;amp;</mark>' || fail "--rank --format=html: escaped: $out"
 case $out in *"$esc"*) fail "--rank --format=html: no colors" ;; esac
 eq "$(echo "$out" | grep -c '<article class="result">')" "2" "--rank --format=html: an article per result"
 echo "$out" | grep -qF '<span class="score"></span>' || fail "--rank --format=html: no score without -p: $out"
@@ -999,10 +999,10 @@ TH="$tmp/th"; ut="$TH/.config/sys1grep/templates"; mkdir -p "$ut"
 H="$E HOME=$TH SYS1GREP_URL=$base/v1 node ../sys1grep.mjs"
 printf '%s\n' 'cat <script>x</script> & {{rank}}' 'dog' 'cat two' >"$tmp/tp1.txt"; printf '%s\n' 'cat three' >"$tmp/tp2.txt"
 printf '%s' 'T={{title}}|Q={{query}}|N={{count}}|X={{nope}}<!--result-->[{{rank}} {{score}} {{score_pct}} {{file}}:{{lines}}]<!--/result-->END' >"$tmp/plain.html"
-eq "$($H -n -p --rank=match --format=html --template="$tmp/plain.html" -e cat "$tmp/tp1.txt" | tr '\t' ' ')" 'T=sys1grep: &quot;cat&quot;|Q=&quot;cat&quot;|N=2|X={{nope}}[1 0.90 90 :1:cat &lt;script&gt;x&lt;/script&gt; &amp; {{rank}} [0.90]
-][2 0.90 90 :3:cat two [0.90]
+eq "$($H -n -p --rank=match --format=html --template="$tmp/plain.html" -e cat "$tmp/tp1.txt" | tr '\t' ' ')" 'T=sys1grep: &quot;cat&quot;|Q=&quot;cat&quot;|N=2|X={{nope}}[1 0.90 90 :1:<mark>cat &lt;script&gt;x&lt;/script&gt; &amp; {{rank}}</mark> [0.90]
+][2 0.90 90 :3:<mark>cat two</mark> [0.90]
 ]END' "--template=FILE: placeholders filled and escaped, the result's text never expanded, an unknown one kept"
-eq "$($H --rank=match --format=html --template="$tmp/plain.html" -e cat "$tmp/tp1.txt" "$tmp/tp2.txt" | head -1 | cut -d'[' -f2)" "1  90 $tmp/tp1.txt:$tmp/tp1.txt:cat &lt;script&gt;x&lt;/script&gt; &amp; {{rank}}" "--template: {{file}} with several files, {{score}} empty without -p"
+eq "$($H --rank=match --format=html --template="$tmp/plain.html" -e cat "$tmp/tp1.txt" "$tmp/tp2.txt" | head -1 | cut -d'[' -f2)" "1  90 $tmp/tp1.txt:$tmp/tp1.txt:<mark>cat &lt;script&gt;x&lt;/script&gt; &amp; {{rank}}</mark>" "--template: {{file}} with several files, {{score}} empty without -p"
 eq "$($H --rank=match --format=html --template="$tmp/plain.html" -e zebra "$tmp/tp1.txt")" "" "--template, no match: nothing"
 printf '%s' 'mine<!--result-->{{rank}}<!--/result-->' >"$ut/default.html"
 eq "$($H --rank=match --format=html -e cat "$tmp/tp1.txt")" "mine12" "a user template wins over the bundled one of its name"
@@ -1055,7 +1055,7 @@ code 2 "a template that is a directory" -- $H --rank --format=html --template="$
 $H --rank --format=html --template="$tmp/dir.html" -e cat "$tmp/tp1.txt" 2>&1 | grep -qF "template $tmp/dir.html: " || fail "a template that is a directory is named"
 eq "$(printf '%s' 'a<!--result-->b<!--/result-->' | $H --rank --format=html --template=/dev/stdin -e cat "$tmp/tp1.txt" 2>&1)" "sys1grep: template /dev/stdin: not a regular file" "a template on a pipe is refused, not read"
 printf '%s' "<!--result--><i data-x='{{file}}'>{{lines}}</i><!--/result-->" >"$tmp/q.html"; printf '%s\n' "cat's" >"$tmp/q'1.txt"
-eq "$($H -H --rank=match --format=html --template="$tmp/q.html" -e cat "$tmp/q'1.txt")" "<i data-x='$tmp/q&#39;1.txt'>$tmp/q&#39;1.txt:cat&#39;s
+eq "$($H -H --rank=match --format=html --template="$tmp/q.html" -e cat "$tmp/q'1.txt")" "<i data-x='$tmp/q&#39;1.txt'>$tmp/q&#39;1.txt:<mark>cat&#39;s</mark>
 </i>" "a quote in a result is escaped"
 IH="$tmp/ih"; bundled=$(ls ../templates | wc -l | tr -d ' ')
 eq "$($E HOME=$IH node ../sys1grep.mjs --install-templates | grep -c "^copied $IH/.config/sys1grep/templates/[a-z]*\.html$")" "$bundled" "--install-templates copies each bundled template"
@@ -1387,6 +1387,13 @@ $E LANG=C node ../sys1grep.mjs --help | grep -qF "sys1grep -e '/^ *def helper/' 
 $E LANG=ja_JP.UTF-8 node ../sys1grep.mjs --help | grep -qF "sys1grep -e '/^ *def main/' --hops=1..2 --step-to '/raise /' *.py" || fail "--help in Japanese: --step-to examples"
 $E LANG=C node ../sys1grep.mjs --help | grep -qF "sys1grep [OPTION]... -e START1 [-e START2]... --step-to END1 [-e END2]... [FILE...]" || fail "--help: --step-to usage names both sides"
 $E LANG=ja_JP.UTF-8 node ../sys1grep.mjs --help | grep -qF "sys1grep [OPTION]... -e START1 [-e START2]... --step-to END1 [-e END2]... [FILE...]" || fail "--help in Japanese: --step-to usage names both sides"
+# --format=html marks what matched: the regex match, else the whole matching line; context and --color=never are unmarked
+eq "$($J --rank=match --format=html -e cat -a '/[0-9]/' "$F" | grep -c '<mark>')" "0" "html marks: no regex match in the fixture, no mark"
+printf 'a cat 12\nplain cat\ndog\n' >"$tmp/mk.txt"
+eq "$($J --rank=match --format=html -e cat -a '/[0-9]+/' "$tmp/mk.txt" | grep -o 'a cat <mark>12</mark>')" "a cat <mark>12</mark>" "html marks: the regex match only"
+eq "$($J --rank=match --format=html -n -C1 -e '/dog/' -e cat "$tmp/mk.txt" | grep -c '^2:<mark>plain cat</mark>')" "1" "html marks: a meaning matches the whole line"
+eq "$($J --rank=match --format=html -n -e cat -v dog -C1 "$tmp/mk.txt" | grep -c '3-dog\|3:dog')" "1" "html marks: a context line is unmarked"
+eq "$($J --rank=match --format=html --color=never -e cat "$tmp/mk.txt" | grep -c '<mark>')" "0" "html marks: --color=never"
 # --serve: a page on 127.0.0.1, each search a run of sys1grep against the fake
 $E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$F" >"$tmp/serve.url" 2>/dev/null &
 serve=$!
@@ -1396,11 +1403,12 @@ case $U in http://127.0.0.1:*/) ;; *) fail "--serve prints its URL: $U" ;; esac
 K=$(curl -s "$U" | sed -n 's/.*TOKEN = "\([0-9a-f]*\)".*/\1/p')
 [ -n "$K" ] || fail "--serve: the page carries a token"
 eq "$(curl -s "$U" | grep -c 'id="cmd"')" "1" "--serve: the page"
-eq "$(curl -s "${U}results?k=$K&x=e:cat&rank=" | node -pe "JSON.parse(require('fs').readFileSync(0)).text")" "cat
+eq "$(curl -s "${U}results?k=$K&x=e:cat&rank=" | node -pe "JSON.parse(require('fs').readFileSync(0)).text" | sed "s/$(printf '\033')\\[[0-9;]*m//g")" "cat
 cat dog" "--serve: rank off, matches in file order"
 eq "$(curl -s "${U}results?k=$K&x=e:cat&rank=jev" | node -pe "const h = JSON.parse(require('fs').readFileSync(0)).html; [h.includes('Result 1'), h.includes('.bar{display:none}')].join()")" "true,true" "--serve: rank on, the search template's cards"
 eq "$(curl -s "${U}results?k=$K&x=e:cat&x=a:dog&rank=" | node -pe "JSON.parse(require('fs').readFileSync(0)).text")" "cat dog" "--serve: -a from the fields"
-eq "$(curl -s "${U}results?k=$K&x=e:cat&x=v:dog&rank=&C=0&n=1" | node -pe "JSON.parse(require('fs').readFileSync(0)).text")" "1:cat" "--serve: -v, -n from the controls"
+eq "$(curl -s "${U}results?k=$K&x=e:cat&x=v:dog&rank=&C=0&n=1" | node -pe "JSON.parse(require('fs').readFileSync(0)).text" | sed "s/$(printf '\033')\\[[0-9;]*m//g")" "1:cat" "--serve: -v, -n from the controls"
+eq "$(curl -s "${U}results?k=$K&x=e:cat&rank=&n=1" | grep -c '\\u001b\[32m1')" "1" "--serve: the matches in file order come colored"
 eq "$(curl -s "${U}results?k=$K&x=e:zzz&rank=" | node -pe "JSON.parse(require('fs').readFileSync(0)).none")" "true" "--serve: no match"
 eq "$(curl -s "${U}results?k=$K&x=e:cat&t=abc")" "bad value" "--serve: a bad number is refused"
 eq "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: evil.example' "$U")" "403" "--serve: another host name is refused"
@@ -1421,6 +1429,18 @@ eq "$(curl -s "$U" | grep -c -- '--summarize-prompt' || true)" "1" "--serve: the
 eq "$(curl -s "${U}results?k=$K&x=e:cat&rank=&summarize=0" | node -pe "JSON.parse(require('fs').readFileSync(0)).error || 'ok'")" "ok" "--serve: results with a launch --summarize-prompt"
 eq "$(curl -s "${U}results?k=$K&x=e:cat&x=S:&x=e:owl&rank=" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); (j.error || 'ok').replace(/.*cannot be combined.*/, 'combined')")" "ok" "--serve: --step-to with a launch --dedup"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
+# a search the page abandons (Stop) ends its child: a server that never answers, a request given up after 1 s
+node -e "const s = require('http').createServer(() => {}).listen(0, () => console.log(s.address().port))" >"$tmp/hang.port" &
+hang=$!
+i=0; while [ ! -s "$tmp/hang.port" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "hanging server did not start"; sleep 0.05; done
+$E SYS1GREP_URL="http://127.0.0.1:$(cat "$tmp/hang.port")/v1" node ../sys1grep.mjs --serve "$F" >"$tmp/serve3.url" 2>/dev/null &
+serve=$!
+i=0; while [ ! -s "$tmp/serve3.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (hanging) did not start"; sleep 0.05; done
+U=$(cat "$tmp/serve3.url"); K=$(curl -s "$U" | sed -n 's/.*TOKEN = "\([0-9a-f]*\)".*/\1/p')
+curl -s -m 1 "${U}results?k=$K&x=e:cat&rank=" >/dev/null || true
+sleep 0.5
+eq "$(pgrep -f "color=always.*$F" | wc -l | tr -d ' ')" "0" "--serve: an abandoned search ends its child"
+kill $serve $hang 2>/dev/null; wait $serve $hang 2>/dev/null || true
 code 2 "--serve refuses -e" -- $J --serve -e cat "$F"
 code 2 "--serve refuses --format" -- $J --serve --format=html "$F"
 eq "$($J --serve=99999 "$F" 2>&1 | head -1 | cut -c1-30)" "sys1grep: --serve=99999: not a" "--serve: a bad port is an error"
