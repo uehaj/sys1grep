@@ -730,6 +730,8 @@ const fillPart = (part, vars) => part.replace(/\{\{(\w+)\}\}/g, (m, k) => (Objec
 
 const customUrl = opt['sys1-url'] || SYS1GREP_URL;
 const apiUrl = customUrl || 'https://api.typesafe.ai/v1/systemone';
+// Every price shown is Jev's list price unless the endpoint reports its own cost (usage.cost); with another URL it says so.
+const listTag = customUrl ? " at TypeSafe's list price" : '';
 const apiHost = (() => { try { return new URL(apiUrl).host; } catch { die(`not a URL: ${apiUrl} (--sys1-url / SYS1GREP_URL)`); } })();
 const model = opt['sys1-model'] || SYS1GREP_MODEL || 'jev-latest';
 const credential = opt['sys1-api-key'] || SYS1GREP_API_KEY || TYPESAFE_API_KEY;
@@ -2112,14 +2114,14 @@ function guardCost(chunks, asks, terms) {
     return { bytes: t.bytes + Buffer.byteLength(body), cjk: t.cjk + cjkBytesOf(body) };
   }, { bytes: sentBytes, cjk: sentCjkBytes });
   const estTokens = estimateTokens(sentRequests + chunks.length, bits.bytes, bits.cjk);
-  // Unlike --dry-run's own display, --max-cost is checked at TypeSafe's list price even for a custom endpoint
+  // Every price shown, --max-cost's included, is TypeSafe's list price even for a custom endpoint
   // (OpenRouter, a local server): a wrong number the guard can act on beats none it cannot (#58's open question).
   // #125 review (item 4): say so in the question itself, so a custom endpoint's own price is never mistaken for it.
   const estPrice = (estTokens * 0.042) / 1e6;
   const meaning = wide && wide.find(lit => lit.kind === 'm').text;
   if (meaning) {
     const short = meaning.length > 40 ? `${meaning.slice(0, 40).replace(/\s+\S*$/, '')}…` : meaning;
-    const cost = `~${new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(estTokens)} input tokens${customUrl ? '' : `, ~$${estPrice.toFixed(2)}`}`;
+    const cost = `~${new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(estTokens)} input tokens, ~$${estPrice.toFixed(2)}${listTag}`;
     const msg = `sys1grep: sending ${units.toLocaleString('en-US')} of ${totalUnits.toLocaleString('en-US')} ${unitName} from ${read.size.toLocaleString('en-US')} file${read.size === 1 ? '' : 's'} (${cost}); the term "${safe(short)}" has no regex to narrow it. Add -a '/RE/' to it, or --include / --changed-within, or --dry-run to see the requests`;
     if (!warned.includes(msg)) { console.error(msg); warned.push(msg); }
   }
@@ -2501,7 +2503,7 @@ if (summarizer && !dry && matched && pipedBytes > SUMMARY_MAX) {
 // Summary only when interactive; grep prints nothing to stderr when scripted.
 if (dry) {
   const assumed = [willFold && `--dedup=${opt.dedup}`, opt.unit === 'sentence-by-jev' && '--unit=sentence-by-jev'].filter(Boolean);
-  const tokens = estimateTokens(traced, tracedBytes, tracedCjkBytes), price = customUrl ? '' : `, ~$${(tokens * 0.042 / 1e6).toFixed(6)}`;
+  const tokens = estimateTokens(traced, tracedBytes, tracedCjkBytes), price = `, ~$${(tokens * 0.042 / 1e6).toFixed(6)}${listTag}`;
   // #125 review: the size guard is gone (an oversized file is skipped outright above, not asked about); --dry-run
   // and -i show only the cost guard's verdict here, consistent with what a real run would ask.
   const guard = (tokens * 0.042) / 1e6 > MAX_COST ? `; over --max-cost ${MAX_COST}, would ask` : '';
@@ -2512,9 +2514,9 @@ if (dry) {
   if (opt.dedup === 'never' && dedupEstimate?.pays) {
     console.error(`sys1grep: ${dedupEstimate.units} units fold to at most ${dedupEstimate.templates} templates; --dedup=auto would save ~${dedupEstimate.requests} requests (~${kify(dedupEstimate.saved)} tokens)`);
   }
-  // The API's own usage.cost when reported (OpenRouter does); else an estimate at Jev's list price, only for TypeSafe itself.
-  const perToken = usedCost > 0 && usedTokens > 0 ? usedCost / usedTokens : customUrl ? 0 : 0.042 / 1e6;
-  const cost = usedCost > 0 ? `, $${usedCost.toFixed(6)}` : perToken ? `, ~$${(usedTokens * perToken).toFixed(6)}` : '';
+  // The API's own usage.cost when reported (OpenRouter does); else an estimate at Jev's list price, tagged for another URL.
+  const perToken = usedCost > 0 && usedTokens > 0 ? usedCost / usedTokens : 0.042 / 1e6;
+  const cost = usedCost > 0 ? `, $${usedCost.toFixed(6)}` : perToken ? `, ~$${(usedTokens * perToken).toFixed(6)}${listTag}` : '';
   // --dedup's savings: what the folded units would have cost as requests of their own (estimated, #92's fit), less
   // what its questions did cost (reported). A net figure: on prose, which barely folds, it can come out negative.
   let folded = '';

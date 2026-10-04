@@ -270,7 +270,9 @@ SYS1GREP_URL=https://ai-gateway.vercel.sh/typesafe/v1/systemone SYS1GREP_MODEL=t
 SYS1GREP_URL=http://localhost:8000/v1/systemone sys1grep -e ...
 ```
 
-集計行には、エンドポイントが返した費用（`usage.cost`）を出します。TypeSafe 本体の場合は定価での推定を `~` 付きで出します。
+sys1grep が出す価格（`--dry-run`、大量送信の警告、`--max-cost` の質問、集計行）は、エンドポイントが返した費用（`usage.cost`）か、
+返さなければ TypeSafe の定価での推定で、後者には `~` を付けます。別の URL のときは `at TypeSafe's list price` と添えるので、
+ローカルのモデルでは、実際に払う額ではなく、有料のモデルならいくらかかるかが出ます。
 
 ソースから使うなら `git clone https://github.com/uehaj/sys1grep.git && cd sys1grep && npm install -g .`、
 またはそのまま `node sys1grep.mjs ...` で動きます。
