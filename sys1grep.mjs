@@ -2261,8 +2261,8 @@ for (const file of opt.quiet || dry ? [] : targets) {
         let end = -1; // a match overlapping the last one printed is skipped; a skipped one does not hide later ones
         for (const [a, b] of matches) if (a >= end) { r.rows.push(prefix + paint('01;31', text.slice(a, b)) + tail + like + EOL); end = b; }
       } else if (marking) {
-        const spans = !p ? [] : matches.length ? matches : sentences && opt.unit !== 'function' ? sentences.map(([a, b]) => [a, b]) : text ? [[0, text.length]] : [];
-        r.rows.push(prefix + (/[\u0001\u0002]/.test(text) ? text.replace(/[\u0001\u0002]/g, '') : markup(text, spans)) + tail + like + EOL);
+        const spans = !p ? [] : matches.length ? matches : opt.unit === 'function' ? [] : sentences ? sentences.map(([a, b]) => [a, b]) : text ? [[0, text.length]] : []; // a whole function marked says nothing
+        r.rows.push(prefix.replace(/[\u0001\u0002]/g, '') + (/[\u0001\u0002]/.test(text) ? text.replace(/[\u0001\u0002]/g, '') : markup(text, spans)) + tail + like + EOL);
       } else r.rows.push(prefix + highlight(text, sentences, matches) + tail + like + EOL);
       r.texts.push(text);
       if (p) r.hits.add(p);

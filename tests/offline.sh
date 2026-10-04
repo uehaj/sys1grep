@@ -1388,7 +1388,10 @@ $E LANG=ja_JP.UTF-8 node ../sys1grep.mjs --help | grep -qF "sys1grep -e '/^ *def
 $E LANG=C node ../sys1grep.mjs --help | grep -qF "sys1grep [OPTION]... -e START1 [-e START2]... --step-to END1 [-e END2]... [FILE...]" || fail "--help: --step-to usage names both sides"
 $E LANG=ja_JP.UTF-8 node ../sys1grep.mjs --help | grep -qF "sys1grep [OPTION]... -e START1 [-e START2]... --step-to END1 [-e END2]... [FILE...]" || fail "--help in Japanese: --step-to usage names both sides"
 # --format=html marks what matched: the regex match, else the whole matching line; context and --color=never are unmarked
-eq "$($J --rank=match --format=html -e cat -a '/[0-9]/' "$F" | grep -c '<mark>')" "0" "html marks: no regex match in the fixture, no mark"
+eq "$($J --rank=match --format=html -e cat -a '/zzz/' "$F" | grep -c '<mark>' || true)" "0" "html marks: no regex match, no result, no mark"
+printf 'cat \001<b>x\002\n' >"$tmp/sent.txt"
+eq "$($J --rank=match --format=html -e cat "$tmp/sent.txt" | grep -c '<mark>cat <b>' || true)" "0" "html marks: a source's own sentinels are stripped"
+eq "$($J --rank=match --format=html -e cat "$tmp/sent.txt" | grep -c 'cat &lt;b&gt;x$')" "1" "html marks: the line stays unmarked and escaped"
 printf 'a cat 12\nplain cat\ndog\n' >"$tmp/mk.txt"
 eq "$($J --rank=match --format=html -e cat -a '/[0-9]+/' "$tmp/mk.txt" | grep -o 'a cat <mark>12</mark>')" "a cat <mark>12</mark>" "html marks: the regex match only"
 eq "$($J --rank=match --format=html -n -C1 -e '/dog/' -e cat "$tmp/mk.txt" | grep -c '^2:<mark>plain cat</mark>')" "1" "html marks: a meaning matches the whole line"
@@ -1437,9 +1440,13 @@ $E SYS1GREP_URL="http://127.0.0.1:$(cat "$tmp/hang.port")/v1" node ../sys1grep.m
 serve=$!
 i=0; while [ ! -s "$tmp/serve3.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (hanging) did not start"; sleep 0.05; done
 U=$(cat "$tmp/serve3.url"); K=$(curl -s "$U" | sed -n 's/.*TOKEN = "\([0-9a-f]*\)".*/\1/p')
-curl -s -m 1 "${U}results?k=$K&x=e:cat&rank=" >/dev/null || true
-sleep 0.5
-eq "$(pgrep -f "color=always.*$F" | wc -l | tr -d ' ')" "0" "--serve: an abandoned search ends its child"
+curl -s -m 2 "${U}results?k=$K&x=e:cat&rank=" >/dev/null &
+curl=$!
+sleep 1
+eq "$(pgrep -f "$F.*color=always" | wc -l | tr -d ' ')" "1" "--serve: a search is running (the child exists)"
+kill $curl 2>/dev/null; wait $curl 2>/dev/null || true
+sleep 0.7
+eq "$(pgrep -f "$F.*color=always" | wc -l | tr -d ' ')" "0" "--serve: an abandoned search ends its child"
 kill $serve $hang 2>/dev/null; wait $serve $hang 2>/dev/null || true
 code 2 "--serve refuses -e" -- $J --serve -e cat "$F"
 code 2 "--serve refuses --format" -- $J --serve --format=html "$F"

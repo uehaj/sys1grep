@@ -246,7 +246,8 @@ const get = async (kind, p, into) => {
   } catch (e) {
     if (mine === gen) show1({ error: String(e) }, into);
   } finally {
-    if (--running === 0 && mine === gen) busy(false);
+    running = Math.max(0, running - 1);
+    if (running === 0 && mine === gen) busy(false);
   }
 };
 const show1 = (j, into) => {
@@ -257,13 +258,13 @@ const show1 = (j, into) => {
   else { const e = document.createElement('pre'); e.className = 'out'; ansi(j.text, e); into.append(e); }
 };
 document.getElementById('stop').onclick = () => {
-  ctl.abort(); gen++; busy(false);
+  ctl.abort(); gen++; running = 0; busy(false);
   for (const el of [document.getElementById('left'), document.getElementById('right')]) if (!el.hidden && /\.\.\.$/.test(el.textContent)) el.textContent = 'stopped';
 };
 const run = kind => {
   const p = show(), left = document.getElementById('left'), right = document.getElementById('right');
-  if (!p.x.some(x => x[0] !== 'S')) { left.textContent = 'Enter a meaning.'; return; }
   if (running) return;
+  if (!p.x.some(x => x[0] !== 'S')) { left.textContent = 'Enter a meaning.'; return; }
   gen++; ctl = new AbortController(); busy(true);
   left.textContent = 'searching...';
   const sum = kind === 'results' && p.summarize && !p.x.some(x => x[0] === 'S');
