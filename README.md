@@ -813,9 +813,11 @@ http://127.0.0.1:51234/
 $ sys1grep --serve=8080 -y --level=strict -r src/     # a fixed port; the options given here are the page's first values
 ```
 
-The page has the meaning fields (`+` adds one; each takes `-e`, `-a`, `-v`, `-Q` or `--step-to:`), `rank`, `summarize`, a
+The page has the meaning fields (`+` adds one; each takes `-e`, `-a`, `-v` or `-Q`), `rank`, `summarize`, a **multi-step**
+switch (on, it shows the end fields, `--step-to` and one or more meanings, and the edges, `--hops` and `--reverse`; off, they
+leave the command and the search and keep their values), example buttons that turn multi-step on and fill it in, a
 **Details** fold with the other options (`--level`, `-t`/`-T`, `-C`, `--auto-scope`, `-n`, `-p`, `--dedup`, `--unit`,
-`--include`, `--exclude`, `--changed-within`, `-g`, and `--hops` / `--reverse` while a `--step-to:` field exists), and above
+`--include`, `--exclude`, `--changed-within`, `-g`), and above
 the results the **command line** for the controls as they are now, with a Copy button; pasted in a terminal it runs the
 same search. An option at its launch value is left out of what the controls add. `rank` off shows the matches in file order
 as text, on shows the ranked cards; `summarize` adds a right column (it runs the search once more, so it costs one more
