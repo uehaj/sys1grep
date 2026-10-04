@@ -280,6 +280,8 @@ SYS1GREP_URL=http://localhost:8000/v1/systemone sys1grep -e ...
 例はすべて [`tests/corpus.txt`](tests/corpus.txt) に対するものです。サーバログ、日英の問い合わせ、
 ソースコード、SQL、雑談が混ざった 51 行のファイルです。
 
+仕事別（障害対応、問い合わせの仕分け、リリースノートなど）に実データで試した例は [docs/use-cases.md](docs/use-cases.md)（英語）にあります。
+
 ### 概念で探す。言語は問わない
 
 ```sh

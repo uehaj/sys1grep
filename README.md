@@ -296,6 +296,8 @@ otherwise show up in the output below, this section instead uses [`tests/corpus.
 the same 51 lines with the Japanese ones translated to English — the cross-language behaviour itself is
 shown once, in [Search across languages](#search-across-languages) above.
 
+For examples organised by job (on-call, triage, release notes, ...) and run on real data, see [docs/use-cases.md](docs/use-cases.md).
+
 ### Find lines by a concept, in any language
 
 ```sh
