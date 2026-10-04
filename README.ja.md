@@ -788,6 +788,55 @@ tickets/a.txt-13-確認いたします。
 - 意味が要ります（正規表現・`!`・`-v` だけでは並べられない）。`-c`・`-o`・`-q` とは併用できません。
   `--no-rank` はそれより前の `--rank`（`SYS1GREP_OPTS` のものなど）を取り消します。
 
+### 失敗したコマンドの原因を探す
+
+失敗したジョブの最後のエラーはたいてい症状だけを言い（`214 accounts out of balance ... day-close aborted`）、
+ほかの `ERROR` / `WARN` はリトライで回復したものです。原因はずっと上の、目立たない `INFO` や `DEBUG` の 1 行である
+ことがよくあります。症状や `-Q "why did the job fail"` で聞くと、そのノイズが見つかります。#156 の 30,000 行の
+ログでは、回復した `ERROR` 行しか返りませんでした。代わりに原因の種類で聞き、結果を並べます。
+
+```sh
+$ sys1grep -n --dedup --level strict --rank \
+    -e "a component, writer, job or feature was paused, disabled, skipped or put on hold" \
+    -e "a configuration, endpoint, region, credential or data source was changed or switched" \
+    -e "an input, file or table was empty, missing, or had fewer records or columns than expected" \
+    -e "a fallback or default value was used instead of the real one" \
+    job.log
+```
+
+この 4 つの意味で、生成した失敗ジョブのログ 24 本（原因の種類ごとに 6 本、各 10,008 行）を測りました
+（`npm run cause-eval`、各行は `tests/cause-results.tsv`）。結果は 1 本あたり 366〜464 件です。
+
+| 原因 | 原因が 1 位、`--rank` | 原因が 1 位、`--rank=match` | それ以外 |
+|---|---|---|---|
+| 設定・接続先・認証情報が切り替わった | 6 本中 5 | 6 本中 5 | 1 本は一致せず |
+| 入力が空、または少ない | 6 本中 2 | 6 本中 2 | 2 本は 62 位と 81 位（`match` では 191〜219 位、343〜371 位）、2 本は一致せず |
+| 本来の値の代わりに既定値を使った | 6 本中 6 | 6 本中 5 | `match` で 2〜9 位（上に 1 件、0.90 で並ぶものが 7 件） |
+| 来なかった行（開始したが終了がない） | 6 本中 0 | 6 本中 0 | 開始の行が一度も一致せず |
+
+1 本あたり約 $0.088（入力 210 万トークン、644 リクエスト）、16〜17 秒でした。`--rank`（`jev`）は結果ごとに質問を
+1 つ足します。結果 398 件のログ 1 本で、`--rank=match` より 14 リクエスト、入力約 5.8 万トークン（$0.0024、3%）、
+1 秒多くかかりました。`--rank=match` より原因を上に置いたログが 3 本、下に置いたログは 0 本です。
+
+上位の結果が関係なさそうに見えるとき（ローテーション、リフレッシュ、最後のエラーそのもの）は、原因はおそらく次のどれかです。
+
+- **値だけを述べる行**: `stock snapshot downloaded: 1204 bytes`、`input directory ... holds 2 files`、
+  `resolved db-primary.internal to 10.0.4.22 (replica-2)`。行のどこにもおかしいとは書いていないので、どの仮説も
+  当たりません。31 行の窓で判定させると、4 つの意味での最高はそれぞれ 0.58、0.08、0.19 でした。最後のエラーから書いた
+  意味（`-e "the job connected to a read-only replica instead of the primary database"`）でも何も一致しませんでした。
+  エラーが名指すもので探し（`-e '/snapshot|replica/'`）、数値を読んでください。
+- **来なかった行**: シャードを取ったまま終えなかったワーカー、始まって終わらなかったステップやマイグレーション。
+  この 6 本ではどれも開始の行が一致しませんでした。1 位は日常の行か最後のエラー、1 本は前回の実行の
+  `alias products switched to products-20260927` で、09-28 のそれは来ていません。これを狙った意味
+  （`-e "a worker, step or upload started but never reported that it finished"`）を試した 2 本では、1 位は最後のエラー
+  でした。`--dedup` は `part 7 of 8 upload started` を `part 5 of 8 upload started (×3 like it)` にまとめました。
+  開始の行は互いに似ていて、違うのは終了が来ないことだけだからです。開始と終了は目か grep で突き合わせてください。
+- **点数では分からない**: 原因が 1 位だったログでは `--rank` で 0.93〜0.97、一度も一致しなかったログ 2 本では
+  1 位が 0.88 と 0.91 でした。
+
+検索する行はすべて Jev（TypeSafe、または `SYS1GREP_URL` の先）に送られ、`--summarize` では一致した行が TOOL の
+提供元にも送られます。ビルドやジョブのログにはトークン・パスワード・顧客データがよく入っています。
+
 ### HTML のテンプレート (`--template`)
 
 `--rank --format=html` と `--summarize --format=html` はテンプレートを埋めて書きます。同梱は 4 つで、`default`、`print`（白地に黒の明朝系、

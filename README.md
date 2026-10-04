@@ -839,6 +839,55 @@ tickets/a.txt-13-We will check it.
 - It needs a meaning (a regex, `!` or `-v` alone ranks nothing), and cannot be combined with `-c`, `-o` or `-q`.
   `--no-rank` turns off an earlier one, from `SYS1GREP_OPTS` say.
 
+### Finding the cause of a failed command
+
+A failed job's last error usually names a symptom (`214 accounts out of balance ... day-close aborted`), and the
+other `ERROR` / `WARN` lines are retries that recovered. The cause is often one plain `INFO` or `DEBUG` line far
+above. Asking for the symptom, or `-Q "why did the job fail"`, finds that noise: on the 30,000-line log of #156 it
+returned only recovered `ERROR` lines. Ask by kind of cause instead, and rank the results:
+
+```sh
+$ sys1grep -n --dedup --level strict --rank \
+    -e "a component, writer, job or feature was paused, disabled, skipped or put on hold" \
+    -e "a configuration, endpoint, region, credential or data source was changed or switched" \
+    -e "an input, file or table was empty, missing, or had fewer records or columns than expected" \
+    -e "a fallback or default value was used instead of the real one" \
+    job.log
+```
+
+Measured on 24 generated logs of failed jobs, six per kind of cause, 10,008 lines each, with these four meanings
+(`npm run cause-eval`, rows in `tests/cause-results.tsv`). Each search returned 366 to 464 results:
+
+| cause | cause is result 1, `--rank` | cause is result 1, `--rank=match` | otherwise |
+|---|---|---|---|
+| a configuration, endpoint or credential switched | 5 of 6 | 5 of 6 | 1 not matched |
+| an input empty or short | 2 of 6 | 2 of 6 | 2 at results 62 and 81 (`match`: 191-219, 343-371); 2 not matched |
+| a default used instead of the real value | 6 of 6 | 5 of 6 | `match`: 2-9 (one result above it, seven tied with it at 0.90) |
+| a line that never came (a start with no finish) | 0 of 6 | 0 of 6 | the start line never matched |
+
+A log cost about $0.088 (2.1M input tokens, 644 requests) and 16 to 17 s. `--rank` (`jev`) adds one question per
+result: on one log with 398 results, 14 requests, about 58k input tokens ($0.0024, 3%) and 1 s more than
+`--rank=match`. It put the cause higher than `--rank=match` on three logs and lower on none.
+
+When the top results look unrelated (rotations, refreshes, the final error itself), the cause is likely one of these:
+
+- **A line that states only a value**: `stock snapshot downloaded: 1204 bytes`, `input directory ... holds 2 files`,
+  `resolved db-primary.internal to 10.0.4.22 (replica-2)`. Nothing in the line says it is wrong, so no hypothesis
+  holds: judged in a 31-line window, their best scores on the four meanings were 0.58, 0.08 and 0.19, and a meaning written from each final error
+  (`-e "the job connected to a read-only replica instead of the primary database"`) matched nothing either. Search
+  for the thing the error names instead (`-e '/snapshot|replica/'`) and read the numbers.
+- **A line that never came**: a worker that claimed a shard and never finished it, a step or a migration that started
+  and never ended. On all six such logs the start line did not match. The top result was a routine line, the final
+  error, or once the previous run's `alias products switched to products-20260927`, whose 09-28 counterpart never
+  came. A meaning for it (`-e "a worker, step or upload started but never reported that it finished"`) put the final
+  error first on the two logs it was tried on; `--dedup` folded `part 7 of 8 upload started` into `part 5 of 8 upload started (×3 like it)`, since the
+  starts look alike and only the missing finish tells them apart. Compare starts with finishes by eye or with grep.
+- **The score will not tell you**: where the cause was result 1 it scored 0.93 to 0.97 under `--rank`; on two logs
+  where it never matched, the top result scored 0.88 and 0.91.
+
+Every searched line goes to Jev (TypeSafe, or whatever `SYS1GREP_URL` names), and with `--summarize` the matching
+lines go to its TOOL's provider as well. Build logs and job logs often hold tokens, passwords and customer data.
+
 ### HTML templates (`--template`)
 
 `--rank --format=html` and `--summarize --format=html` fill in a template. Four come with sys1grep: `default`, `print` (black on white, serif,
