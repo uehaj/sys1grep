@@ -11,6 +11,9 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 - `--serve[=PORT]` serves a search page on `127.0.0.1` (#166): a box for the meanings, `--rank` / `--summarize` and the other
   options as controls, results as the `--rank --format=html` cards, and the command line for the current controls with a Copy
   button. Each search runs sys1grep with the launch options plus the controls' changes. `node:http` only.
+- `--serve`: a multi-step switch takes the place of the `--step-to:` field kind. On, it shows the ends (`--step-to`, one or
+  more meanings) and the edges (`--hops`, `--reverse`); off, they leave the command line and the search. Example buttons turn it
+  on with a walk filled in. A meaning field added with `+` is now searched (it was read from its remove button).
 - `-r` and `git sys1grep` warn before sending a large tree through a term no regex narrows (#138). When such a
   term is about to send more than 10,000 units, one stderr line before the judging requests gives the totals
   `--dry-run` would (units, files, estimated input tokens and, for TypeSafe itself, the price), names the term and

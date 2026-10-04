@@ -1459,6 +1459,25 @@ kill $curl 2>/dev/null; wait $curl 2>/dev/null || true
 sleep 0.7
 eq "$(pgrep -f "$F.*color=always" | wc -l | tr -d ' ')" "0" "--serve: an abandoned search ends its child"
 kill $serve $hang 2>/dev/null; wait $serve $hang 2>/dev/null || true
+# the multi-step toggle: off, the page has no end fields and no --step-to; on, the end and --hops reach the command and
+# the search; off again, both leave (the values stay for the next time on); an example turns it on and fills it.
+# Regular expressions only, so nothing is sent
+printf '%s\n' 'def main():' '  helper()' 'def helper():' '  raise X' >"$tmp/m.py"
+$E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$tmp/m.py" >"$tmp/serve4.url" 2>/dev/null &
+serve=$!
+i=0; while [ ! -s "$tmp/serve4.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (multi-step) did not start"; sleep 0.05; done
+eq "$(node serve-page.mjs "$(cat "$tmp/serve4.url")")" "steps hidden: -e '/def main/'
+x=e:/def main/ hops=0.. -> 1 lines
+steps shown: -e '/def main/' --step-to
+steps shown: -e '/def main/' --step-to -e '/raise /' --hops=1..2
+x=e:/def main/|S:|e:/raise / hops=1..2 -> 2 lines
+steps hidden: -e '/def main/'
+x=e:/def main/ hops=1..2 -> 1 lines
+steps shown: -e '/def main/' --step-to -e '/raise /' --hops=1..2
+on true, 2 ends, steps shown: -e '/^ *def main/' --step-to -e '/raise /' -e '/sys\\.exit/'
+on true, 1 ends, steps shown: -e '/^ *def helper/' --step-to -e '/^ *def main/' --reverse
+x=e:/^ *def helper/|S:|e:/^ *def main/ hops=0.. -> 2 lines" "--serve: the multi-step toggle and its examples"
+kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 code 2 "--serve refuses -e" -- $J --serve -e cat "$F"
 code 2 "--serve refuses --format" -- $J --serve --format=html "$F"
 eq "$($J --serve=99999 "$F" 2>&1 | head -1 | cut -c1-30)" "sys1grep: --serve=99999: not a" "--serve: a bad port is an error"
