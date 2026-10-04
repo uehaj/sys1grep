@@ -841,6 +841,64 @@ tickets/a.txt-13-We will check it.
 - It needs a meaning (a regex, `!` or `-v` alone ranks nothing), and cannot be combined with `-c`, `-o` or `-q`.
   `--no-rank` turns off an earlier one, from `SYS1GREP_OPTS` say.
 
+### Finding the cause of a failed command
+
+A failed job's last error usually names a symptom (`214 accounts out of balance ... day-close aborted`), and the
+other `ERROR` / `WARN` lines are retries that recovered. The cause is often one plain `INFO` or `DEBUG` line far
+above. Asking for the symptom, or `-Q "why did the job fail"`, finds that noise: on the 30,000-line log of #156 it
+returned only recovered `ERROR` lines. Ask by kind of cause instead, and rank the results:
+
+```sh
+$ sys1grep -n --dedup --level strict --rank \
+    -e "a component, writer, job or feature was paused, disabled, skipped or put on hold" \
+    -e "a configuration, endpoint, region, credential or data source was changed or switched" \
+    -e "an input, file or table was empty, missing, or had fewer records or columns than expected" \
+    -e "a fallback or default value was used instead of the real one" \
+    job.log
+```
+
+Measured on 24 generated logs of failed jobs, six per kind of cause, 10,008 lines each, with these four meanings
+(`npm run cause-eval`, rows in `tests/cause-results.tsv`; an earlier version of the script wrote its 24 rows, and
+the `top 2 jev` column is filled only in the two rerun rows). Each search returned 366 to 464 results. The
+`--rank=match` column is not a separate run: it is recomputed from the `-p` columns of the `--rank` run, since
+`--rank=match` scores a result by the highest of them. That recomputation was checked against a real `--rank=match`
+run only on config-5, where the cause was not a result. A cause "not matched" may have been judged below `strict` or
+folded by `--dedup` into a like line; the rows do not tell the two apart.
+
+| cause | cause is result 1, `--rank` | cause is result 1, `--rank=match` | otherwise |
+|---|---|---|---|
+| a configuration, endpoint or credential switched | 5 of 6 | 5 of 6 | 1 not matched |
+| an input empty or short | 2 of 6 | 2 of 6 | 2 at results 62 (`match`: 343-371) and 81 (`match`: 191-219); 2 not matched |
+| a default used instead of the real value | 6 of 6 | 5 of 6 | `match`: 2-9 (one result above it, seven tied with it at 0.90) |
+| a line that never came (a start with no finish) | 0 of 6 | 0 of 6 | the start line never a result |
+
+A log cost about $0.088 (2.1M input tokens, 643 to 646 requests) and 16 to 17 s. `--rank` (`jev`) adds one question
+per result, about 3% more input tokens than `--rank=match` (one log run both ways; not recorded in the TSV). It put
+the cause higher than `--rank=match` on three logs and lower on none.
+
+When the top results look unrelated (rotations, refreshes, the final error itself), the cause is likely one of these:
+
+- **A line that states only a value**: `stock snapshot downloaded: 1204 bytes`, `input directory ... holds 2 files`,
+  `resolved db-primary.internal to 10.0.4.22 (replica-2)`. Nothing in the line says it is wrong, so no hypothesis
+  holds, nor did a meaning written from the final error
+  (`-e "the job connected to a read-only replica instead of the primary database"`). Search for the thing the error
+  names instead (`-e '/snapshot|replica/'`) and read the numbers.
+- **A line that never came**: a worker that claimed a shard and never finished it, a step or a migration that started
+  and never ended. On all six such logs the start line was not among the results. The top result was a routine line,
+  the final error, or once the previous run's `alias products switched to products-20260927`, whose 09-28
+  counterpart never came. A meaning for it
+  (`-e "a worker, step or upload started but never reported that it finished"`) put the final error first, not the
+  start, and `--dedup` can fold one start into a like one, since only the missing finish tells them apart. Compare
+  starts with finishes by eye or with grep.
+- **The score will not tell you**: where the cause was result 1 it scored 0.93 to 0.97 under `--rank`; on two logs
+  where it never matched, the top result scored 0.88 and 0.91.
+
+The follow-ups behind the first two points (key lines judged alone in a 31-line window, the meanings written from
+the error or for a missing finish) are in the description of PR #192; `tests` holds no way to rerun them.
+
+Every searched line goes to Jev (TypeSafe, or whatever `SYS1GREP_URL` names), and with `--summarize` the matching
+lines go to its TOOL's provider as well. Build logs and job logs often hold tokens, passwords and customer data.
+
 ### HTML templates (`--template`)
 
 `--rank --format=html` and `--summarize --format=html` fill in a template. Four come with sys1grep: `default`, `print` (black on white, serif,
