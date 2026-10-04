@@ -25,6 +25,7 @@
   "files": [
     "sys1grep.mjs",
     "serve.mjs",
+    "settings.mjs",
     "git-sys1grep.mjs",
     "README.md",
     "README.ja.md",

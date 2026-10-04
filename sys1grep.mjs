@@ -11,6 +11,7 @@ import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { format, parseArgs } from 'node:util';
+import { FIELDS, SETTINGS_FILE, SETTINGS_SHOWN, readSettings } from './settings.mjs';
 
 // Node 20 colors console.error red on a terminal (22 does not): stderr gets exactly what sys1grep writes.
 // A write error (EPIPE: the reader quit) is dropped, as console.error drops it, so it never turns into exit 2.
@@ -26,11 +27,16 @@ if (process.argv.slice(2, process.argv.indexOf('--') < 0 ? undefined : process.a
   await new Promise(() => {}); // the server keeps the process alive; Ctrl-C ends it
 }
 
-// Settings come from the environment; ~/.config/sys1grep/.env fills in what it lacks. Never ./.env: the current
-// directory may be an untrusted checkout, and its .env could point SYS1GREP_URL at a server that collects the key.
+// Settings come from the environment, then ~/.config/sys1grep/settings.json, then ~/.config/sys1grep/.env. Never
+// ./.env: the current directory may be an untrusted checkout, and its .env could point SYS1GREP_URL at a server that
+// collects the key. settings.json wins over .env so that a value saved there takes effect.
 // For one minor release (removed in 1.0.0, see #93): fall back to the old SEMGREP_* names and
 // ~/.config/semgrep/.env, printing one deprecation line to stderr each time a fallback is actually used.
 const deprecated = (was, now) => console.error(`sys1grep: ${was} is deprecated; use ${now}`);
+let settings;
+try { settings = readSettings() ?? {}; } catch (e) { die(`${SETTINGS_SHOWN}: ${e.message}`, false); }
+if ((settings.key || settings.summarizerKey) && statSync(SETTINGS_FILE).mode & 0o077)
+  console.error(`sys1grep: warning: ${SETTINGS_SHOWN} holds a key and others can read it; chmod 600 ${SETTINGS_SHOWN}`);
 // --verbose / --dry-run (#90) trace a setting's source back to here: a name in shellEnv came from the real
 // environment, one that only shows up after loadEnvFile came from envFile.
 const shellEnv = new Set(Object.keys(process.env));
@@ -40,20 +46,29 @@ let envFile = null;
 if (existsSync(newUserEnv)) { process.loadEnvFile(newUserEnv); envFile = newUserEnv; } // never overrides variables already set
 else if (existsSync(oldUserEnv)) { process.loadEnvFile(oldUserEnv); envFile = oldUserEnv; deprecated('~/.config/semgrep/.env', '~/.config/sys1grep/.env'); }
 const tildeEnvFile = envFile && envFile.replace(homedir(), '~');
-// A setting's source, for --verbose / --dry-run: the env var name that supplied it, plus the .env file
-// when it wasn't already in the real environment.
-const envLabel = name => (shellEnv.has(name) ? name : `${name}, ${tildeEnvFile}`);
-const fromEnv = name => { // { value, name }: SYS1GREP_<name>, falling back to SEMGREP_<name>
-  const newName = `SYS1GREP_${name}`, oldName = `SEMGREP_${name}`;
-  if (process.env[newName] !== undefined) return { value: process.env[newName], name: newName };
-  if (process.env[oldName] !== undefined) { deprecated(oldName, newName); return { value: process.env[oldName], name: oldName }; }
-  return { value: undefined, name: null };
+// A setting's source, for --verbose / --dry-run: { value, name, file }. name: the env var or settings.json field that
+// supplied it (null: none did); file: where it was written, null for the real environment.
+// envLabel: "NAME" or "NAME, FILE"; keyLabel the same as "NAME (FILE)", for the key lines.
+const envLabel = m => (m.file ? `${m.name}, ${m.file}` : m.name);
+const keyLabel = m => (m.file ? `${m.name} (${m.file})` : m.name);
+// The first set of SYS1GREP_<name>, SEMGREP_<name> (deprecated) and the other names given, as before settings.json;
+// settings.json's field comes in only where that one came from the .env file or was not set at all.
+const fromEnv = (name, ...more) => {
+  const n = [`SYS1GREP_${name}`, `SEMGREP_${name}`, ...more].find(v => process.env[v] !== undefined);
+  const field = Object.keys(FIELDS).find(f => FIELDS[f] === name);
+  if (!shellEnv.has(n) && settings[field] !== undefined) return { value: settings[field], name: field, file: SETTINGS_SHOWN };
+  if (n === undefined) return { value: undefined, name: null, file: null };
+  if (n.startsWith('SEMGREP_')) deprecated(n, `SYS1GREP_${name}`);
+  return { value: process.env[n], name: n, file: shellEnv.has(n) ? null : tildeEnvFile };
 };
-const envURL = fromEnv('URL'), envMODEL = fromEnv('MODEL'), envAPI_KEY = fromEnv('API_KEY'), envOPTS = fromEnv('OPTS'),
+const envURL = fromEnv('URL'), envMODEL = fromEnv('MODEL'), envAPI_KEY = fromEnv('API_KEY', 'TYPESAFE_API_KEY'), envOPTS = fromEnv('OPTS'),
   envSUMMARIZER = fromEnv('SUMMARIZER'), envSUMMARIZER_MODEL = fromEnv('SUMMARIZER_MODEL'), envSUMMARIZER_API_KEY = fromEnv('SUMMARIZER_API_KEY');
 const SYS1GREP_URL = envURL.value, SYS1GREP_MODEL = envMODEL.value, SYS1GREP_API_KEY = envAPI_KEY.value,
-  SYS1GREP_OPTS = envOPTS.value ?? '', SYS1GREP_SUMMARIZER = envSUMMARIZER.value, SYS1GREP_SUMMARIZER_MODEL = envSUMMARIZER_MODEL.value;
-const { TYPESAFE_API_KEY } = process.env;
+  SYS1GREP_SUMMARIZER = envSUMMARIZER.value, SYS1GREP_SUMMARIZER_MODEL = envSUMMARIZER_MODEL.value;
+// The default options: SYS1GREP_OPTS split on spaces, or settings.json's opts as they are. OPTS_NAME names them in
+// messages and in --verbose's "(SOURCE)" tags.
+const OPTS_NAME = envOPTS.file === SETTINGS_SHOWN ? 'settings.json opts' : 'SYS1GREP_OPTS';
+const optsArgs = Array.isArray(envOPTS.value) ? envOPTS.value : (envOPTS.value ?? '').split(/\s+/).filter(Boolean);
 
 // A bare --color means --color=auto (as in grep); parseArgs cannot express an optional value, so fill it in first.
 // --no-filename is grep's name for --no-with-filename, --null-data grep's name for -z.
@@ -124,7 +139,7 @@ const OPTIONS = {
 };
 // SYS1GREP_OPTS holds default options only: no meanings, no files, no --. It goes in front of the arguments, so the
 // command line wins (a later value counts; --no-X clears a flag).
-const defaults = SYS1GREP_OPTS.split(/\s+/).filter(Boolean).map(fill);
+const defaults = optsArgs.map(fill);
 // --step-to X (#163) is --step-to -e X, and so is --step-to=X; a bare --step-to (followed by an option) opens the end
 // expression for the -e / -a / -v / -Q after it. After --, every argument is a file. X, and the MEANING of -e / -a /
 // -v / -Q, may start with a dash ("--summarize hands the lines on"): an option holds no space, and is -- and a word or
@@ -150,8 +165,8 @@ try {
   optsInteractive = t.some(k => k.name === 'interactive' && !k.rawName.startsWith('--no-'));
   const command = k => k.name === 'install-templates' || (k.name === 'template' && k.value === 'list');
   const bad = t.find(k => k.kind !== 'option' || ['e', 'a', 'v', 'question', 'step-to', 'cached', 'untracked'].includes(k.name) || command(k));
-  if (bad) die(`SYS1GREP_OPTS: ${bad.kind !== 'option' ? `'${bad.value ?? '--'}' is not an option` : command(bad) ? `${bad.rawName}${bad.value === undefined ? '' : `=${bad.value}`} is not allowed (it does something instead of searching)` : ['cached', 'untracked'].includes(bad.name) ? `--${bad.name} is not allowed (what is searched goes on the command line)` : `${bad.name.length > 1 ? '--' : '-'}${bad.name} is not allowed (${bad.name === 'step-to' ? 'expressions' : 'meanings'} go on the command line)`}`);
-} catch (e) { die(`SYS1GREP_OPTS: ${e.message}`); }
+  if (bad) die(`${OPTS_NAME}: ${bad.kind !== 'option' ? `'${bad.value ?? '--'}' is not an option` : command(bad) ? `${bad.rawName}${bad.value === undefined ? '' : `=${bad.value}`} is not allowed (it does something instead of searching)` : ['cached', 'untracked'].includes(bad.name) ? `--${bad.name} is not allowed (what is searched goes on the command line)` : `${bad.name.length > 1 ? '--' : '-'}${bad.name} is not allowed (${bad.name === 'step-to' ? 'expressions' : 'meanings'} go on the command line)`}`);
+} catch (e) { die(`${OPTS_NAME}: ${e.message}`); }
 const { values: opt, positionals: files, tokens } = parseArgs({
   args: [...defaults, ...openStep(process.argv.slice(2)).map(fill)],
   options: OPTIONS,
@@ -166,7 +181,7 @@ for (const k of ['rank', 'summarize']) if (opt[k] === OFF) delete opt[k];
 // its last token is one of the `defaults` this run prepended.
 const optSrc = name => {
   const last = tokens.filter(k => k.kind === 'option' && k.name === name).at(-1);
-  return !last ? null : last.index < defaults.length ? 'SYS1GREP_OPTS' : '';
+  return !last ? null : last.index < defaults.length ? OPTS_NAME : '';
 };
 // --help: Japanese when the locale starts with ja, English otherwise
 const HELP_EN = `usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION [-a MEANING] [-v MEANING]... [FILE...]
@@ -407,14 +422,15 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
                file is kept. It and --template=list must stand alone, and are refused in SYS1GREP_OPTS
   --sys1-model=ID, --sys1-url=URL, --sys1-api-key=KEY
                the API settings, overriding SYS1GREP_MODEL, SYS1GREP_URL, SYS1GREP_API_KEY below.
-               A key on the command line shows up in ps and shell history; prefer ~/.config/sys1grep/.env
+               A key on the command line shows up in ps and shell history; prefer settings.json (below)
   -h, --help   this help (Japanese when LANG / LC_ALL / LC_MESSAGES starts with ja)
   -V, --version  print the version and exit
 
 Exit status: 0 matched / 1 no match / 2 error
   On 1, when lines were sent, stderr names the highest probability and its line (not with -q, --summarize, --step-to, or when only a negation failed)
 
-Environment (read from the environment, else from ~/.config/sys1grep/.env; ./.env is never read):
+Environment (read from the environment, else from ~/.config/sys1grep/settings.json, else from
+~/.config/sys1grep/.env; ./.env is never read):
   SYS1GREP_API_KEY    API key. Falls back to TYPESAFE_API_KEY. Get one at https://console.typesafe.ai/
   SYS1GREP_URL        endpoint (default https://api.typesafe.ai/v1/systemone). Any TypeSafe-compatible
                      /v1/systemone works, e.g. https://openrouter.ai/api/v1/systemone
@@ -429,7 +445,11 @@ Environment (read from the environment, else from ~/.config/sys1grep/.env; ./.en
                      --no-X turns a boolean flag off (--color takes --color=never). Options only: no
                      meanings, files or --. e.g. SYS1GREP_OPTS='--level strict -n'. Scripts: SYS1GREP_OPTS= sys1grep
   The key goes to SYS1GREP_URL, whatever it is. With SYS1GREP_URL set and no key, no auth header is sent.
-  e.g.  mkdir -p ~/.config/sys1grep && echo 'SYS1GREP_API_KEY=your-key' > ~/.config/sys1grep/.env`;
+  ~/.config/sys1grep/settings.json: a JSON object, every field optional, each the default for one variable:
+    url key model opts summarizer summarizerModel summarizerKey = SYS1GREP_URL SYS1GREP_API_KEY SYS1GREP_MODEL
+    SYS1GREP_OPTS SYS1GREP_SUMMARIZER SYS1GREP_SUMMARIZER_MODEL SYS1GREP_SUMMARIZER_API_KEY. opts is an array, one
+    argument each. A variable that is set wins, even empty (SYS1GREP_OPTS= drops opts). Keep the file at 0600.
+  e.g.  {"key": "your-key", "opts": ["--level", "strict", "-n"]}`;
 const HELP_JA = `usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION [-a MEANING] [-v MEANING]... [FILE...]
        sys1grep [OPTION]... -e START1 [-e START2]... --step-to END1 [-e END2]... [FILE...]
 jev (TypeSafe System One) で意味的にマッチする行を探す grep。FILE 省略時は stdin。
@@ -661,14 +681,15 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                SYS1GREP_OPTS には書けない
   --sys1-model=ID, --sys1-url=URL, --sys1-api-key=KEY
                API の設定。下の SYS1GREP_MODEL / SYS1GREP_URL / SYS1GREP_API_KEY より優先。
-               コマンドラインのキーは ps やシェル履歴に残るので、なるべく ~/.config/sys1grep/.env に書く
+               コマンドラインのキーは ps やシェル履歴に残るので、なるべく settings.json (下) に書く
   -h, --help   このヘルプ (LANG / LC_ALL / LC_MESSAGES が ja 以外なら英語)
   -V, --version  バージョンを表示して終了
 
 終了コード: 一致あり 0 / なし 1 / エラー 2 (引数・読めないファイル・API 障害)
   行を送って 1 のときは、最も高かった確率とその行を stderr に出す (-q・--summarize・--step-to と、否定だけで落ちたときは出さない)
 
-環境変数 (環境、無ければ ~/.config/sys1grep/.env から読む。./.env は読まない):
+環境変数 (環境、無ければ ~/.config/sys1grep/settings.json、それも無ければ ~/.config/sys1grep/.env から読む。
+./.env は読まない):
   SYS1GREP_API_KEY    API キー。無ければ TYPESAFE_API_KEY。取得は https://console.typesafe.ai/
   SYS1GREP_URL        送信先 (既定 https://api.typesafe.ai/v1/systemone)。TypeSafe 互換の
                      /v1/systemone なら可。例 https://openrouter.ai/api/v1/systemone
@@ -684,7 +705,11 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                      オプションだけで、意味・ファイル・-- は書けない。例 SYS1GREP_OPTS='--level strict -n'。
                      スクリプトからは SYS1GREP_OPTS= sys1grep と空にして呼ぶ
   キーは SYS1GREP_URL の先へそのまま送られる。SYS1GREP_URL 指定時にキーが無ければ認証ヘッダを付けない。
-  例:  mkdir -p ~/.config/sys1grep && echo 'SYS1GREP_API_KEY=your-key' > ~/.config/sys1grep/.env`;
+  ~/.config/sys1grep/settings.json: JSON のオブジェクト。どの項目も省略でき、それぞれ 1 つの環境変数の既定値になる:
+    url key model opts summarizer summarizerModel summarizerKey = SYS1GREP_URL SYS1GREP_API_KEY SYS1GREP_MODEL
+    SYS1GREP_OPTS SYS1GREP_SUMMARIZER SYS1GREP_SUMMARIZER_MODEL SYS1GREP_SUMMARIZER_API_KEY。opts は配列で、
+    1 要素が 1 引数。環境変数が設定されていれば、空でもそちらが勝つ (SYS1GREP_OPTS= で opts を外す)。権限は 0600 に
+  例:  {"key": "your-key", "opts": ["--level", "strict", "-n"]}`;
 if (opt.version) {
   console.log(`sys1grep ${JSON.parse(readFileSync(new URL('package.json', import.meta.url), 'utf8')).version}`);
   process.exit(0);
@@ -733,7 +758,7 @@ const customUrl = opt['sys1-url'] || SYS1GREP_URL;
 const apiUrl = customUrl || 'https://api.typesafe.ai/v1/systemone';
 const apiHost = (() => { try { return new URL(apiUrl).host; } catch { die(`not a URL: ${apiUrl} (--sys1-url / SYS1GREP_URL)`); } })();
 const model = opt['sys1-model'] || SYS1GREP_MODEL || 'jev-latest';
-const credential = opt['sys1-api-key'] || SYS1GREP_API_KEY || TYPESAFE_API_KEY;
+const credential = opt['sys1-api-key'] || SYS1GREP_API_KEY;
 if (credential && new URL(apiUrl).protocol === 'http:' && !/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(apiHost))
   console.error(`sys1grep: warning: the API key goes to ${apiHost} over plain http`);
 // --dry-run prints the files and the requests that would be sent, to stdout, and sends nothing. --verbose prints
@@ -832,7 +857,7 @@ if (opt.rank !== undefined) {
 // A compatible local server may need no key; the TypeSafe default always does. Regex-only queries never call the API.
 // --unit=sentence-by-jev asks Jev where wrapped lines join; with regex terms only, nothing else is sent, so rules decide.
 if (opt.unit === 'sentence-by-jev' && !hasMeanings) opt.unit = 'sentence-by-rule';
-if (hasMeanings && !credential && !customUrl) die('SYS1GREP_API_KEY is not set. Export it or put it in ~/.config/sys1grep/.env');
+if (hasMeanings && !credential && !customUrl) die(`SYS1GREP_API_KEY is not set. Export it or put it in ${SETTINGS_SHOWN} as "key"`);
 
 const levels = { loose: [0.3, 0.7], normal: [0.5, 0.5], strict: [0.7, 0.3] };
 const level = Object.hasOwn(levels, opt.level) && levels[opt.level];
@@ -1078,27 +1103,19 @@ const wanted = (path, st) => {
 
 // --verbose / --dry-run (#90): the settings this run actually used, and where each not typed on the command
 // line came from, so a result that surprises can be traced back to its source. The key's value never prints,
-// only which option or variable supplied it. optTag: the "(SYS1GREP_OPTS)" suffix options: lists a setting
+// only which option or variable supplied it. optTag: the "(SYS1GREP_OPTS)" or "(settings.json opts)" suffix options: lists a setting
 // with, or '' for the command line or a default (this line only marks the one source that isn't obvious).
-const optTag = name => (optSrc(name) === 'SYS1GREP_OPTS' ? ' (SYS1GREP_OPTS)' : '');
+const optTag = name => (optSrc(name) === OPTS_NAME ? ` (${OPTS_NAME})` : '');
 if (logPlan) {
-  const envTag = (cliVal, meta) => (cliVal ? '' : ` (${meta.name === null ? 'default' : envLabel(meta.name)})`);
-  // key: the name only; a value from the .env file gets the file in parens, same as elsewhere, but the value
-  // itself is never shown, so a real-environment variable gets no parens at all (it needs no further source).
-  const keyFileTag = name => (shellEnv.has(name) ? '' : ` (${tildeEnvFile})`);
+  const envTag = (cliVal, meta) => (cliVal ? '' : ` (${meta.name === null ? 'default' : envLabel(meta)})`);
   logPlan(`endpoint ${apiHost}${new URL(apiUrl).pathname}${envTag(opt['sys1-url'], envURL)}, model ${model}${envTag(opt['sys1-model'], envMODEL)}`);
-  if (hasMeanings) {
-    if (opt['sys1-api-key']) logPlan('key: --sys1-api-key');
-    else if (envAPI_KEY.name) logPlan(`key: ${envAPI_KEY.name}${keyFileTag(envAPI_KEY.name)}`);
-    else if (TYPESAFE_API_KEY !== undefined) logPlan(`key: TYPESAFE_API_KEY${keyFileTag('TYPESAFE_API_KEY')}`);
-    else logPlan('key: none (no auth header sent)');
-  }
-  // --sys1-api-key's value is masked here too: SYS1GREP_OPTS is not on the rejected-option list (only
-  // e/a/v/question/summarize are), so a key placed there would otherwise leak in full, unlike the option
-  // typed on the command line, which only ever shows as its name (line above).
-  if (SYS1GREP_OPTS) {
-    const masked = SYS1GREP_OPTS.split(/\s+/).filter(Boolean).map((tok, i, toks) => (toks[i - 1] === '--sys1-api-key' ? '***' : tok.replace(/^--sys1-api-key=.*$/, '--sys1-api-key=***'))).join(' ');
-    logPlan(`${envOPTS.name}: ${masked}`);
+  // key: the name and file only, never the value
+  if (hasMeanings) logPlan(`key: ${opt['sys1-api-key'] ? '--sys1-api-key' : envAPI_KEY.name ? keyLabel(envAPI_KEY) : 'none (no auth header sent)'}`);
+  // --sys1-api-key's value is masked here too: the default options may hold it (they refuse only meanings and the
+  // like), and it would otherwise leak in full, unlike the option typed on the command line (line above).
+  if (optsArgs.length) {
+    const masked = optsArgs.map((tok, i, toks) => (toks[i - 1] === '--sys1-api-key' ? '***' : tok.replace(/^--sys1-api-key=.*$/, '--sys1-api-key=***'))).join(' ');
+    logPlan(`${envOPTS.file === SETTINGS_SHOWN ? OPTS_NAME : envOPTS.name}: ${masked}`);
   }
   const thresholds = optSrc('t') === null && optSrc('T') === null
     ? `--level ${opt.level}${optTag('level')} = -t ${tPos} -T ${tNeg}`
@@ -1120,16 +1137,16 @@ if (logPlan) {
   ].filter(Boolean);
   logPlan(`options: ${options.join(', ')}`);
   if (summarizer) {
-    const raw = [...SYS1GREP_OPTS.split(/\s+/), ...process.argv.slice(2)].filter(a => a === '--summarize' || a.startsWith('--summarize='));
+    const raw = [...optsArgs, ...process.argv.slice(2)].filter(a => a === '--summarize' || a.startsWith('--summarize='));
     const bare = raw.at(-1) === '--summarize';
-    const toolTag = bare ? ` (${envSUMMARIZER.name ? envLabel(envSUMMARIZER.name) : 'default'})` : '';
+    const toolTag = bare ? ` (${envSUMMARIZER.name ? envLabel(envSUMMARIZER) : 'default'})` : '';
     // The model: SYS1GREP_SUMMARIZER_MODEL, else claude's haiku, else llm's / pi's own default (the HTTP servers
     // have none and died above without one). The summarizer key, like Jev's, by name only, and only for a URL TOOL,
     // the one it goes to. --summarize-prompt by its source only: its text is in the argv line, or the POST body.
-    const summModel = envSUMMARIZER_MODEL.name ? `${SYS1GREP_SUMMARIZER_MODEL} (${envLabel(envSUMMARIZER_MODEL.name)})`
+    const summModel = envSUMMARIZER_MODEL.name ? `${SYS1GREP_SUMMARIZER_MODEL} (${envLabel(envSUMMARIZER_MODEL)})`
       : opt.summarize === 'claude' ? 'haiku (default)' : `(${opt.summarize}'s default)`;
     const keyTag = Array.isArray(summarizer) || !/^https?:\/\//.test(opt.summarize) ? ''
-      : envSUMMARIZER_API_KEY.name ? `, key ${envSUMMARIZER_API_KEY.name}${keyFileTag(envSUMMARIZER_API_KEY.name)}` : ', key none (no auth header sent)';
+      : envSUMMARIZER_API_KEY.name ? `, key ${keyLabel(envSUMMARIZER_API_KEY)}` : ', key none (no auth header sent)';
     const promptTag = opt['summarize-prompt'] ? `, --summarize-prompt${optTag('summarize-prompt')}` : '';
     logPlan(`summarize: ${opt.summarize}${toolTag}${optTag('summarize')}, model ${summModel}${keyTag}${promptTag}`);
     logPlan(`summarize: ${Array.isArray(summarizer) ? summarizer.map(a => (/^[\w./=:-]+$/.test(a) ? a : JSON.stringify(a))).join(' ')
@@ -1485,13 +1502,13 @@ const stdinBuf = found.includes('-') ? readFileSync(0) : null;
 // Nothing is sent before the answer. The answer comes from /dev/tty, so stdin can still carry the data.
 if (opt.interactive && !dry) {
   let tty;
-  try { tty = openSync('/dev/tty', 'r+'); } catch { die(`-i needs a terminal to ask on${optsInteractive ? ' (-i is in SYS1GREP_OPTS; from a script, run SYS1GREP_OPTS= sys1grep ...)' : ''}`, !optsInteractive); }
+  try { tty = openSync('/dev/tty', 'r+'); } catch { die(`-i needs a terminal to ask on${optsInteractive ? ` (-i is in ${OPTS_NAME}; from a script, run SYS1GREP_OPTS= sys1grep ...)` : ''}`, !optsInteractive); }
   const plan = spawnSync(process.execPath, [...process.execArgv, process.argv[1], '--dry-run', ...process.argv.slice(2)], { input: stdinBuf ?? '', encoding: 'utf8', maxBuffer: Infinity });
   if (plan.status !== 0 && plan.status !== 2) { process.stderr.write(plan.stderr); process.exit(2); } // 2: a file could not be read
   // A file that could not be read shows up only while reading, in the dry run: say so next to the question. What
   // this process already printed (the file list's warnings, the option warnings) is not repeated.
   const errors = plan.stderr.split('\n').filter(l => l.startsWith('sys1grep: ') && !l.startsWith('sys1grep: warning: ') && !l.includes(' is deprecated; use ') && !warned.includes(l));
-  const shown = [...plan.stdout.split('\n').filter(l => /^sys1grep: (file |dry run: |walk |summarize: |rank: |endpoint |key: |options: |SYS1GREP_OPTS: |SEMGREP_OPTS: )/.test(l)), ...errors].map(safe);
+  const shown = [...plan.stdout.split('\n').filter(l => /^sys1grep: (file |dry run: |walk |summarize: |rank: |endpoint |key: |options: |SYS1GREP_OPTS: |SEMGREP_OPTS: |settings\.json opts: )/.test(l)), ...errors].map(safe);
   warned.push(...errors); // its scope lines among them: not printed again after the answer
   if (!/^sys1grep: dry run: 0 requests/.test(shown.findLast(l => l.startsWith('sys1grep: dry run: ')))) {
     writeSync(tty, `${shown.join('\n')}\nSearch, sending the above${opt.rank === 'jev' ? ', then a question per result' : ''}${summarizer ? `, then the matching lines to ${opt.summarize}` : ''}? [y/N] `);
