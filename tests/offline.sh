@@ -301,6 +301,7 @@ eq "$($J --dedup=always -n -e 'usage 91 @k:path' "$tmp/folded.txt" | nums)" "1 2
 reset; $J -e cat "$F" >/dev/null; eq "$(stat auth)" "null" "no key, no authorization header"
 reset; $E SYS1GREP_URL=$base/v1 SYS1GREP_API_KEY=k1 node ../sys1grep.mjs -e cat "$F" >/dev/null; eq "$(stat auth)" "Bearer k1" "SYS1GREP_API_KEY"
 reset; $E SYS1GREP_URL=$base/v1 TYPESAFE_API_KEY=k2 node ../sys1grep.mjs -e cat "$F" >/dev/null; eq "$(stat auth)" "Bearer k2" "TYPESAFE_API_KEY fallback"
+reset; $E SYS1GREP_URL=$base/v1 TYPESAFE_API_KEY=k2 SYS1GREP_API_KEY= node ../sys1grep.mjs -e cat "$F" >/dev/null; eq "$(stat auth)" "Bearer k2" "SYS1GREP_API_KEY set but empty still falls through to TYPESAFE_API_KEY"
 code 2 "SYS1GREP_URL not a URL" -- $E SYS1GREP_URL=nope node ../sys1grep.mjs -e cat "$F"
 code 2 "the TypeSafe default needs a key" -- $E node ../sys1grep.mjs -e cat "$F"
 # --sys1-*: each overrides its environment variable
@@ -345,6 +346,7 @@ reset; ws '{"key":"k5","model":"m5"}' $E SYS1GREP_URL=$base/v1 SYS1GREP_API_KEY=
 eq "$(stat auth) $(stat model)" "Bearer k1 m1" "the environment wins over settings.json"
 reset; ws '{"key":"k5"}' $J -e cat "$F" >/dev/null; eq "$(stat auth)" "Bearer k5" "settings.json's key goes to SYS1GREP_URL"
 reset; ws '{"key":"k5"}' $E SYS1GREP_URL=$base/v1 TYPESAFE_API_KEY=k2 node ../sys1grep.mjs -e cat "$F" >/dev/null; eq "$(stat auth)" "Bearer k2" "TYPESAFE_API_KEY, from the environment, wins over settings.json"
+reset; ws '{"key":"k5"}' $E SYS1GREP_URL=$base/v1 SYS1GREP_API_KEY= node ../sys1grep.mjs -e cat "$F" >/dev/null; eq "$(stat auth)" "Bearer k5" "SYS1GREP_API_KEY set but empty falls through to settings.json's key"
 reset; ws '{"key":"k5","url":"nope"}' $J --sys1-api-key=k3 -e cat "$F" >/dev/null; eq "$(stat auth)" "Bearer k3" "--sys1-api-key wins over settings.json; SYS1GREP_URL over its url"
 eq "$(ws '{"opts":["-H"]}' $ES SYS1GREP_URL=$base/v1 node ../sys1grep.mjs -e cat "$F" | head -1)" "$F:cat" "settings.json opts"
 eq "$(ws '{"opts":["-H"]}' $ES SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --no-filename -e cat "$F" | head -1)" "cat" "the command line wins over settings.json opts"
@@ -367,7 +369,10 @@ echo "$out" | grep -qF 'options: --level strict (settings.json opts) = ' || fail
 # a broken file stops the search, naming the file; nothing is sent
 reset; code 2 "settings.json: not JSON" -- ws '{"url":' $J -e cat "$F"; eq "$(stat count)" "0" "a broken settings.json sends nothing"
 eq "$(ws '{"key":"sekrit9",}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: not valid JSON" "a broken settings.json is named, its text not quoted"
-eq "$(ws '{"apikey":"sekrit9"}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: unknown field apikey (known: url, key, model, opts, summarizer, summarizerModel, summarizerKey)" "settings.json: an unknown field"
+eq "$(ws '{"apikey":"sekrit9"}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: warning: ~/.config/sys1grep/settings.json: unknown field apikey (known: url, key, model, opts, summarizer, summarizerModel, summarizerKey); ignored" "settings.json: an unknown field warns and is ignored, the rest still runs"
+eq "$(ws '{"apikey":"sekrit9"}' $J -n -e cat "$F" | nums)" "1 4 " "settings.json: an unknown field does not stop the search"
+eq "$(ws '{"apikey":"x"}' $E LANG=C node ../sys1grep.mjs --help 2>&1 >/dev/null | head -1)" "sys1grep: warning: ~/.config/sys1grep/settings.json: unknown field apikey (known: url, key, model, opts, summarizer, summarizerModel, summarizerKey); ignored" "settings.json: an unknown field still lets --help run"
+ws '{"apikey":"x"}' $E LANG=C node ../sys1grep.mjs --help >/dev/null 2>/dev/null; eq "$?" "0" "--help still exits 0 with an unknown field in settings.json"
 eq "$(ws '{"opts":"-n"}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: opts must be an array of strings" "settings.json: opts as a string"
 eq "$(ws '{"key":5}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: key must be a string" "settings.json: a wrong type, no value shown"
 eq "$(ws '[]' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: not a JSON object" "settings.json: not an object"

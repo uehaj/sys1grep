@@ -245,7 +245,7 @@ Then give it an API key from the [TypeSafe console](https://console.typesafe.ai/
 ```sh
 export SYS1GREP_API_KEY=your-key                       # environment variable
 # per user: ~/.config/sys1grep/settings.json (mkdir -p first; keep it at 0600)
-echo '{"key": "your-key"}' > ~/.config/sys1grep/settings.json && chmod 600 ~/.config/sys1grep/settings.json
+(umask 077; echo '{"key": "your-key"}' > ~/.config/sys1grep/settings.json)
 ```
 
 Variables already in the environment win; otherwise `~/.config/sys1grep/settings.json` fills them in, one field per
@@ -261,8 +261,9 @@ variable:
 | `summarizerModel` | `SYS1GREP_SUMMARIZER_MODEL` |
 | `summarizerKey` | `SYS1GREP_SUMMARIZER_API_KEY` |
 
-Every field is optional. A field the file does not know, or a value of the wrong type, is an error, as is a file that
-is not JSON. A file that holds a key and that others can read gets a warning. `~/.config/sys1grep/.env` (`NAME=value`
+Every field is optional. A value of the wrong type is an error, as is a file that is not JSON. A field the file does
+not know only warns (on stderr, naming the field) and is ignored, so an older sys1grep keeps working once a newer one
+adds a field. A file that holds a key and that others can read gets a warning. `~/.config/sys1grep/.env` (`NAME=value`
 lines) still works, below settings.json: a value in settings.json wins over the same variable there. A `.env` in the current
 directory is never read: it may belong to a repository you just cloned, and could send your key elsewhere through
 `SYS1GREP_URL`. For per-project settings, load a file yourself: `node --env-file=.env "$(command -v sys1grep)" ...`.
