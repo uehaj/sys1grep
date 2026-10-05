@@ -233,7 +233,7 @@ npx @uehaj/sys1grep -n -e "顧客が怒っている、または不満を持っ�
 ```sh
 export SYS1GREP_API_KEY=your-key                       # 環境変数
 # ユーザー単位: ~/.config/sys1grep/settings.json (先に mkdir -p。権限は 0600 に)
-echo '{"key": "your-key"}' > ~/.config/sys1grep/settings.json && chmod 600 ~/.config/sys1grep/settings.json
+(umask 077; echo '{"key": "your-key"}' > ~/.config/sys1grep/settings.json)
 ```
 
 環境変数が優先で、足りない分は `~/.config/sys1grep/settings.json` から補います。項目は環境変数 1 つに 1 つです。
@@ -248,8 +248,9 @@ echo '{"key": "your-key"}' > ~/.config/sys1grep/settings.json && chmod 600 ~/.co
 | `summarizerModel` | `SYS1GREP_SUMMARIZER_MODEL` |
 | `summarizerKey` | `SYS1GREP_SUMMARIZER_API_KEY` |
 
-どの項目も省略できます。知らない項目、型の違う値、JSON でないファイルはエラーです。キーを含むファイルを他人が
-読める権限にしていると警告します。`~/.config/sys1grep/.env`（`名前=値` の行）も引き続き読みますが、settings.json より
+どの項目も省略できます。型の違う値、JSON でないファイルはエラーです。知らない項目は警告（stderr に項目名を出す）
+だけで無視し、処理は続けます。新しいバージョンが項目を追加しても、古い sys1grep がそのまま動くようにするためです。
+キーを含むファイルを他人が読める権限にしていると警告します。`~/.config/sys1grep/.env`（`名前=値` の行）も引き続き読みますが、settings.json より
 下で、同じ変数なら settings.json の値が勝ちます。カレントディレクトリの `.env` は読みません。
 clone したばかりのリポジトリのものかもしれず、`SYS1GREP_URL` を通じてキーを別のサーバへ送らせ得るからです。
 プロジェクト単位の設定は、自分で読み込ませてください: `node --env-file=.env "$(command -v sys1grep)" ...`。

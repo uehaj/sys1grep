@@ -35,7 +35,7 @@ if (process.argv.slice(2, process.argv.indexOf('--') < 0 ? undefined : process.a
 const deprecated = (was, now) => console.error(`sys1grep: ${was} is deprecated; use ${now}`);
 let settings;
 try { settings = readSettings() ?? {}; } catch (e) { die(`${SETTINGS_SHOWN}: ${e.message}`, false); }
-if ((settings.key || settings.summarizerKey) && statSync(SETTINGS_FILE).mode & 0o077)
+if (process.platform !== 'win32' && (settings.key || settings.summarizerKey) && statSync(SETTINGS_FILE).mode & 0o077)
   console.error(`sys1grep: warning: ${SETTINGS_SHOWN} holds a key and others can read it; chmod 600 ${SETTINGS_SHOWN}`);
 // --verbose / --dry-run (#90) trace a setting's source back to here: a name in shellEnv came from the real
 // environment, one that only shows up after loadEnvFile came from envFile.
@@ -52,10 +52,13 @@ const tildeEnvFile = envFile && envFile.replace(homedir(), '~');
 const envLabel = m => (m.file ? `${m.name}, ${m.file}` : m.name);
 const keyLabel = m => (m.file ? `${m.name} (${m.file})` : m.name);
 // The first set of SYS1GREP_<name>, SEMGREP_<name> (deprecated) and the other names given, as before settings.json;
-// settings.json's field comes in only where that one came from the .env file or was not set at all.
+// settings.json's field comes in only where that one came from the .env file or was not set at all. An env var set
+// to '' counts as unset here (main's SYS1GREP_API_KEY || TYPESAFE_API_KEY did the same), so it falls through to the
+// next name and then to settings.json, except OPTS: SYS1GREP_OPTS= is documented to still drop settings.json's opts.
 const fromEnv = (name, ...more) => {
-  const n = [`SYS1GREP_${name}`, `SEMGREP_${name}`, ...more].find(v => process.env[v] !== undefined);
   const field = Object.keys(FIELDS).find(f => FIELDS[f] === name);
+  const isSet = v => process.env[v] !== undefined && (field === 'opts' || process.env[v] !== '');
+  const n = [`SYS1GREP_${name}`, `SEMGREP_${name}`, ...more].find(isSet);
   if (!shellEnv.has(n) && settings[field] !== undefined) return { value: settings[field], name: field, file: SETTINGS_SHOWN };
   if (n === undefined) return { value: undefined, name: null, file: null };
   if (n.startsWith('SEMGREP_')) deprecated(n, `SYS1GREP_${name}`);
@@ -448,7 +451,8 @@ Environment (read from the environment, else from ~/.config/sys1grep/settings.js
   ~/.config/sys1grep/settings.json: a JSON object, every field optional, each the default for one variable:
     url key model opts summarizer summarizerModel summarizerKey = SYS1GREP_URL SYS1GREP_API_KEY SYS1GREP_MODEL
     SYS1GREP_OPTS SYS1GREP_SUMMARIZER SYS1GREP_SUMMARIZER_MODEL SYS1GREP_SUMMARIZER_API_KEY. opts is an array, one
-    argument each. A variable that is set wins, even empty (SYS1GREP_OPTS= drops opts). Keep the file at 0600.
+    argument each. A variable set to empty counts as unset and falls through, except SYS1GREP_OPTS=, which still
+    drops opts. Keep the file at 0600.
   e.g.  {"key": "your-key", "opts": ["--level", "strict", "-n"]}`;
 const HELP_JA = `usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION [-a MEANING] [-v MEANING]... [FILE...]
        sys1grep [OPTION]... -e START1 [-e START2]... --step-to END1 [-e END2]... [FILE...]
@@ -708,7 +712,7 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
   ~/.config/sys1grep/settings.json: JSON のオブジェクト。どの項目も省略でき、それぞれ 1 つの環境変数の既定値になる:
     url key model opts summarizer summarizerModel summarizerKey = SYS1GREP_URL SYS1GREP_API_KEY SYS1GREP_MODEL
     SYS1GREP_OPTS SYS1GREP_SUMMARIZER SYS1GREP_SUMMARIZER_MODEL SYS1GREP_SUMMARIZER_API_KEY。opts は配列で、
-    1 要素が 1 引数。環境変数が設定されていれば、空でもそちらが勝つ (SYS1GREP_OPTS= で opts を外す)。権限は 0600 に
+    1 要素が 1 引数。環境変数は空だと未設定扱いでこの先へ進むが、SYS1GREP_OPTS= だけは空のまま勝ち、opts を外す。権限は 0600 に
   例:  {"key": "your-key", "opts": ["--level", "strict", "-n"]}`;
 if (opt.version) {
   console.log(`sys1grep ${JSON.parse(readFileSync(new URL('package.json', import.meta.url), 'utf8')).version}`);

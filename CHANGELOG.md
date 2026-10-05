@@ -8,10 +8,12 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 ### Added
 - `~/.config/sys1grep/settings.json` holds the settings as JSON, one optional field per variable: `url`, `key`,
   `model`, `opts` (an array, one argument each), `summarizer`, `summarizerModel`, `summarizerKey`. The command line
-  wins, then the environment (a variable set even to empty wins: `SYS1GREP_OPTS=` still drops the default options),
-  then settings.json, then `~/.config/sys1grep/.env`, then the defaults. Every environment variable works as before.
-  An unknown field, a wrong type or a file that is not JSON is an error naming the file and the field, never a value;
-  a key in a file others can read gets a warning. `--verbose` / `--dry-run` name a value's field and the file
+  wins, then the environment, then settings.json, then `~/.config/sys1grep/.env`, then the defaults. An environment
+  variable set to empty counts as unset and falls through to settings.json, except `SYS1GREP_OPTS=`, which still
+  drops the default options. Every environment variable works as before.
+  A wrong type or a file that is not JSON is an error naming the file and the field, never a value; an unknown field
+  only warns (so an older sys1grep keeps working once a newer one adds a field) and is ignored. A key in a file
+  others can read gets a warning. `--verbose` / `--dry-run` name a value's field and the file
   (`key: key (~/.config/sys1grep/settings.json)`, `(settings.json opts)`). The no-key error points at the file.
 - `--serve`: a Settings panel edits `~/.config/sys1grep/settings.json` and saves it for the next search. Each field says
   where the value in effect comes from (command line, environment variable, settings.json, `.env`, default), so a save
