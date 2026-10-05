@@ -11,7 +11,8 @@ import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { format, parseArgs } from 'node:util';
-import { FIELDS, SETTINGS_FILE, SETTINGS_SHOWN, readSettings } from './settings.mjs';
+import { FIELDS, SETTINGS_FILE, SETTINGS_SHOWN, maskOpts, readSettings } from './settings.mjs';
+import { OFF, OPTIONS, fill, parseOpts } from './options.mjs';
 
 // Node 20 colors console.error red on a terminal (22 does not): stderr gets exactly what sys1grep writes.
 // A write error (EPIPE: the reader quit) is dropped, as console.error drops it, so it never turns into exit 2.
@@ -73,76 +74,9 @@ const SYS1GREP_URL = envURL.value, SYS1GREP_MODEL = envMODEL.value,
 const OPTS_NAME = envOPTS.file === SETTINGS_SHOWN ? 'settings.json opts' : 'SYS1GREP_OPTS';
 const optsArgs = Array.isArray(envOPTS.value) ? envOPTS.value : (envOPTS.value ?? '').split(/\s+/).filter(Boolean);
 
-// A bare --color means --color=auto (as in grep); parseArgs cannot express an optional value, so fill it in first.
-// --no-filename is grep's name for --no-with-filename, --null-data grep's name for -z.
-// --no-rank / --no-summarize: parseArgs negates booleans only, so they become a value no argument can hold (a NUL),
-// cleared below; the later one wins, as for any option.
-const OFF = '\0';
-const fill = a => (a === '--color' ? '--color=auto' : a === '--null-data' ? '-z' : a === '--no-filename' ? '--no-with-filename'
-  : a === '--summarize' ? `--summarize=${SYS1GREP_SUMMARIZER || 'claude'}` : a === '--dedup' ? '--dedup=always' : a === '--rank' ? '--rank=jev'
-  : a === '--no-rank' ? `--rank=${OFF}` : a === '--no-summarize' ? `--summarize=${OFF}` : a);
-const OPTIONS = {
-  e: { type: 'string', multiple: true },
-  a: { type: 'string', multiple: true },
-  v: { type: 'string', multiple: true },
-  question: { type: 'string', multiple: true, short: 'Q' },
-  level: { type: 'string', default: 'normal' }, // strictness preset: loose / normal / strict
-  r: { type: 'boolean', default: false }, // recurse into directories
-  cached: { type: 'boolean', default: false }, // git sys1grep only: search the index instead of the working tree
-  untracked: { type: 'boolean', default: false }, // git sys1grep only: also search untracked files (.gitignore still applies)
-  l: { type: 'boolean', default: false }, // print only matching file names
-  'with-filename': { type: 'boolean', short: 'H' }, // prefix file names even for one file; --no-filename: never
-  t: { type: 'string' }, // positive threshold: match when p >= t (default from preset)
-  T: { type: 'string' }, // negative threshold: "not X" when p < T (default from preset)
-  chunk: { type: 'string', default: '30' }, // lines per request
-  c: { type: 'boolean', default: false }, // count of matching lines per file (grep -c)
-  quiet: { type: 'boolean', short: 'q', default: false }, // print nothing, exit status only (grep -q)
-  j: { type: 'string', default: '8' }, // concurrent requests
-  A: { type: 'string' }, // N lines of trailing context
-  B: { type: 'string' }, // N lines of leading context
-  C: { type: 'string' }, // N lines of context on both sides
-  n: { type: 'boolean', default: false }, // line numbers
-  z: { type: 'boolean', default: false }, // records are NUL-terminated, on input and output (grep -z); --unit=zero
-  unit: { type: 'string', default: 'line' }, // line / zero / sentence-by-jev / sentence-by-rule
-  o: { type: 'boolean', default: false }, // with --unit=sentence-by-*, print only the matching sentences (grep -o)
-  p: { type: 'boolean', default: false }, // print each meaning's probability
-  dedup: { type: 'string', default: 'never' }, // auto|always|never: judge one representative per template, reuse its answer
-  rank: { type: 'string' }, // jev|match: print the results best first, scored by Jev's answer on each or by its best match
-  // multi-step matching (#163): the expression before --step-to finds the start, the one after it the end
-  'step-to': { type: 'boolean', multiple: true },
-  edges: { type: 'string' }, // FILE: the edges to walk, one per line; default: the calls between functions
-  reverse: { type: 'boolean', default: false }, // walk the edges backwards
-  hops: { type: 'string', default: '0..' }, // N, M..N or M..: the hops an end may be at
-  'dry-run': { type: 'boolean', default: false }, // print the files and requests, send nothing
-  verbose: { type: 'boolean', default: false }, // print the files and requests to stderr while searching
-  interactive: { type: 'boolean', short: 'i', default: false }, // show what --dry-run would send, search on a yes
-  yes: { type: 'boolean', short: 'y', default: false }, // skip the size/cost guard's question, answering yes (#58)
-  'max-columns': { type: 'string', short: 'M' }, // a unit past this many characters is skipped (rg's -M/--max-columns)
-  'max-filesize': { type: 'string' }, // a target past this size (K/M/G) is listed and confirmed (rg's name)
-  'max-cost': { type: 'string', default: '1' }, // ask before sending when the estimated price is over this many USD
-  // which files -r finds and git sys1grep lists; with -r a file named on the command line is always searched
-  include: { type: 'string', multiple: true }, // only names matching one of these globs
-  exclude: { type: 'string', multiple: true }, // not names matching one of these globs
-  'changed-within': { type: 'string' }, // only files modified within 30m / 2h / 7d / 2w, since a date, today, ...
-  gitlog: { type: 'boolean', short: 'g', default: false }, // search git log's commits, one record each; auto-scope picks which
-  'auto-scope': { type: 'boolean', default: true }, // narrow those files by what Jev says a meaning restricts to; --no-auto-scope: don't
-  color: { type: 'string', default: 'auto' }, // auto / always / never
-  summarize: { type: 'string' }, // pipe what would print to this LLM CLI and print its answer instead
-  'summarize-prompt': { type: 'string' }, // the user's own instruction, added after the fixed one
-  format: { type: 'string', default: 'plain' }, // plain / markdown / html: --rank's output, or asked of the summarizer
-  template: { type: 'string' }, // --rank's or --summarize's --format=html document: a NAME under the templates dirs, or a file; list: the names
-  'install-templates': { type: 'boolean', default: false }, // copy the bundled templates to ~/.config/sys1grep/templates
-  'summarize-format': { type: 'string' }, // removed (--format): parsed only to say so
-  // the API settings, each overriding its environment variable
-  'sys1-model': { type: 'string' }, // SYS1GREP_MODEL
-  'sys1-url': { type: 'string' }, // SYS1GREP_URL
-  'sys1-api-key': { type: 'string' }, // SYS1GREP_API_KEY / TYPESAFE_API_KEY
-  help: { type: 'boolean', short: 'h', default: false },
-  version: { type: 'boolean', short: 'V', default: false },
-};
 // SYS1GREP_OPTS holds default options only: no meanings, no files, no --. It goes in front of the arguments, so the
-// command line wins (a later value counts; --no-X clears a flag).
-const defaults = optsArgs.map(fill);
+// command line wins (a later value counts; --no-X clears a flag). fill/OFF: options.mjs (shared with serve.mjs).
+const defaults = optsArgs.map(a => fill(a, SYS1GREP_SUMMARIZER));
 // --step-to X (#163) is --step-to -e X, and so is --step-to=X; a bare --step-to (followed by an option) opens the end
 // expression for the -e / -a / -v / -Q after it. After --, every argument is a file. X, and the MEANING of -e / -a /
 // -v / -Q, may start with a dash ("--summarize hands the lines on"): an option holds no space, and is -- and a word or
@@ -164,14 +98,11 @@ const openStep = args => {
 };
 let optsInteractive = false; // -i from SYS1GREP_OPTS: a script without a terminal is told where it came from
 try {
-  const { tokens: t } = parseArgs({ args: defaults, options: OPTIONS, allowPositionals: true, allowNegative: true, tokens: true });
+  const { tokens: t } = parseOpts(defaults);
   optsInteractive = t.some(k => k.name === 'interactive' && !k.rawName.startsWith('--no-'));
-  const command = k => k.name === 'install-templates' || (k.name === 'template' && k.value === 'list');
-  const bad = t.find(k => k.kind !== 'option' || ['e', 'a', 'v', 'question', 'step-to', 'cached', 'untracked'].includes(k.name) || command(k));
-  if (bad) die(`${OPTS_NAME}: ${bad.kind !== 'option' ? `'${bad.value ?? '--'}' is not an option` : command(bad) ? `${bad.rawName}${bad.value === undefined ? '' : `=${bad.value}`} is not allowed (it does something instead of searching)` : ['cached', 'untracked'].includes(bad.name) ? `--${bad.name} is not allowed (what is searched goes on the command line)` : `${bad.name.length > 1 ? '--' : '-'}${bad.name} is not allowed (${bad.name === 'step-to' ? 'expressions' : 'meanings'} go on the command line)`}`);
 } catch (e) { die(`${OPTS_NAME}: ${e.message}`); }
 const { values: opt, positionals: files, tokens } = parseArgs({
-  args: [...defaults, ...openStep(process.argv.slice(2)).map(fill)],
+  args: [...defaults, ...openStep(process.argv.slice(2)).map(a => fill(a, SYS1GREP_SUMMARIZER))],
   options: OPTIONS,
   allowPositionals: true,
   allowNegative: true,
@@ -1118,7 +1049,7 @@ if (logPlan) {
   // --sys1-api-key's value is masked here too: the default options may hold it (they refuse only meanings and the
   // like), and it would otherwise leak in full, unlike the option typed on the command line (line above).
   if (optsArgs.length) {
-    const masked = optsArgs.map((tok, i, toks) => (toks[i - 1] === '--sys1-api-key' ? '***' : tok.replace(/^--sys1-api-key=.*$/, '--sys1-api-key=***'))).join(' ');
+    const masked = maskOpts(optsArgs).join(' ');
     logPlan(`${envOPTS.file === SETTINGS_SHOWN ? OPTS_NAME : envOPTS.name}: ${masked}`);
   }
   const thresholds = optSrc('t') === null && optSrc('T') === null
@@ -1396,6 +1327,10 @@ function gitIgnored(dir) {
   try { return new Set(git(['ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory']).split('\0').map(p => p.replace(/\/$/, ''))); }
   catch { return new Set(); } // not in a repository, or no git: nothing is ignored
 }
+// settings.json's basename matches no SKIP_FILE pattern (it is not a dotfile), so a recursive -r scan whose scope
+// happens to reach ~/.config/sys1grep (e.g. -r over $HOME) would otherwise hand a match on sys1grep's own saved key
+// to whatever reads the results (--serve included). Skipped by its one known absolute path, not by name, so an
+// unrelated project's own settings.json is still searched.
 function expand(path, rel = '', ignored) {
   let st;
   try { st = statSync(path); } catch (e) { warn(path, e); return []; }
@@ -1407,6 +1342,7 @@ function expand(path, rel = '', ignored) {
   return ents
     .filter(d => !d.isSymbolicLink() && !(d.isDirectory() ? SKIP_DIRS.includes(d.name) : SKIP_FILE.test(d.name) || GENERATED_FILE.test(d.name)))
     .filter(d => !ignored.has(rel + d.name))
+    .filter(d => d.isDirectory() || resolve(path, d.name) !== SETTINGS_FILE)
     .sort((a, b) => a.name.localeCompare(b.name))
     .flatMap(d => expand(path.endsWith('/') ? path + d.name : `${path}/${d.name}`, `${rel}${d.name}/`, ignored)); // not path.join(): it would drop the leading ./
 }
@@ -1416,7 +1352,9 @@ const lsFiles = (...extra) => {
   try { return execFileSync('git', ['ls-files', '-z', ...extra, '--', ...pathspecs], { encoding: 'utf8', maxBuffer: Infinity }); }
   catch (e) { if (e.status == null) die(`git ls-files: ${e.message}`); process.exit(2); } // git exited non-zero: it has said why
 };
-const skipPath = p => p.split('/').some(d => SKIP_DIRS.includes(d)) || SKIP_FILE.test(p.split('/').at(-1)) || GENERATED_FILE.test(p.split('/').at(-1));
+// The resolve(p) === SETTINGS_FILE check: settings.json too, as expand()'s own skip does for -r (#199); a tracked
+// or cached file can land at that one known path just as a working-tree one can.
+const skipPath = p => p.split('/').some(d => SKIP_DIRS.includes(d)) || SKIP_FILE.test(p.split('/').at(-1)) || GENERATED_FILE.test(p.split('/').at(-1)) || resolve(p) === SETTINGS_FILE;
 const listed = raw => [...new Set(raw.split('\0'))] // a conflicted path is listed once per stage
   .filter(p => {
     if (!p || skipPath(p)) return false;

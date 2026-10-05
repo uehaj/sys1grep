@@ -810,9 +810,13 @@ and narrow without rerunning the command:
 
 ```
 $ sys1grep --serve -r src/
-http://127.0.0.1:51234/
+http://127.0.0.1:51234/?k=3f9e...
 $ sys1grep --serve=8080 -y --level=strict -r src/     # a fixed port; the options given here are the page's first values
 ```
+
+The printed URL carries a token made fresh at launch (`?k=...`). Every route needs it, the page itself included: without
+it (in the query, or in a header for the page's own requests) the server answers 404 to everything, so another local
+account or process cannot read the page, its token, or a search's results merely by knowing the port.
 
 The page has the meaning fields (`+` adds one; each takes `-e`, `-a`, `-v` or `-Q`), `rank`, `summarize`, a **multi-step**
 switch (on, it shows the end fields, `--step-to` and one or more meanings, and the edges, `--hops` and `--reverse`; off, they
@@ -831,6 +835,16 @@ sees the API key. The targets, `-j`, `--chunk`, `-M`, `--max-filesize`, `--max-c
 API settings and `--summarize`'s TOOL are fixed at launch: the page can narrow what was given but not widen it. A search
 over the cost guard fails on the page, as it does without a terminal; launch with `-y` to let it through.
 The meanings come from the page, so `-e -a -v -Q --step-to` and `-l -c -q -o -z -i --format --color --dry-run` are refused at launch.
+
+**Settings** edits `~/.config/sys1grep/settings.json` (see [Install](#install)): `url`, `model`, the key, `opts` (one argument
+per line) and the summarizer's three. Save writes the file, and the next search uses it, as does every later `sys1grep`
+run. Next to each field the page says where the value a search uses comes from, and says so when an environment variable or a
+launch option wins over the file, since then saving does not change the search. A key comes back only as saved / not
+saved; type a new one to replace it, or tick remove. A `--sys1-api-key` inside `opts`, and a `url`'s userinfo, come back
+masked as `***`, the same way `--verbose` masks them; `opts` refuses a target, a flag the page itself refuses at launch,
+or `--sys1-url` / `--sys1-api-key` (their own fields), and `url` and a URL summarizer must be `http(s)`. The save is a
+`POST` with the page's token and this request's own Host as its required `Origin`, and the file is written whole (0600,
+its directory 0700 when created) and renamed into place, so a reader never sees half of it.
 
 ### Best first (`--rank`)
 
