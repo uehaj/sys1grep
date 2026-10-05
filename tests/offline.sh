@@ -1542,7 +1542,7 @@ eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8
 # opts can only add search options: no positional (a target), no REFUSED flag, no sys1-url/sys1-api-key (their own
 # fields); a value-taking option's value (not starting with -) is not mistaken for a positional
 printf '{"opts":["/etc/passwd"]}' >"$tmp/post.json"
-eq "$(post -H "$SK" -H "$SO" -H "$SJ") $(field j.error <"$tmp/post.out")" '400 "opts: /etc/passwd is not allowed (it would be a target, which goes on the command line)"' "--serve settings: opts refuses a target"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ") $(field j.error <"$tmp/post.out")" "400 \"opts: '/etc/passwd' is not an option\"" "--serve settings: opts refuses a target"
 printf '{"opts":["-e","x"]}' >"$tmp/post.json"
 eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses a REFUSED flag (-e)"
 printf '{"opts":["--sys1-api-key=x"]}' >"$tmp/post.json"
@@ -1559,7 +1559,7 @@ eq "$(post -H "$SK" -H "$SO" -H "$SJ") $(field j.error <"$tmp/post.out")" '400 "
 printf '{"opts":["--chunk","50"]}' >"$tmp/post.json"
 eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "200" "--serve settings: opts accepts --chunk's separate value"
 printf '{"opts":["--summarize","claude"]}' >"$tmp/post.json"
-eq "$(post -H "$SK" -H "$SO" -H "$SJ") $(field j.error <"$tmp/post.out")" '400 "opts: claude is not allowed (it would be a target, which goes on the command line)"' "--serve settings: opts refuses --summarize's separate value (its bare form is =-only)"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ") $(field j.error <"$tmp/post.out")" "400 \"opts: 'claude' is not an option\"" "--serve settings: opts refuses --summarize's separate value (its bare form is =-only)"
 # #199: -r has no target field here, unlike at launch; on a --serve started with no target, sys1grep.mjs defaults a
 # bare -r to ".", so it is refused outright rather than only when it would widen past a launch target
 printf '{"opts":["-r"]}' >"$tmp/post.json"
@@ -1576,6 +1576,16 @@ printf '{"opts":["-nl"]}' >"$tmp/post.json"
 eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses -nl (the cluster's -l is REFUSED)"
 printf '{"opts":["-ng"]}' >"$tmp/post.json"
 eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "200" "--serve settings: opts accepts -ng (neither letter is -r or REFUSED)"
+# round 4: optsError now runs sys1grep.mjs's own parseArgs (parseOpts, options.mjs) instead of a hand-rolled
+# regex/cluster check, so every spelling of -r (and every REFUSED option) resolves to the same canonical OPTIONS
+# name regardless of form: --r (a single-letter name's long form; a prior round's cluster rewrite dropped this one
+# and let it save), -rC1 / -nrC1 / -rj8 (a cluster with a VALUED short option's glued value stuck to it, which an
+# all-letters cluster regex never matched), and -h / -nh / --l (REFUSED names a prior round's char classes missed:
+# lowercase h for help, a one-letter name's long spelling for l).
+for o in --r -rC1 -nrC1 -rj8 -h -nh --l; do
+  printf '{"opts":["%s"]}' "$o" >"$tmp/post.json"
+  eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses $o"
+done
 # url and a URL summarizer must be http(s); a tool name (not a URL) is not checked
 printf '{"url":"not a url"}' >"$tmp/post.json"
 eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: a bad url is refused"
@@ -1610,6 +1620,10 @@ printf '{"url":"https://***@example.invalid/v1"}' >"$tmp/post.json"
 eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: a url with a masked username only is refused"
 printf '{"url":"https://u:***@example.invalid/v1"}' >"$tmp/post.json"
 eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: a url with a masked password only is refused"
+# round 4: the same mask, percent-encoded (URL's username/password getters return it encoded, so a naive "===
+# '***'" misses this spelling of it)
+printf '{"url":"https://%%2A%%2A%%2A:%%2A%%2A%%2A@example.invalid/v1"}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: a url with the mask percent-encoded is refused"
 eq "$(node -p "JSON.parse(require('fs').readFileSync('$HS', 'utf8')).url")" 'https://u:p@example.invalid/v1' "--serve settings: both partial-mask refusals left the real userinfo in place"
 printf '{"key":null,"opts":[]}' >"$tmp/post.json"
 eq "$(post -H "$SK" -H "$SO" -H "$SJ") $(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '200 {"model":"m9","url":"https://u:p@example.invalid/v1"}' "--serve settings: null and [] remove a field"
@@ -1664,11 +1678,16 @@ serve=$!
 i=0; while [ ! -s "$tmp/serve4.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (multi-step) did not start"; sleep 0.05; done
 eq "$(node serve-page.mjs "$(cat "$tmp/serve4.url")")" "steps hidden: -e '/def main/'
 x=e:/def main/ hops=0.. reverse=0 -> 1 lines
+off, start+: steps hidden: -e '/def main/' -a /helper/
+x=e:/def main/|a:/helper/ hops=0.. reverse=0 -> 1 lines
+on, starts kept: steps shown: -e '/def main/' -a /helper/ --step-to
+on, 2 starts + 2 ends: steps shown: -e '/def main/' -a /helper/ --step-to -e '/raise /' -e '/sys\\.exit/'
+x=e:/def main/|a:/helper/|S:|e:/raise /|e:/sys\\.exit/ hops=0.. reverse=0 -> 2 lines
 steps shown: -e '/def main/' --step-to
 steps shown: -e '/def main/' --step-to -e '/raise /' --hops=1..2
 x=e:/def main/|S:|e:/raise / hops=1..2 reverse=0 -> 2 lines
-addend + reverse: steps shown: -e '/def main/' --step-to -e '/raise /' --hops=1..2 --reverse
-x=e:/def main/|S:|e:/raise / hops=1..2 reverse=1 -> 1 lines
+addend + reverse: steps shown: -e '/def main/' --step-to -e '/raise /' -e '/sys\\.exit/' --hops=1..2 --reverse
+x=e:/def main/|S:|e:/raise /|e:/sys\\.exit/ hops=1..2 reverse=1 -> 1 lines
 steps hidden: -e '/def main/'
 x=e:/def main/ hops=1..2 reverse=0 -> 1 lines
 steps shown: -e '/def main/' --step-to -e '/raise /' --hops=1..2
