@@ -292,12 +292,12 @@ iframe { width: 100%; border: 0; min-height: 80px; } pre.out { white-space: pre-
 </style></head><body>
 <header><div class="in"><form id="f" autocomplete="off" onsubmit="return false">
 <div id="fields"></div>
+<div class="row"><label><input type="checkbox" id="step"> multi-step</label></div>
 <div id="steps" hidden><div class="row"><span class="note">end (--step-to)</span><button type="button" id="addend" title="add an end">+</button></div>
 <div id="ends"></div>
 <div class="row"><span class="note">edges</span><label>--hops <input name="hops" size="6"></label><label><input type="checkbox" name="reverse"> --reverse</label></div></div>
 <div class="row"><span class="logo">sys1grep</span>
 <button type="button" id="add" title="add a field">+</button>
-<label><input type="checkbox" id="step"> multi-step</label>
 <label>rank <select name="rank"><option value="">off</option><option value="jev">jev</option><option value="match">match</option></select></label>
 <label><input type="checkbox" name="summarize"> summarize</label>
 <input type="text" name="summarize-prompt" placeholder="summary instruction" style="display:none;flex:1;min-width:160px">
