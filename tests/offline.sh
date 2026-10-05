@@ -1685,6 +1685,7 @@ no logo in the toolbar: ok
 --hops is type=text (styled like the other inputs): ok
 Details/Settings checkboxes keep their native size: ok
 dark .err override comes after its base rule: ok
+main.two's one-column breakpoint tracks the card width (880px): ok
 first start row: 3 children (select, input, delete)
 steps hidden: -e '/def main/'
 x=e:/def main/ hops=0.. reverse=0 -> 1 lines

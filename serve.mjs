@@ -305,7 +305,7 @@ button, select { background: var(--bg); border: 1px solid var(--border); border-
 #go { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
 #est, #stop, #copy, #save { background: var(--input-bg); }
 fieldset.group { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px 12px; margin: 10px 0; min-width: 0; }
-.group legend.glabel { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 6px; padding: 0; }
+.group legend.glabel { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 6px; padding: 0 4px; }
 .row.edges { border-top: 1px solid var(--rule); margin-top: 10px; padding-top: 10px; }
 .del { border: none; background: none; color: var(--muted); padding: 4px; border-radius: 8px; display: inline-flex; }
 .del:hover { background: var(--input-bg); color: var(--fg); }
@@ -318,7 +318,7 @@ summary.dot::after { content: " \\25CF"; color: var(--link); }
 .grid label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); } .grid label.chk { flex-direction: row; align-items: center; gap: 6px; }
 .grid input:not([type=checkbox]), .grid select, .grid textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); width: 100%; font: inherit; }
 main { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin: 12px 0 4px; display: grid; gap: 16px; grid-template-columns: 1fr; } main.two { grid-template-columns: 3fr 2fr; }
-@media (max-width: 560px) { main.two { grid-template-columns: 1fr; } }
+@media (max-width: 880px) { main.two { grid-template-columns: 1fr; } }
 iframe { width: 100%; border: 0; min-height: 80px; } pre.out { white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.5 ui-monospace, Menlo, monospace; }
 .c32 { color: #188038; } .c35 { color: #a142f4; } .c36 { color: #0c7a88; } .c31 { color: #d93025; } .c33 { color: #b06000; } .c01_31 { color: #d93025; font-weight: 700; } .c01_33 { color: #b06000; font-weight: 700; background: #fff3b055; }\n@media (prefers-color-scheme: dark) { .c32 { color: #81c995; } .c35 { color: #d7aefb; } .c36 { color: #78d9ec; } .c31, .c01_31 { color: #f28b82; } .c33, .c01_33 { color: #fdd663; } .err { color: #f28b82; } }\nbutton:disabled { opacity: .45; cursor: default; } #ex button { border-radius: 999px; background: var(--pill-bg); color: var(--pill-fg); border: none; } #ex .label, #ex .grp { flex-basis: 100%; font-weight: 700; color: var(--muted); margin-top: 4px; }
 #right { border-left: 1px solid var(--rule); padding-left: 16px; }
@@ -327,13 +327,13 @@ iframe { width: 100%; border: 0; min-height: 80px; } pre.out { white-space: pre-
 <div class="title"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#fff" stroke-width="2.2"/><line x1="15.3" y1="15.3" x2="20.5" y2="20.5" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg></span><h1>sys<span class="accent">1grep</span></h1></div>
 <form id="f" autocomplete="off" onsubmit="return false">
 <fieldset class="group" id="startgrp"><legend class="glabel">start</legend><div id="fields"></div><button type="button" id="add" title="add a start" aria-label="add a start">+ start</button></fieldset>
-<div class="row"><div class="withhint"><label title="chain a start meaning to one or more end meanings, following the call/reference graph between them (--step-to)"><input type="checkbox" id="step"> multi-step</label><small class="hint">chains a start meaning to matches reachable from it, instead of searching them directly</small></div></div>
+<div class="row"><div class="withhint"><label title="chain a start meaning to one or more end meanings, following the call/reference graph between them (--step-to)"><input type="checkbox" id="step" aria-describedby="hint-step"> multi-step</label><small class="hint" id="hint-step">chains a start meaning to matches reachable from it, instead of searching them directly</small></div></div>
 <fieldset class="group" id="steps" hidden><legend class="glabel">end (--step-to)</legend><div id="ends"></div><button type="button" id="addend" title="add an end" aria-label="add an end">+ end</button>
-<div class="row edges"><div class="withhint"><span class="note">edges</span><small class="hint">--hops limits how many hops away an end may be; --reverse searches backwards along the graph</small></div><label title="how many hops the end may be from the start, e.g. 1..2">--hops <input type="text" name="hops" size="6"></label><label><input type="checkbox" name="reverse"> --reverse</label></div></fieldset>
+<div class="row edges"><div class="withhint"><span class="note">edges</span><small class="hint" id="hint-edges">--hops limits how many hops away an end may be; --reverse searches backwards along the graph</small></div><label title="how many hops the end may be from the start, e.g. 1..2">--hops <input type="text" name="hops" size="6" aria-describedby="hint-edges"></label><label><input type="checkbox" name="reverse" aria-describedby="hint-edges"> --reverse</label></div></fieldset>
 <div class="row">
 <button type="submit" id="go">Search</button><button type="button" id="est" title="run with --dry-run: shows the request size and estimated cost, no results">Estimate cost</button><button type="button" id="stop" disabled>Stop</button>
-<div class="withhint"><label title="order matches by Jev's relevance score, or by plain substring match; off keeps file order">rank <select name="rank"><option value="">off</option><option value="jev">jev</option><option value="match">match</option></select></label><small class="hint">off keeps file order</small></div>
-<div class="withhint"><label title="have a small model read the matches and answer in a sentence or two"><input type="checkbox" name="summarize"> summarize</label><small class="hint">answers in a sentence or two after the search</small></div>
+<div class="withhint"><label title="order matches by Jev's relevance score, or by plain substring match; off keeps file order">rank <select name="rank" aria-describedby="hint-rank"><option value="">off</option><option value="jev">jev</option><option value="match">match</option></select></label><small class="hint" id="hint-rank">off keeps file order</small></div>
+<div class="withhint"><label title="have a small model read the matches and answer in a sentence or two"><input type="checkbox" name="summarize" aria-describedby="hint-summarize"> summarize</label><small class="hint" id="hint-summarize">answers in a sentence or two after the search</small></div>
 <input type="text" name="summarize-prompt" placeholder="summary instruction" style="display:none;flex:1;min-width:160px">
 </div>
 <div class="row"><pre id="cmd"></pre><button type="button" id="copy">Copy</button></div>

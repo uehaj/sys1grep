@@ -59,6 +59,12 @@ byId.f.elements = byId.sf.elements = elements;
   // rule wins regardless of color scheme -- this is a source-order check; the actual contrast is browser-measured.
   const errBase = html.indexOf('.err { color: #d93025'), errDark = html.indexOf('.err { color: #f28b82');
   console.log(`dark .err override comes after its base rule: ${errBase >= 0 && errDark > errBase ? 'ok' : 'FAIL'}`);
+  // main.two's one-column breakpoint: the results now live inside the card (max 880px, ~800px inside the padding),
+  // not in their own 1200px-wide element, so the breakpoint has to track the card's width, not a phone width --
+  // 560px starved the two-column layout's right pane to ~200px between 561 and 800px (r2 review). This is a
+  // source-level pin (playwright isn't a repo dependency, so a live-measured width isn't "easy" here); the actual
+  // pane widths were measured in a real headless-Chromium render for the PR report.
+  console.log(`main.two's one-column breakpoint tracks the card width (880px): ${/@media \(max-width: 880px\) \{ main\.two/.test(html) ? 'ok' : 'FAIL'}`);
 }
 const sent = [];
 const document = { getElementById: id => byId[id] ?? null, createElement: t => new El(t) };
