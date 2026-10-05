@@ -1667,6 +1667,8 @@ x=e:/def main/ hops=0.. reverse=0 -> 1 lines
 steps shown: -e '/def main/' --step-to
 steps shown: -e '/def main/' --step-to -e '/raise /' --hops=1..2
 x=e:/def main/|S:|e:/raise / hops=1..2 reverse=0 -> 2 lines
+addend + reverse: steps shown: -e '/def main/' --step-to -e '/raise /' --hops=1..2 --reverse
+x=e:/def main/|S:|e:/raise / hops=1..2 reverse=1 -> 1 lines
 steps hidden: -e '/def main/'
 x=e:/def main/ hops=1..2 reverse=0 -> 1 lines
 steps shown: -e '/def main/' --step-to -e '/raise /' --hops=1..2

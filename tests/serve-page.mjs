@@ -58,6 +58,16 @@ elements.hops.value = '1..2';
 fire();
 console.log(state());
 console.log(await search());
+// on: --hops, --reverse and a second --step-to end (added with "+", not an example) all reach the command together
+document.getElementById('addend').onclick();
+byId.ends.children[1].lastChild.value = '/sys\\.exit/';
+elements.reverse.checked = true;
+fire();
+console.log(`addend + reverse: ${state()}`);
+console.log(await search());
+byId.ends.children[1].remove();
+elements.reverse.checked = false;
+fire();
 byId.step.checked = false;
 fire();
 console.log(state());
