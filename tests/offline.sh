@@ -1676,7 +1676,10 @@ printf '%s\n' 'def main():' '  helper()' 'def helper():' '  raise X' >"$tmp/m.py
 $E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$tmp/m.py" >"$tmp/serve4.url" 2>/dev/null &
 serve=$!
 i=0; while [ ! -s "$tmp/serve4.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (multi-step) did not start"; sleep 0.05; done
-eq "$(node serve-page.mjs "$(cat "$tmp/serve4.url")")" "steps hidden: -e '/def main/'
+eq "$(node serve-page.mjs "$(cat "$tmp/serve4.url")")" "reading order: ok
+no logo in the toolbar: ok
+first start row: 3 children (select, input, delete)
+steps hidden: -e '/def main/'
 x=e:/def main/ hops=0.. reverse=0 -> 1 lines
 off, start+: steps hidden: -e '/def main/' -a /helper/
 x=e:/def main/|a:/helper/ hops=0.. reverse=0 -> 1 lines
@@ -1711,6 +1714,8 @@ calls that raise: steps shown: -e '/^ *def main/' --step-to -e '/raise /' -> ok
 1 to 2 calls away: steps shown: -e '/^ *def main/' --step-to -e '/raise /' --hops=1..2 -> ok
 who calls it (--reverse): steps shown: -e '/^ *def helper/' --step-to -e '/^ *def main/' --reverse -> ok
 raise or exit (two ends): steps shown: -e '/^ *def main/' --step-to -e '/raise /' -e '/sys\\.exit/' -> ok
+before delete: 1 start row(s)
+after delete: 1 start row(s), value \"\"
 opened: url \"\" SYS1GREP_URL in the environment wins over this; model \"\" not set: the default; key \"\" not saved, not set: the default; opts \"\"
 saved; the next search uses it: url \"\" SYS1GREP_URL in the environment wins over this; model \"m7\" in effect; key \"\" saved; type to replace, in effect; opts \"-n\\n--level\\nstrict\"" "--serve: the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs), the settings panel"
 eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '{"model":"m7","key":"k7","opts":["-n","--level","strict"]}' "--serve settings: what the panel saved"

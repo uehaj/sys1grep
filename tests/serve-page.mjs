@@ -3,6 +3,19 @@
 import vm from 'node:vm';
 
 const U = process.argv[2], html = await (await fetch(U)).text();
+// reading order: title (icon + name) before the start group (labeled, "+ start" inside it) before the multi-step
+// toggle before the end group (labeled, "+ end" and the edges inside it) before the run controls before the
+// examples before the command line before the results before Details before Settings. No <select|input|button> in
+// the fake DOM's static-tag scan has a parent link, so this checks the raw markup's order instead (see El above).
+{
+  const order = ['<svg', '>sys<span class="accent">1grep', 'id="startgrp"', 'class="glabel">start<', 'id="fields"',
+    'id="add"', 'id="step"', 'id="steps"', 'class="glabel">end (--step-to)<', 'id="ends"', 'id="addend"',
+    'name="hops"', 'id="go"', 'id="ex"', 'id="cmd"', '<main id="m">', 'id="d">', 'id="sd">'];
+  const pos = order.map(m => html.indexOf(m));
+  const bad = order.filter((m, i) => pos[i] < 0 || (i > 0 && pos[i] <= pos[i - 1]));
+  console.log(`reading order: ${bad.length ? 'FAIL at ' + bad.join(',') : 'ok'}`);
+  console.log(`no logo in the toolbar: ${html.includes('class="logo"') ? 'FAIL, still present' : 'ok'}`);
+}
 const text = el => (el.children.length ? el.children.map(text).join('') : String(el.text));
 class El {
   constructor(tag, attrs = '') {
@@ -36,6 +49,7 @@ const page = fetch, ctx = vm.createContext({
   fetch: (path, o) => { sent.push(new URL(path, U).searchParams); return page(new URL(path, U), o?.method === 'POST' ? { ...o, headers: { ...o.headers, origin: new URL(U).origin } } : o); },
 });
 vm.runInContext(/<script>([\s\S]*)<\/script>/.exec(html)[1], ctx);
+console.log(`first start row: ${byId.fields.children[0].children.length} children (select, input, delete)`);
 
 const fire = () => { for (const fn of byId.f.ls.change ?? []) fn(); };
 const search = async () => {
@@ -46,7 +60,7 @@ const search = async () => {
 };
 const state = () => `steps ${!byId.steps ? 'missing' : byId.steps.hidden ? 'hidden' : 'shown'}: ${byId.cmd.textContent.replace(/^sys1grep \S+ /, '')}`;
 
-byId.fields.children[0].lastChild.value = '/def main/';
+byId.fields.children[0].children[1].value = '/def main/';
 fire();
 console.log(state());
 console.log(await search());
@@ -62,7 +76,7 @@ fire();
 console.log(`on, starts kept: ${state()}`);
 // on: start "+" and end "+" each add to their own group; the command carries the starts before --step-to, ends after
 document.getElementById('addend').onclick();
-byId.ends.children[0].lastChild.value = '/raise /';
+byId.ends.children[0].children[1].value = '/raise /';
 document.getElementById('addend').onclick();
 byId.ends.children[1].children[1].value = '/sys\\.exit/';
 fire();
@@ -71,13 +85,13 @@ console.log(await search());
 // reset to the single-start, step-off baseline the rest of this file builds on
 byId.fields.children[1].remove();
 byId.ends.children[1].remove();
-byId.ends.children[0].lastChild.value = '';
+byId.ends.children[0].children[1].value = '';
 byId.step.checked = false;
 fire();
 byId.step.checked = true;
 fire();
 console.log(state());
-byId.ends.children[0].lastChild.value = '/raise /';
+byId.ends.children[0].children[1].value = '/raise /';
 elements.hops.value = '1..2';
 fire();
 console.log(state());
@@ -128,6 +142,11 @@ for (const b of pills) {
   await search();
   console.log(`${b.textContent}: ${c} -> ${byId.left.children.some(e => e.className === 'err') ? 'error ' + text(byId.left) : 'ok'}`);
 }
+
+// x on the sole remaining start row clears it instead of removing it: the start group always keeps a row to fill
+console.log(`before delete: ${byId.fields.children.length} start row(s)`);
+byId.fields.children[0].children[2].onclick();
+console.log(`after delete: ${byId.fields.children.length} start row(s), value "${byId.fields.children[0].children[1].value}"`);
 
 // the settings panel: opening it reads the settings, Save writes them and shows the new state, a key never comes back
 const settings = () => `url "${elements['set-url'].value}" ${byId['src-url'].textContent}; model "${elements['set-model'].value}" ${byId['src-model'].textContent}; key "${elements['set-key'].value}" ${elements['set-key'].placeholder}, ${byId['src-key'].textContent}; opts ${JSON.stringify(elements['set-opts'].value)}`;
