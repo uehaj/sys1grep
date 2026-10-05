@@ -50,6 +50,30 @@ byId.fields.children[0].lastChild.value = '/def main/';
 fire();
 console.log(state());
 console.log(await search());
+// off: the start "+" (distinct from the end "+", and not toggle-gated) adds a second start; both reach the command
+document.getElementById('add').onclick();
+byId.fields.children[1].children[1].value = '/helper/';
+fire();
+console.log(`off, start+: ${state()}`);
+console.log(await search());
+// turning multi-step on keeps the start rows
+byId.step.checked = true;
+fire();
+console.log(`on, starts kept: ${state()}`);
+// on: start "+" and end "+" each add to their own group; the command carries the starts before --step-to, ends after
+document.getElementById('addend').onclick();
+byId.ends.children[0].lastChild.value = '/raise /';
+document.getElementById('addend').onclick();
+byId.ends.children[1].children[1].value = '/sys\\.exit/';
+fire();
+console.log(`on, 2 starts + 2 ends: ${state()}`);
+console.log(await search());
+// reset to the single-start, step-off baseline the rest of this file builds on
+byId.fields.children[1].remove();
+byId.ends.children[1].remove();
+byId.ends.children[0].lastChild.value = '';
+byId.step.checked = false;
+fire();
 byId.step.checked = true;
 fire();
 console.log(state());
@@ -58,6 +82,16 @@ elements.hops.value = '1..2';
 fire();
 console.log(state());
 console.log(await search());
+// on: --hops, --reverse and a second --step-to end (added with "+", not an example) all reach the command together
+document.getElementById('addend').onclick();
+byId.ends.children[1].children[1].value = '/sys\\.exit/';
+elements.reverse.checked = true;
+fire();
+console.log(`addend + reverse: ${state()}`);
+console.log(await search());
+byId.ends.children[1].remove();
+elements.reverse.checked = false;
+fire();
 byId.step.checked = false;
 fire();
 console.log(state());
