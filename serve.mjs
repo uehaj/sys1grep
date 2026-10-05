@@ -39,15 +39,36 @@ const REFUSED = /^(-[eavQlcqoziHV]|-[eavQ].+|--(question|step-to|format|color|ve
 // following token could ever be read as that option's value.
 const VALUED = new Set(Object.entries(OPTIONS).flatMap(([k, o]) => (o.type !== 'string' || EQUALS_ONLY.has(k)
   ? [] : [k.length === 1 ? `-${k}` : `--${k}`, ...(o.short ? [`-${o.short}`] : [])])));
+// A short-option cluster (-nr, -rl, -nefoo) packs several single-dash flags into one token, the way sys1grep.mjs's
+// own parseArgs reads it; splitting it lets the per-flag checks below see "-r" or "-e" inside "-nr" / "-nefoo"
+// instead of only ever seeing the whole token. A VALUED short option consumes the rest of the cluster as its
+// glued value (as -e's MEANING does: -efoo is -e foo, not -e -f -o -o), so splitting stops there.
+const clusterFlags = tok => {
+  const m = /^-([A-Za-z]{2,})$/.exec(tok);
+  if (!m) return [tok];
+  const out = [];
+  for (const ch of m[1]) {
+    const flag = `-${ch}`;
+    out.push(flag);
+    if (VALUED.has(flag)) break;
+  }
+  return out;
+};
 const optsError = opts => {
   for (const [i, tok] of opts.entries()) {
     if (tok === '--') return `${tok} is not allowed (it would start positionals)`;
     if (REFUSED.test(tok)) return `${tok} is not allowed (meanings, targets and output shape go on the command line)`;
     if (/^--sys1-(url|api-key)(=|$)/.test(tok)) return `${tok} is not allowed (use the url / key field instead)`;
-    // -r (unlike at launch) has no target field here to keep in check: on a --serve started with no target
-    // (stdin), sys1grep.mjs defaults a bare -r to ".", so saved opts could turn every search into a recursive
-    // scan of the server's own working directory.
-    if (/^(-r|--r)(=.*)?$/.test(tok)) return `${tok} is not allowed (it would widen the search past the launch's own targets)`;
+    // -r / -R (unlike at launch) have no target field here to keep in check: on a --serve started with no target
+    // (stdin), sys1grep.mjs defaults a bare -r to ".", so saved opts could turn every search into a recursive scan
+    // of the server's own working directory. Checked letter by letter (clusterFlags), not just as a whole token, so
+    // -nr / -rn / -rl are refused too, not only a bare -r; --recursive is refused outright, though sys1grep.mjs has
+    // no such option to begin with (parseArgs would already refuse it as unknown).
+    if (/^--recursive(=.*)?$/.test(tok)) return `${tok} is not allowed (it would widen the search past the launch's own targets)`;
+    for (const flag of clusterFlags(tok)) {
+      if (/^-[rR](=.*)?$/.test(flag)) return `${tok} is not allowed (it would widen the search past the launch's own targets)`;
+      if (REFUSED.test(flag)) return `${tok} is not allowed (meanings, targets and output shape go on the command line)`;
+    }
     if (!tok.startsWith('-') && !(VALUED.has(opts[i - 1]) && !opts[i - 1].includes('='))) return `${tok} is not allowed (it would be a target, which goes on the command line)`;
   }
   return null;
@@ -73,10 +94,14 @@ const saveSettings = patch => {
     }
     if (k === 'url' && typeof v === 'string' && v) {
       if (typeof next.url === 'string' && v === maskUrl(next.url)) value = next.url;
-      // A url that still carries the masked userinfo but does not match the mask exactly (the host or path was
-      // edited around it) would otherwise save the literal "***:***" as real credentials.
-      else if (/\*\*\*:\*\*\*@/.test(v)) throw new Error('url: re-enter the userinfo (the part before @) in full, or remove it, before saving');
-      else if (!isHttpUrl(v)) throw new Error('url must be http(s)');
+      else {
+        // A url that still carries a masked username or password, whole or in part (the host, path or the other
+        // half of the userinfo was edited around it), would otherwise save "***" itself as a real credential.
+        let parsed;
+        try { parsed = new URL(v); } catch {}
+        if (parsed && (parsed.username === '***' || parsed.password === '***')) throw new Error('url: re-enter the userinfo (the part before @) in full, or remove it, before saving');
+        if (!isHttpUrl(v)) throw new Error('url must be http(s)');
+      }
     }
     if (k === 'summarizer' && typeof v === 'string' && /^https?:\/\//.test(v) && !isHttpUrl(v)) throw new Error('summarizer must be http(s) when it is a URL');
     if (value === null || value === '' || (Array.isArray(value) && !value.length)) delete next[k];

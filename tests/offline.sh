@@ -27,6 +27,10 @@ code() { want=$1 what=$2; shift 3; set +e; "$@" >/dev/null 2>&1; got=$?; set -e;
 # notty COMMAND...: COMMAND in a new session, which has no controlling terminal (</dev/null alone still leaves /dev/tty)
 notty() { perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' "$@"; }
 
+# #199 round 3: package.json's "files" must list every ./NAME.mjs a shipped .mjs imports, or npm pack ships a
+# module that 404s (ERR_MODULE_NOT_FOUND) at runtime instead of failing a test (options.mjs was missed this way).
+code 0 "package.json's \"files\" lists every locally-imported .mjs" -- node check-files.mjs
+
 F="$tmp/a.txt"
 printf '%s\n' 'cat' 'dog' '' 'cat dog' 'bird @0.4' 'fish @0.6' 'the line answers: owl' 'owl' >"$F"
 # 1 cat / 2 dog / 3 (blank, never sent) / 4 cat dog / 5 bird @0.4 / 6 fish @0.6 / 7 the line answers: owl / 8 owl
@@ -1560,6 +1564,18 @@ eq "$(post -H "$SK" -H "$SO" -H "$SJ") $(field j.error <"$tmp/post.out")" '400 "
 # bare -r to ".", so it is refused outright rather than only when it would widen past a launch target
 printf '{"opts":["-r"]}' >"$tmp/post.json"
 eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses -r"
+# round 3: -r must be refused inside a short-option cluster too, not only as a lone token, or -nr/-rn/-rl slip
+# through and still default to "." on a --serve with no target
+for o in -nr -rn -rl --recursive; do
+  printf '{"opts":["%s"]}' "$o" >"$tmp/post.json"
+  eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses $o (a cluster or alias hiding -r)"
+done
+printf '{"opts":["-nefoo"]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses -nefoo (the cluster's -e is REFUSED)"
+printf '{"opts":["-nl"]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses -nl (the cluster's -l is REFUSED)"
+printf '{"opts":["-ng"]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "200" "--serve settings: opts accepts -ng (neither letter is -r or REFUSED)"
 # url and a URL summarizer must be http(s); a tool name (not a URL) is not checked
 printf '{"url":"not a url"}' >"$tmp/post.json"
 eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: a bad url is refused"
@@ -1588,6 +1604,13 @@ eq "$rtcode $(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS
 printf '{"url":"https://***:***@other.invalid/v1"}' >"$tmp/post.json"
 eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: a url with the masked userinfo but an edited host is refused"
 eq "$(node -p "JSON.parse(require('fs').readFileSync('$HS', 'utf8')).url")" 'https://u:p@example.invalid/v1' "--serve settings: the refused url save left the real userinfo in place"
+# round 3: a partially masked userinfo (only the username or only the password is "***") must be refused the same
+# way, not saved literally
+printf '{"url":"https://***@example.invalid/v1"}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: a url with a masked username only is refused"
+printf '{"url":"https://u:***@example.invalid/v1"}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: a url with a masked password only is refused"
+eq "$(node -p "JSON.parse(require('fs').readFileSync('$HS', 'utf8')).url")" 'https://u:p@example.invalid/v1' "--serve settings: both partial-mask refusals left the real userinfo in place"
 printf '{"key":null,"opts":[]}' >"$tmp/post.json"
 eq "$(post -H "$SK" -H "$SO" -H "$SJ") $(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '200 {"model":"m9","url":"https://u:p@example.invalid/v1"}' "--serve settings: null and [] remove a field"
 printf '{"url":null}' >"$tmp/post.json"
