@@ -6,6 +6,15 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 ## [Unreleased]
 
 ### Added
+- `~/.config/sys1grep/settings.json` holds the settings as JSON, one optional field per variable: `url`, `key`,
+  `model`, `opts` (an array, one argument each), `summarizer`, `summarizerModel`, `summarizerKey`. The command line
+  wins, then the environment, then settings.json, then `~/.config/sys1grep/.env`, then the defaults. An environment
+  variable set to empty counts as unset and falls through to settings.json, except `SYS1GREP_OPTS=`, which still
+  drops the default options. Every environment variable works as before.
+  A wrong type or a file that is not JSON is an error naming the file and the field, never a value; an unknown field
+  only warns (so an older sys1grep keeps working once a newer one adds a field) and is ignored. A key in a file
+  others can read gets a warning. `--verbose` / `--dry-run` name a value's field and the file
+  (`key: key (~/.config/sys1grep/settings.json)`, `(settings.json opts)`). The no-key error points at the file.
 - `--format=html` marks what matched with `<mark>` (the regex matches, else the matching sentences, else the whole matching line);
   `--color=never` turns it off. `--serve` shows the colors of `--color=always` on the matches in file order, and the marks on the cards, by default.
 - `--serve[=PORT]` serves a search page on `127.0.0.1` (#166): a box for the meanings, `--rank` / `--summarize` and the other

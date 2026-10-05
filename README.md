@@ -207,14 +207,14 @@ $ sys1grep --dry-run -r --include='*.log' --changed-within=today -e '/ERROR|FATA
 ```
 
 `--verbose` (or `--dry-run`) also shows *where* a setting that was not typed on the command line came from
-(`SYS1GREP_OPTS`, an environment variable, `~/.config/sys1grep/.env`, or a preset's default), so a result that
+(`SYS1GREP_OPTS`, an environment variable, `~/.config/sys1grep/settings.json` or `.env`, or a preset's default), so a result that
 surprises you can be traced back to its source. The key's value never appears, only which option or variable
 supplied it:
 
 ```sh
 $ SYS1GREP_OPTS='--level strict' sys1grep --verbose -e "the API key is read from a file" .
 sys1grep: endpoint api.typesafe.ai/v1/systemone (default), model jev-latest (default)
-sys1grep: key: SYS1GREP_API_KEY (~/.config/sys1grep/.env)
+sys1grep: key: key (~/.config/sys1grep/settings.json)
 sys1grep: SYS1GREP_OPTS: --level strict
 sys1grep: options: --level strict (SYS1GREP_OPTS) = -t 0.7 -T 0.3, --chunk 30, -j 8, scope on, -M 2000, --max-filesize 10M, --max-cost 1
 sys1grep: file ./a.py: 120 lines, 120 to send
@@ -244,10 +244,27 @@ Then give it an API key from the [TypeSafe console](https://console.typesafe.ai/
 
 ```sh
 export SYS1GREP_API_KEY=your-key                       # environment variable
-echo 'SYS1GREP_API_KEY=your-key' > ~/.config/sys1grep/.env    # per user (mkdir -p first)
+# per user: ~/.config/sys1grep/settings.json (mkdir -p first; keep it at 0600)
+(umask 077; echo '{"key": "your-key"}' > ~/.config/sys1grep/settings.json)
 ```
 
-Variables already in the environment win; otherwise `~/.config/sys1grep/.env` fills them in. A `.env` in the current
+Variables already in the environment win; otherwise `~/.config/sys1grep/settings.json` fills them in, one field per
+variable:
+
+| field | variable |
+|---|---|
+| `url` | `SYS1GREP_URL` |
+| `key` | `SYS1GREP_API_KEY` (and `TYPESAFE_API_KEY`) |
+| `model` | `SYS1GREP_MODEL` |
+| `opts` | `SYS1GREP_OPTS`, as an array: `["--level", "strict", "-n"]` |
+| `summarizer` | `SYS1GREP_SUMMARIZER` |
+| `summarizerModel` | `SYS1GREP_SUMMARIZER_MODEL` |
+| `summarizerKey` | `SYS1GREP_SUMMARIZER_API_KEY` |
+
+Every field is optional. A value of the wrong type is an error, as is a file that is not JSON. A field the file does
+not know only warns (on stderr, naming the field) and is ignored, so an older sys1grep keeps working once a newer one
+adds a field. A file that holds a key and that others can read gets a warning. `~/.config/sys1grep/.env` (`NAME=value`
+lines) still works, below settings.json: a value in settings.json wins over the same variable there. A `.env` in the current
 directory is never read: it may belong to a repository you just cloned, and could send your key elsewhere through
 `SYS1GREP_URL`. For per-project settings, load a file yourself: `node --env-file=.env "$(command -v sys1grep)" ...`.
 `TYPESAFE_API_KEY` is accepted too when `SYS1GREP_API_KEY` is not set.
@@ -263,15 +280,18 @@ sys1grep -e "payment failed" app.log                  # strict, 8 at once, line 
 sys1grep --level loose --no-n -e "payment failed" app.log
 ```
 
+The same defaults can live in settings.json as `"opts": ["--level", "strict", "-j", "8", "-n"]`, one argument per
+element (so a value may hold spaces). `SYS1GREP_OPTS`, when set, replaces them rather than adding to them.
+
 A script calling sys1grep would pick these up too (grep dropped `GREP_OPTIONS` for that reason). Call it as
-`SYS1GREP_OPTS= sys1grep ...` in scripts.
+`SYS1GREP_OPTS= sys1grep ...` in scripts: the empty variable drops settings.json's `opts` as well.
 
 ### Other endpoints
 
 The API is configured by exactly three settings: `SYS1GREP_API_KEY` (or `TYPESAFE_API_KEY`), `SYS1GREP_URL` and `SYS1GREP_MODEL`.
 Any endpoint that speaks TypeSafe's `POST /v1/systemone` works. The key is sent to `SYS1GREP_URL` as is, so set the
 two together. On the command line, `--sys1-model=ID`, `--sys1-url=URL` and `--sys1-api-key=KEY` override
-the three. A key given this way shows up in `ps` and shell history, so prefer `~/.config/sys1grep/.env` for it.
+the three. A key given this way shows up in `ps` and shell history, so prefer `~/.config/sys1grep/settings.json` for it.
 
 ```sh
 # OpenRouter

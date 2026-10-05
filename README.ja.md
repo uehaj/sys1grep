@@ -196,13 +196,13 @@ $ sys1grep --dry-run -r --include='*.log' --changed-within=today -e '/ERROR|FATA
 ```
 
 `--verbose`（や `--dry-run`）は、コマンドラインで指定しなかった設定が*どこから*来たか
-（`SYS1GREP_OPTS`、環境変数、`~/.config/sys1grep/.env`、プリセットの既定値のいずれか）も表示するので、
+（`SYS1GREP_OPTS`、環境変数、`~/.config/sys1grep/settings.json` か `.env`、プリセットの既定値のいずれか）も表示するので、
 想定と違う結果をその設定まで辿れます。キーの値は表示せず、どのオプションや変数が渡したかだけを表示します。
 
 ```sh
 $ SYS1GREP_OPTS='--level strict' sys1grep --verbose -e "APIキーがファイルから読まれている" .
 sys1grep: endpoint api.typesafe.ai/v1/systemone (default), model jev-latest (default)
-sys1grep: key: SYS1GREP_API_KEY (~/.config/sys1grep/.env)
+sys1grep: key: key (~/.config/sys1grep/settings.json)
 sys1grep: SYS1GREP_OPTS: --level strict
 sys1grep: options: --level strict (SYS1GREP_OPTS) = -t 0.7 -T 0.3, --chunk 30, -j 8, scope on, -M 2000, --max-filesize 10M, --max-cost 1
 sys1grep: file ./a.py: 120 lines, 120 to send
@@ -232,10 +232,26 @@ npx @uehaj/sys1grep -n -e "顧客が怒っている、または不満を持っ�
 
 ```sh
 export SYS1GREP_API_KEY=your-key                       # 環境変数
-echo 'SYS1GREP_API_KEY=your-key' > ~/.config/sys1grep/.env    # ユーザー単位 (先に mkdir -p)
+# ユーザー単位: ~/.config/sys1grep/settings.json (先に mkdir -p。権限は 0600 に)
+(umask 077; echo '{"key": "your-key"}' > ~/.config/sys1grep/settings.json)
 ```
 
-環境変数が優先で、足りない分は `~/.config/sys1grep/.env` から補います。カレントディレクトリの `.env` は読みません。
+環境変数が優先で、足りない分は `~/.config/sys1grep/settings.json` から補います。項目は環境変数 1 つに 1 つです。
+
+| 項目 | 環境変数 |
+|---|---|
+| `url` | `SYS1GREP_URL` |
+| `key` | `SYS1GREP_API_KEY`（と `TYPESAFE_API_KEY`） |
+| `model` | `SYS1GREP_MODEL` |
+| `opts` | `SYS1GREP_OPTS`。配列で書く: `["--level", "strict", "-n"]` |
+| `summarizer` | `SYS1GREP_SUMMARIZER` |
+| `summarizerModel` | `SYS1GREP_SUMMARIZER_MODEL` |
+| `summarizerKey` | `SYS1GREP_SUMMARIZER_API_KEY` |
+
+どの項目も省略できます。型の違う値、JSON でないファイルはエラーです。知らない項目は警告（stderr に項目名を出す）
+だけで無視し、処理は続けます。新しいバージョンが項目を追加しても、古い sys1grep がそのまま動くようにするためです。
+キーを含むファイルを他人が読める権限にしていると警告します。`~/.config/sys1grep/.env`（`名前=値` の行）も引き続き読みますが、settings.json より
+下で、同じ変数なら settings.json の値が勝ちます。カレントディレクトリの `.env` は読みません。
 clone したばかりのリポジトリのものかもしれず、`SYS1GREP_URL` を通じてキーを別のサーバへ送らせ得るからです。
 プロジェクト単位の設定は、自分で読み込ませてください: `node --env-file=.env "$(command -v sys1grep)" ...`。
 `SYS1GREP_API_KEY` が無ければ `TYPESAFE_API_KEY` も使えます。
@@ -251,15 +267,18 @@ sys1grep -e "決済の失敗" app.log                    # strict、8 並列、�
 sys1grep --level loose --no-n -e "決済の失敗" app.log
 ```
 
+同じ既定値は settings.json に `"opts": ["--level", "strict", "-j", "8", "-n"]` とも書けます。1 要素が 1 引数なので、
+値に空白を含められます。`SYS1GREP_OPTS` が設定されていれば、足し合わせずにそちらで置き換えます。
+
 sys1grep を呼ぶスクリプトもこの既定値を拾います（grep が `GREP_OPTIONS` を廃止した理由です）。スクリプトからは
-`SYS1GREP_OPTS= sys1grep ...` と空にして呼んでください。
+`SYS1GREP_OPTS= sys1grep ...` と空にして呼んでください。空の変数は settings.json の `opts` も外します。
 
 ### 他のエンドポイント
 
 API の設定は `SYS1GREP_API_KEY`（または `TYPESAFE_API_KEY`）、`SYS1GREP_URL`、`SYS1GREP_MODEL` の 3 つだけです。
 TypeSafe の `POST /v1/systemone` と同じ形で話すエンドポイントなら使えます。キーは `SYS1GREP_URL` の先へそのまま
 送られるので、2 つは組にして設定してください。コマンドラインの `--sys1-model=ID`、`--sys1-url=URL`、`--sys1-api-key=KEY` は
-この 3 つより優先します。コマンドラインのキーは `ps` やシェル履歴に残るので、キーはなるべく `~/.config/sys1grep/.env` に書いてください。
+この 3 つより優先します。コマンドラインのキーは `ps` やシェル履歴に残るので、キーはなるべく `~/.config/sys1grep/settings.json` に書いてください。
 
 ```sh
 # OpenRouter

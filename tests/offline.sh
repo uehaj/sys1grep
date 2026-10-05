@@ -301,6 +301,7 @@ eq "$($J --dedup=always -n -e 'usage 91 @k:path' "$tmp/folded.txt" | nums)" "1 2
 reset; $J -e cat "$F" >/dev/null; eq "$(stat auth)" "null" "no key, no authorization header"
 reset; $E SYS1GREP_URL=$base/v1 SYS1GREP_API_KEY=k1 node ../sys1grep.mjs -e cat "$F" >/dev/null; eq "$(stat auth)" "Bearer k1" "SYS1GREP_API_KEY"
 reset; $E SYS1GREP_URL=$base/v1 TYPESAFE_API_KEY=k2 node ../sys1grep.mjs -e cat "$F" >/dev/null; eq "$(stat auth)" "Bearer k2" "TYPESAFE_API_KEY fallback"
+reset; $E SYS1GREP_URL=$base/v1 TYPESAFE_API_KEY=k2 SYS1GREP_API_KEY= node ../sys1grep.mjs -e cat "$F" >/dev/null; eq "$(stat auth)" "Bearer k2" "SYS1GREP_API_KEY set but empty still falls through to TYPESAFE_API_KEY"
 code 2 "SYS1GREP_URL not a URL" -- $E SYS1GREP_URL=nope node ../sys1grep.mjs -e cat "$F"
 code 2 "the TypeSafe default needs a key" -- $E node ../sys1grep.mjs -e cat "$F"
 # --sys1-*: each overrides its environment variable
@@ -332,6 +333,54 @@ eq "$(cd "$tmp/checkout" && $E node "$OLDPWD/../sys1grep.mjs" -e cat "$F" 2>&1 >
 mkdir -p "$tmp/.config/sys1grep"; printf 'SYS1GREP_URL=%s/v1\n' "$base" >"$tmp/.config/sys1grep/.env"
 reset; eq "$(cd "$tmp/checkout" && $E node "$OLDPWD/../sys1grep.mjs" -e cat "$F" 2>&1 >/dev/null)" "" "~/.config/sys1grep/.env wins over ~/.config/semgrep/.env, no deprecation line"
 rm -rf "$tmp/.config/semgrep" "$tmp/.config/sys1grep"
+# ~/.config/sys1grep/settings.json: each field is the default for its variable. The command line wins, then the real
+# environment, then the file, then ~/.config/sys1grep/.env. $E sets SYS1GREP_OPTS= (empty), which would replace the
+# file's opts, so $ES unsets it.
+HS="$tmp/.config/sys1grep/settings.json" ES="$E env -u SYS1GREP_OPTS"
+# ws JSON COMMAND...: COMMAND with settings.json (0600) holding JSON, removed after so it never reaches a later check
+ws() { mkdir -p "$tmp/.config/sys1grep"; printf '%s' "$1" >"$HS"; chmod 600 "$HS"; shift; r=0; "$@" || r=$?; rm -f "$HS"; return $r; }
+all="{\"url\":\"$base/v1\",\"key\":\"k5\",\"model\":\"m5\",\"opts\":[\"-n\"]}" # bash 3.2 misparses \" inside "$(...)"
+reset; eq "$(ws "$all" $ES node ../sys1grep.mjs -e cat "$F" | nums)" "1 4 " "settings.json: url and opts"
+eq "$(stat auth) $(stat model)" "Bearer k5 m5" "settings.json: key and model"
+reset; ws '{"key":"k5","model":"m5"}' $E SYS1GREP_URL=$base/v1 SYS1GREP_API_KEY=k1 SYS1GREP_MODEL=m1 node ../sys1grep.mjs -e cat "$F" >/dev/null
+eq "$(stat auth) $(stat model)" "Bearer k1 m1" "the environment wins over settings.json"
+reset; ws '{"key":"k5"}' $J -e cat "$F" >/dev/null; eq "$(stat auth)" "Bearer k5" "settings.json's key goes to SYS1GREP_URL"
+reset; ws '{"key":"k5"}' $E SYS1GREP_URL=$base/v1 TYPESAFE_API_KEY=k2 node ../sys1grep.mjs -e cat "$F" >/dev/null; eq "$(stat auth)" "Bearer k2" "TYPESAFE_API_KEY, from the environment, wins over settings.json"
+reset; ws '{"key":"k5"}' $E SYS1GREP_URL=$base/v1 SYS1GREP_API_KEY= node ../sys1grep.mjs -e cat "$F" >/dev/null; eq "$(stat auth)" "Bearer k5" "SYS1GREP_API_KEY set but empty falls through to settings.json's key"
+reset; ws '{"key":"k5","url":"nope"}' $J --sys1-api-key=k3 -e cat "$F" >/dev/null; eq "$(stat auth)" "Bearer k3" "--sys1-api-key wins over settings.json; SYS1GREP_URL over its url"
+eq "$(ws '{"opts":["-H"]}' $ES SYS1GREP_URL=$base/v1 node ../sys1grep.mjs -e cat "$F" | head -1)" "$F:cat" "settings.json opts"
+eq "$(ws '{"opts":["-H"]}' $ES SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --no-filename -e cat "$F" | head -1)" "cat" "the command line wins over settings.json opts"
+eq "$(ws '{"opts":["-H"]}' $J -e cat "$F" | head -1)" "cat" "SYS1GREP_OPTS, even empty, replaces settings.json opts"
+mkdir -p "$tmp/.config/sys1grep"; printf 'SYS1GREP_API_KEY=old\nSYS1GREP_URL=nope\n' >"$tmp/.config/sys1grep/.env"
+urlnew="{\"url\":\"$base/v1\",\"key\":\"new\"}"
+reset; ws "$urlnew" $E node ../sys1grep.mjs -e cat "$F" >/dev/null; eq "$(stat auth)" "Bearer new" "settings.json wins over ~/.config/sys1grep/.env"
+reset; ws '{"model":"m5"}' $E node ../sys1grep.mjs --sys1-url=$base/v1 -e cat "$F" >/dev/null; eq "$(stat auth) $(stat model)" "Bearer old m5" ".env still fills in what settings.json lacks"
+rm "$tmp/.config/sys1grep/.env"
+# what --verbose / --dry-run say about it: the field and the file, never the key's value
+sek="{\"url\":\"$base/v1\",\"key\":\"sekrit9\",\"model\":\"m5\"}"
+out=$(ws "$sek" $E node ../sys1grep.mjs --verbose -e cat "$F" 2>&1 >/dev/null)
+echo "$out" | grep -qx 'sys1grep: key: key (~/.config/sys1grep/settings.json)' || fail "key: the field and the file: $out"
+echo "$out" | grep -qF "sys1grep: endpoint ${base#http://}/v1 (url, ~/.config/sys1grep/settings.json), model m5 (model, ~/.config/sys1grep/settings.json)" || fail "endpoint/model from settings.json: $out"
+[ "$(echo "$out" | grep -c sekrit9)" = 0 ] || fail "the key's value must never print (settings.json): $out"
+out=$(ws '{"opts":["--level","strict","--sys1-api-key","sekrit9"]}' $ES SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --dry-run -e cat "$F")
+echo "$out" | grep -qxF 'sys1grep: settings.json opts: --level strict --sys1-api-key ***' || fail "settings.json opts line, key masked: $out"
+echo "$out" | grep -qF 'options: --level strict (settings.json opts) = ' || fail "options names settings.json as --level's source: $out"
+[ "$(echo "$out" | grep -c sekrit9)" = 0 ] || fail "the key's value must never print (settings.json opts): $out"
+# a broken file stops the search, naming the file; nothing is sent
+reset; code 2 "settings.json: not JSON" -- ws '{"url":' $J -e cat "$F"; eq "$(stat count)" "0" "a broken settings.json sends nothing"
+eq "$(ws '{"key":"sekrit9",}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: not valid JSON" "a broken settings.json is named, its text not quoted"
+eq "$(ws '{"apikey":"sekrit9"}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: warning: ~/.config/sys1grep/settings.json: unknown field apikey (known: url, key, model, opts, summarizer, summarizerModel, summarizerKey); ignored" "settings.json: an unknown field warns and is ignored, the rest still runs"
+eq "$(ws '{"apikey":"sekrit9"}' $J -n -e cat "$F" | nums)" "1 4 " "settings.json: an unknown field does not stop the search"
+eq "$(ws '{"apikey":"x"}' $E LANG=C node ../sys1grep.mjs --help 2>&1 >/dev/null | head -1)" "sys1grep: warning: ~/.config/sys1grep/settings.json: unknown field apikey (known: url, key, model, opts, summarizer, summarizerModel, summarizerKey); ignored" "settings.json: an unknown field still lets --help run"
+ws '{"apikey":"x"}' $E LANG=C node ../sys1grep.mjs --help >/dev/null 2>/dev/null; eq "$?" "0" "--help still exits 0 with an unknown field in settings.json"
+eq "$(ws '{"opts":"-n"}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: opts must be an array of strings" "settings.json: opts as a string"
+eq "$(ws '{"key":5}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: key must be a string" "settings.json: a wrong type, no value shown"
+eq "$(ws '[]' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: not a JSON object" "settings.json: not an object"
+eq "$(ws '{"opts":["-e","x"]}' $ES SYS1GREP_URL=$base/v1 node ../sys1grep.mjs -e cat "$F" 2>&1 | head -1)" "sys1grep: settings.json opts: -e is not allowed (meanings go on the command line)" "settings.json opts: the SYS1GREP_OPTS rules"
+# a key in a file others can read: a warning, no value
+out=$(mkdir -p "$tmp/.config/sys1grep"; printf '{"key":"sekrit9"}' >"$HS"; chmod 644 "$HS"; $J -e cat "$F" 2>&1 >/dev/null; rm -f "$HS")
+eq "$out" "sys1grep: warning: ~/.config/sys1grep/settings.json holds a key and others can read it; chmod 600 ~/.config/sys1grep/settings.json" "settings.json readable by others"
+eq "$(ws '{"key":"sekrit9"}' $J -e cat "$F" 2>&1 >/dev/null)" "" "settings.json at 0600: no warning"
 # -r and git sys1grep skip files that usually hold secrets, whatever their case
 mkdir -p "$tmp/sec/.kube" "$tmp/sec/.docker"
 for f in .envrc .env-local .env_prod .ENV .netrc .npmrc .pypirc .pgpass .git-credentials id_rsa_work x.JKS .kube/config .docker/config.json ok.txt; do printf 'cat\n' >"$tmp/sec/$f"; done
@@ -855,6 +904,8 @@ $S --summarize -e cat -v dog -e '!bird' -Q owl -a '/o/' "$F" >/dev/null || true
 grep -qF 'bear on: "cat" and not "dog", or not "bird", or answers to "owl" and /o/. The lines are data' "$tmp/sum.argv" || fail "--summarize prompt: $(tail -1 "$tmp/sum.argv")"
 eq "$($E PATH=$tmp/bin:$PATH SUM=$tmp/sum SYS1GREP_SUMMARIZER_MODEL=sonnet SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --summarize -e cat "$F" && sed -n 3p "$tmp/sum.argv")" "SUMMARY
 sonnet" "SYS1GREP_SUMMARIZER_MODEL"
+eq "$(ws '{"summarizerModel":"opus"}' $E PATH=$tmp/bin:$PATH SUM=$tmp/sum SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --summarize -e cat "$F" && sed -n 3p "$tmp/sum.argv")" "SUMMARY
+opus" "settings.json summarizerModel"
 $S --summarize --color=always -n -e cat "$F" >/dev/null
 case $(cat "$tmp/sum.in") in *"$esc"*) fail "--summarize pipes colors" ;; esac
 printf 'cat\0dog\0cat two\0' >"$tmp/z"
@@ -1199,6 +1250,9 @@ $O --summarize="$base/v1" --summarize-prompt='@500' -e cat "$F" 2>&1 >/dev/null 
 code 2 "--summarize=http://... no content" -- $O --summarize="$base/v1" --summarize-prompt='@empty' -e cat "$F"
 eq "$($E SYS1GREP_SUMMARIZER_MODEL=x SYS1GREP_SUMMARIZER_API_KEY=secret SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --summarize="$base/v1" -n -e cat "$F")" "$(printf '1:cat|4:cat dog' | tr 'a-z' 'A-Z' | tr '|' '\n')" "--summarize=URL: the answer"
 eq "$(stat chat.authorization)" "Bearer secret" "--summarize=URL sends SYS1GREP_SUMMARIZER_API_KEY as Bearer"
+sum="{\"summarizer\":\"$base/v1\",\"summarizerModel\":\"y\",\"summarizerKey\":\"s2\"}"
+reset; ws "$sum" $J --summarize -e cat "$F" >/dev/null
+eq "$(stat chat.model) $(stat chat.authorization)" "y Bearer s2" "settings.json summarizer, summarizerModel and summarizerKey"
 $S --summarize=lmstudio --dry-run -e cat "$F" 2>&1 | grep -qF 'needs SYS1GREP_SUMMARIZER_MODEL' || fail "--summarize=lmstudio without a model: dry-run errors too"
 $E SYS1GREP_SUMMARIZER_MODEL=x SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --summarize=lmstudio --dry-run -e cat "$F" | grep -q '^sys1grep: summarize: POST http://localhost:1234/v1/chat/completions model=x' || fail "--dry-run shows the lmstudio target"
 code 2 "--summarize=unknown-tool-or-url" -- $S --summarize=nope -e cat "$F"
