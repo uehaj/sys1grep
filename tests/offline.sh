@@ -27,6 +27,10 @@ code() { want=$1 what=$2; shift 3; set +e; "$@" >/dev/null 2>&1; got=$?; set -e;
 # notty COMMAND...: COMMAND in a new session, which has no controlling terminal (</dev/null alone still leaves /dev/tty)
 notty() { perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' "$@"; }
 
+# #199 round 3: package.json's "files" must list every ./NAME.mjs a shipped .mjs imports, or npm pack ships a
+# module that 404s (ERR_MODULE_NOT_FOUND) at runtime instead of failing a test (options.mjs was missed this way).
+code 0 "package.json's \"files\" lists every locally-imported .mjs" -- node check-files.mjs
+
 F="$tmp/a.txt"
 printf '%s\n' 'cat' 'dog' '' 'cat dog' 'bird @0.4' 'fish @0.6' 'the line answers: owl' 'owl' >"$F"
 # 1 cat / 2 dog / 3 (blank, never sent) / 4 cat dog / 5 bird @0.4 / 6 fish @0.6 / 7 the line answers: owl / 8 owl
@@ -389,7 +393,7 @@ eq "$($J -r -l -e cat "$tmp/sec")" "$tmp/sec/ok.txt" "-r skips credential files"
 # settings.json's basename matches no SKIP_FILE pattern, so -r over an ancestor of ~/.config/sys1grep (here $J's
 # HOME=$tmp) would otherwise hand a search the key it holds; excluded by its one known absolute path instead
 mkdir -p "$tmp/.config/sys1grep"
-printf '{"key":"k9"}' >"$tmp/.config/sys1grep/settings.json"
+printf '{"key":"cat"}' >"$tmp/.config/sys1grep/settings.json"
 printf 'cat\n' >"$tmp/.config/sys1grep/other.txt"
 eq "$($J -r -l -e cat "$tmp/.config")" "$tmp/.config/sys1grep/other.txt" "-r skips sys1grep's own settings.json, not its directory"
 rm -f "$tmp/.config/sys1grep/settings.json" "$tmp/.config/sys1grep/other.txt"
@@ -597,6 +601,13 @@ printf 'cat\n' >"$R/app.min.js"; printf 'cat\n' >"$R/package-lock.json"
 echo ignored.txt >"$R/.gitignore"
 (cd "$R" && git init -q && git add a.txt sub/b.txt .gitignore .env.sample app.min.js package-lock.json)
 eq "$(cd "$R" && $GS -l -e cat | tr '\n' ' ')" "a.txt sub/b.txt " "git sys1grep: tracked files, not ignored ones, the skip list or generated files (#58)"
+# #199: git sys1grep must skip sys1grep's own settings.json too, like -r, when it's tracked and HOME points at it.
+# A separate repo, so the tracked settings.json never leaks into $R's later listings.
+GSP="$PWD/../git-sys1grep.mjs"; mkdir -p "$tmp/gsettings-repo/.config/sys1grep"
+GR=$(cd "$tmp/gsettings-repo" && pwd -P) # canonical: HOME's own homedir() is never resolved, so a symlinked $tmp (macOS /var) would otherwise mismatch skipPath's resolve(p)
+printf 'cat\n' >"$GR/other.txt"; printf '{"key":"cat"}' >"$GR/.config/sys1grep/settings.json"
+(cd "$GR" && git init -q && git add other.txt .config/sys1grep/settings.json)
+eq "$(cd "$GR" && $E HOME=$GR SYS1GREP_URL=$base/v1 node "$GSP" -l -e cat | tr '\n' ' ')" "other.txt " "git sys1grep: skips its own settings.json too"
 eq "$(cd "$R/sub" && $GS -l -e cat)" "b.txt" "git sys1grep: under the current directory"
 eq "$(cd "$R" && $GS -n -e cat a.txt)" "a.txt:1:cat" "git sys1grep: pathspec, file name even for one file"
 code 1 "git sys1grep: never stdin" -- sh -c "cd '$R' && echo cat | $GS -e cat -- nothing"
@@ -1471,7 +1482,7 @@ eq "$($J --rank=match --format=html -n -C1 -e '/dog/' -e cat "$tmp/mk.txt" | gre
 eq "$($J --rank=match --format=html -n -e cat -v dog -C1 "$tmp/mk.txt" | grep -c '3-dog\|3:dog')" "1" "html marks: a context line is unmarked"
 eq "$($J --rank=match --format=html --color=never -e cat "$tmp/mk.txt" | grep -c '<mark>')" "0" "html marks: --color=never"
 # --serve: a page on 127.0.0.1, each search a run of sys1grep against the fake
-$E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$F" >"$tmp/serve.url" 2>/dev/null &
+$E SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= node ../sys1grep.mjs --serve "$F" >"$tmp/serve.url" 2>/dev/null &
 serve=$!
 i=0; while [ ! -s "$tmp/serve.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve did not start"; sleep 0.05; done
 U=$(cat "$tmp/serve.url")
@@ -1495,6 +1506,10 @@ eq "$(curl -s "${BASE}dry?k=$K&x=e:cat" | grep -c 'dry-run\|requests')" "1" "--s
 eq "$(curl -s -o /dev/null -w '%{http_code}' "${BASE}results?x=e:cat")" "404" "--serve: a search without the token is refused"
 eq "$(curl -s -o /dev/null -w '%{http_code}' -H "Host: localhost:$((PORT + 1))" "$U")" "403" "--serve: localhost with the wrong port is refused"
 eq "$(curl -s -H 'Sec-Fetch-Site: same-site' -o /dev/null -w '%{http_code}' "${BASE}results?k=$K&x=e:cat")" "404" "--serve: a same-site search is refused"
+# #199: "GET //" (new URL(req.url, ...) throws ERR_INVALID_URL on a leading "//") must be answered, not crash the
+# server (an uncaughtException before Host/token are even checked); the server must still answer afterward
+eq "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT//")" "400" "--serve: GET // is answered, not a crash"
+eq "$(curl -s -o /dev/null -w '%{http_code}' "$U")" "200" "--serve: the server is still up after GET //"
 # the settings panel: GET /settings says each field's saved value and where the value in effect comes from, a key only
 # as saved or not; POST writes ~/.config/sys1grep/settings.json, only with the token and this request's own Host as Origin
 SK="x-sys1grep-token: $K" SO="Origin: ${BASE%/}" SJ="content-type: application/json"
@@ -1502,6 +1517,9 @@ field() { node -pe "const j = JSON.parse(require('fs').readFileSync(0)); [$1].ma
 rm -rf "$tmp/.config/sys1grep"
 eq "$(curl -s -o /dev/null -w '%{http_code}' "${BASE}settings")" "404" "--serve settings: GET without the token"
 eq "$(curl -s -H "$SK" "${BASE}settings" | field 'j.url, j.key, j.opts')" '[null,"env","SYS1GREP_URL"] [false,"default"] [null,"env","SYS1GREP_OPTS"]' "--serve settings: GET, the sources (an empty variable counts)"
+# #199: SYS1GREP_MODEL= (empty) must count as unset here, like sys1grep.mjs's own fromEnv, falling through to
+# "default" rather than being shown as the value in effect
+eq "$(curl -s -H "$SK" "${BASE}settings" | field 'j.model')" '[null,"default"]' "--serve settings: GET, an empty env var (other than opts) counts as unset"
 eq "$(curl -s -D - -o /dev/null -H "$SK" "${BASE}settings" | tr -d '\r' | grep -c '^x-content-type-options: nosniff$')" "1" "--serve settings: GET sends nosniff"
 post() { curl -s -o "$tmp/post.out" -w '%{http_code}' -X POST "$@" --data-binary @"$tmp/post.json" "${BASE}settings"; }
 printf '{"key":"k9","model":"m9","opts":["-n"]}' >"$tmp/post.json"
@@ -1532,6 +1550,32 @@ eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses --
 printf '{"opts":["--level","strict","-t","0.7"]}' >"$tmp/post.json"
 eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "200" "--serve settings: opts accepts a value-taking option's value"
 eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '{"key":"k9","model":"m9","opts":["--level","strict","-t","0.7"]}' "--serve settings: a refused POST (the two above) left this opts as it was"
+# #199: a non-string opts element must fail with parseSettings's own message (the type check runs before optsError)
+printf '{"opts":["-n",5]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ") $(field j.error <"$tmp/post.out")" '400 "opts must be an array of strings"' "--serve settings: a non-string opts element is refused, parseSettings's message"
+# #199: VALUED is derived from sys1grep.mjs's own OPTIONS, so --chunk (string-typed, previously missing from the
+# hand list) is accepted with a separate value, and --summarize/--rank (=-only: fill() ignores a separate value) are
+# refused with one, matching what a real search would do with the same opts
+printf '{"opts":["--chunk","50"]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "200" "--serve settings: opts accepts --chunk's separate value"
+printf '{"opts":["--summarize","claude"]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ") $(field j.error <"$tmp/post.out")" '400 "opts: claude is not allowed (it would be a target, which goes on the command line)"' "--serve settings: opts refuses --summarize's separate value (its bare form is =-only)"
+# #199: -r has no target field here, unlike at launch; on a --serve started with no target, sys1grep.mjs defaults a
+# bare -r to ".", so it is refused outright rather than only when it would widen past a launch target
+printf '{"opts":["-r"]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses -r"
+# round 3: -r must be refused inside a short-option cluster too, not only as a lone token, or -nr/-rn/-rl slip
+# through and still default to "." on a --serve with no target
+for o in -nr -rn -rl --recursive; do
+  printf '{"opts":["%s"]}' "$o" >"$tmp/post.json"
+  eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses $o (a cluster or alias hiding -r)"
+done
+printf '{"opts":["-nefoo"]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses -nefoo (the cluster's -e is REFUSED)"
+printf '{"opts":["-nl"]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses -nl (the cluster's -l is REFUSED)"
+printf '{"opts":["-ng"]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "200" "--serve settings: opts accepts -ng (neither letter is -r or REFUSED)"
 # url and a URL summarizer must be http(s); a tool name (not a URL) is not checked
 printf '{"url":"not a url"}' >"$tmp/post.json"
 eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: a bad url is refused"
@@ -1553,8 +1597,20 @@ GOT=$(curl -s -H "$SK" "${BASE}settings")
 OPTS=$(printf '%s' "$GOT" | node -pe "JSON.stringify(JSON.parse(require('fs').readFileSync(0)).opts[0])")
 URLV=$(printf '%s' "$GOT" | node -pe "JSON.stringify(JSON.parse(require('fs').readFileSync(0)).url[0])")
 printf '{"opts":%s,"url":%s}' "$OPTS" "$URLV" >"$tmp/post.json"
-post -H "$SK" -H "$SO" -H "$SJ" >/dev/null
-eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '{"key":"k9","model":"m9","opts":["--sys1-api-key","k9"],"url":"https://u:p@example.invalid/v1"}' "--serve settings: resending the masked GET as-is does not overwrite the key or the url's userinfo"
+rtcode=$(post -H "$SK" -H "$SO" -H "$SJ")
+eq "$rtcode $(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '200 {"key":"k9","model":"m9","opts":["--sys1-api-key","k9"],"url":"https://u:p@example.invalid/v1"}' "--serve settings: resending the masked GET as-is does not overwrite the key or the url's userinfo, and is accepted (200)"
+# #199: a url that still carries the masked userinfo but is not the exact mask (the host was edited around it) must
+# be refused, not saved with "***:***" as the literal, now-unrecoverable userinfo
+printf '{"url":"https://***:***@other.invalid/v1"}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: a url with the masked userinfo but an edited host is refused"
+eq "$(node -p "JSON.parse(require('fs').readFileSync('$HS', 'utf8')).url")" 'https://u:p@example.invalid/v1' "--serve settings: the refused url save left the real userinfo in place"
+# round 3: a partially masked userinfo (only the username or only the password is "***") must be refused the same
+# way, not saved literally
+printf '{"url":"https://***@example.invalid/v1"}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: a url with a masked username only is refused"
+printf '{"url":"https://u:***@example.invalid/v1"}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: a url with a masked password only is refused"
+eq "$(node -p "JSON.parse(require('fs').readFileSync('$HS', 'utf8')).url")" 'https://u:p@example.invalid/v1' "--serve settings: both partial-mask refusals left the real userinfo in place"
 printf '{"key":null,"opts":[]}' >"$tmp/post.json"
 eq "$(post -H "$SK" -H "$SO" -H "$SJ") $(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '200 {"model":"m9","url":"https://u:p@example.invalid/v1"}' "--serve settings: null and [] remove a field"
 printf '{"url":null}' >"$tmp/post.json"
