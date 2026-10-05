@@ -3,26 +3,14 @@
 import vm from 'node:vm';
 
 const U = process.argv[2], html = await (await fetch(U)).text();
-// reading order: title (icon + name) before the start group (labeled, "+ start" inside it) before the multi-step
-// toggle before the end group (labeled, "+ end" and the edges inside it) before the run controls before the
-// examples before the command line before the results before Details before Settings. No <select|input|button> in
-// the fake DOM's static-tag scan has a parent link, so this checks the raw markup's order instead (see El above).
-{
-  const order = ['<svg', '>sys<span class="accent">1grep', 'id="startgrp"', 'class="glabel">start<', 'id="fields"',
-    'id="add"', 'id="step"', 'id="steps"', 'class="glabel">end (--step-to)<', 'id="ends"', 'id="addend"',
-    'name="hops"', 'id="go"', 'id="ex"', 'id="cmd"', '<main id="m">', 'id="d">', 'id="sd">'];
-  const pos = order.map(m => html.indexOf(m));
-  const bad = order.filter((m, i) => pos[i] < 0 || (i > 0 && pos[i] <= pos[i - 1]));
-  console.log(`reading order: ${bad.length ? 'FAIL at ' + bad.join(',') : 'ok'}`);
-  console.log(`no logo in the toolbar: ${html.includes('class="logo"') ? 'FAIL, still present' : 'ok'}`);
-}
 const text = el => (el.children.length ? el.children.map(text).join('') : String(el.text));
 class El {
   constructor(tag, attrs = '') {
-    Object.assign(this, { tagName: tag, children: [], style: {}, text: '', className: '', value: '', ls: {} });
+    Object.assign(this, { tagName: tag, children: [], style: {}, text: '', className: '', value: '', ls: {}, attrs });
     this.hidden = /\shidden(\s|=|$)/.test(attrs);
     this.checked = /\schecked(\s|=|$)/.test(attrs);
     this.disabled = /\sdisabled(\s|=|$)/.test(attrs);
+    this.type = /\stype="([^"]+)"/.exec(attrs)?.[1];
   }
   append(...xs) { for (const x of xs) { x.parent = this; this.children.push(x); } }
   remove() { this.parent.children.splice(this.parent.children.indexOf(this), 1); }
@@ -34,13 +22,44 @@ class El {
   set textContent(t) { this.children = []; this.text = t; }
   set innerHTML(h) { this.children = []; for (const [, t, a] of h.matchAll(/<(select|input|button)(\s[^>]*)?>/g)) this.append(new El(t, a ?? '')); }
 }
+// A real (parent/children) tree for the static markup, built by a small open/close stack over the HTML up to
+// <script> (the script's own string literals hold tag-like text -- '<select>...', the close-icon svg -- that would
+// otherwise corrupt the stack; nothing past <script> carries an id= or name= the rest of this file needs, so the
+// tree stops there). void elements never push; a trailing "/>" (our inline svg's <circle/>, <line/>) never pushes.
+const VOID = new Set(['meta', 'link', 'input', 'br', 'hr', 'img', 'source', 'col', 'area', 'base']);
 const byId = {}, elements = {};
-for (const [, tag, attrs] of html.matchAll(/<(\w+)(\s[^>]*)?>/g)) {
-  const el = new El(tag, attrs ?? ''), id = /\sid="([^"]+)"/.exec(attrs)?.[1], name = /\sname="([^"]+)"/.exec(attrs)?.[1];
-  if (id) byId[id] = el;
-  if (name) elements[name] = el;
+{
+  const root = new El('root'), stack = [root];
+  const staticHtml = html.slice(0, html.indexOf('<script'));
+  for (const m of staticHtml.matchAll(/<(\/?)([a-zA-Z][\w-]*)((?:\s[^<>]*)?)(\/?)>/g)) {
+    const [, closing, tag, attrs, selfClose] = m;
+    if (closing) { for (let i = stack.length - 1; i > 0; i--) if (stack[i].tagName === tag) { stack.length = i; break; } continue; }
+    const el = new El(tag, attrs ?? ''), id = /\sid="([^"]+)"/.exec(attrs)?.[1], name = /\sname="([^"]+)"/.exec(attrs)?.[1];
+    stack.at(-1).append(el);
+    if (id) byId[id] = el;
+    if (name) elements[name] = el;
+    if (!selfClose && !VOID.has(tag)) stack.push(el);
+  }
 }
 byId.f.elements = byId.sf.elements = elements;
+// reading order, from the real tree where the static markup gives us one: the card holds the title, then the form,
+// then Settings; the form holds the start group, the multi-step toggle, the end group, the run controls, the
+// command line, the results, the examples, then Details.
+{
+  const seq = els => els.map(e => { const id = /\sid="([^"]+)"/.exec(e.attrs)?.[1], cls = /\sclass="([^"]+)"/.exec(e.attrs)?.[1]; return id ? '#' + id : cls ? '.' + cls.split(' ')[0] : e.tagName; });
+  console.log(`card children: ${seq(byId.card.children).join(' ')}`);
+  console.log(`form children: ${seq(byId.f.children).join(' ')}`);
+  console.log(`start group: ${byId.startgrp.tagName} > ${seq(byId.startgrp.children).join(' ')}`);
+  console.log(`end group: ${byId.steps.tagName} > ${seq(byId.steps.children).join(' ')}`);
+  console.log(`no <header>: ${/<header[\s>]/.test(html) ? 'FAIL, still present' : 'ok'}`);
+  console.log(`no logo in the toolbar: ${html.includes('class="logo"') ? 'FAIL, still present' : 'ok'}`);
+  console.log(`--hops is type=text (styled like the other inputs): ${elements.hops.type === 'text' ? 'ok' : 'FAIL'}`);
+  console.log(`Details/Settings checkboxes keep their native size: ${/\.grid input:not\(\[type=checkbox\]\)/.test(html) ? 'ok' : 'FAIL'}`);
+  // .err's base rule must come before the dark-scheme override in the stylesheet, or the (same-specificity) base
+  // rule wins regardless of color scheme -- this is a source-order check; the actual contrast is browser-measured.
+  const errBase = html.indexOf('.err { color: #d93025'), errDark = html.indexOf('.err { color: #f28b82');
+  console.log(`dark .err override comes after its base rule: ${errBase >= 0 && errDark > errBase ? 'ok' : 'FAIL'}`);
+}
 const sent = [];
 const document = { getElementById: id => byId[id] ?? null, createElement: t => new El(t) };
 const page = fetch, ctx = vm.createContext({
@@ -82,6 +101,8 @@ byId.ends.children[1].children[1].value = '/sys\\.exit/';
 fire();
 console.log(`on, 2 starts + 2 ends: ${state()}`);
 console.log(await search());
+// each x is named for its own group and position, renumbered by show() on every change
+console.log(`delete names: ${[...byId.fields.children, ...byId.ends.children].map(r => r.children[2].ariaLabel).join(' | ')}`);
 // reset to the single-start, step-off baseline the rest of this file builds on
 byId.fields.children[1].remove();
 byId.ends.children[1].remove();

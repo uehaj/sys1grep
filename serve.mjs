@@ -293,51 +293,52 @@ const page = ({ init, launch, after, token }) => `<!doctype html>
 @media (prefers-color-scheme: dark) { :root { --page: #12141a; --bg: #1b1e26; --fg: #e7e9ee; --muted: #9aa3b2; --rule: #2b303b; --border: #707a8a; --accent: #5b8df6; --accent-ink: #0b1020; --link: #5b8df6; --input-bg: #20242e; --pill-bg: #163826; --pill-fg: #7be0a0; --code: #11141b; --code-fg: #c9d1e0; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35); } }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--page); color: var(--fg); font: 14px/1.5 arial, "Hiragino Sans", "Noto Sans CJK JP", sans-serif; }
-header { background: var(--bg); border-radius: 16px; box-shadow: var(--shadow); margin: 24px auto; padding: 20px 24px; width: min(880px, calc(100% - 32px)); }
+.card { background: var(--bg); border-radius: 16px; box-shadow: var(--shadow); margin: 24px auto; padding: 20px 24px; width: min(880px, calc(100% - 32px)); }
 .title { display: flex; align-items: center; gap: 12px; margin: 0 0 10px; }
 .title .icon { display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; background: var(--accent); border-radius: 10px; flex: none; }
 .title h1 { font-size: 24px; margin: 0; font-weight: 800; }
 .title .accent { color: var(--accent); }
 .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
-.row input[type=text] { flex: 1; min-width: 160px; padding: 10px 16px; font-size: 15px; border: 1px solid var(--border); border-radius: 14px; background: var(--input-bg); color: var(--fg); }
+.row input[type=text] { flex: 1; min-width: 100px; padding: 10px 16px; font-size: 15px; border: 1px solid var(--border); border-radius: 14px; background: var(--input-bg); color: var(--fg); }
 select, button, input { font: inherit; color: var(--fg); }
 button, select { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 6px 12px; cursor: pointer; }
 #go { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
 #est, #stop, #copy, #save { background: var(--input-bg); }
-.group { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px 12px; margin: 10px 0; }
-.group .glabel { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 6px; }
+fieldset.group { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px 12px; margin: 10px 0; min-width: 0; }
+.group legend.glabel { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 6px; padding: 0; }
 .row.edges { border-top: 1px solid var(--rule); margin-top: 10px; padding-top: 10px; }
 .del { border: none; background: none; color: var(--muted); padding: 4px; border-radius: 8px; display: inline-flex; }
 .del:hover { background: var(--input-bg); color: var(--fg); }
+.err { color: #d93025; white-space: pre-wrap; } .note { color: var(--muted); }
+.withhint { display: flex; flex-direction: column; gap: 2px; } .hint { font-size: 11px; color: var(--muted); }
 #cmd { flex: 1; margin: 0; padding: 10px 14px; background: var(--code); color: var(--code-fg); border-radius: 10px; font: 12px/1.5 ui-monospace, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 details { margin: 6px 0; background: var(--input-bg); border-radius: 10px; } summary { cursor: pointer; color: var(--muted); padding: 8px 12px; }
 summary.dot::after { content: " \\25CF"; color: var(--link); }
 .grid { display: grid; gap: 12px 20px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); padding: 4px 12px 12px; }
 .grid label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); } .grid label.chk { flex-direction: row; align-items: center; gap: 6px; }
-.grid input, .grid select, .grid textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); width: 100%; font: inherit; }
-main { background: var(--bg); border-radius: 12px; padding: 16px; margin: 12px 0 4px; display: grid; gap: 16px; grid-template-columns: 1fr; } main.two { grid-template-columns: 3fr 2fr; }
+.grid input:not([type=checkbox]), .grid select, .grid textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); width: 100%; font: inherit; }
+main { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin: 12px 0 4px; display: grid; gap: 16px; grid-template-columns: 1fr; } main.two { grid-template-columns: 3fr 2fr; }
 @media (max-width: 560px) { main.two { grid-template-columns: 1fr; } }
 iframe { width: 100%; border: 0; min-height: 80px; } pre.out { white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.5 ui-monospace, Menlo, monospace; }
 .c32 { color: #188038; } .c35 { color: #a142f4; } .c36 { color: #0c7a88; } .c31 { color: #d93025; } .c33 { color: #b06000; } .c01_31 { color: #d93025; font-weight: 700; } .c01_33 { color: #b06000; font-weight: 700; background: #fff3b055; }\n@media (prefers-color-scheme: dark) { .c32 { color: #81c995; } .c35 { color: #d7aefb; } .c36 { color: #78d9ec; } .c31, .c01_31 { color: #f28b82; } .c33, .c01_33 { color: #fdd663; } .err { color: #f28b82; } }\nbutton:disabled { opacity: .45; cursor: default; } #ex button { border-radius: 999px; background: var(--pill-bg); color: var(--pill-fg); border: none; } #ex .label, #ex .grp { flex-basis: 100%; font-weight: 700; color: var(--muted); margin-top: 4px; }
-.err { color: #d93025; white-space: pre-wrap; } .note { color: var(--muted); }
 #right { border-left: 1px solid var(--rule); padding-left: 16px; }
 </style></head><body>
-<header>
+<div class="card" id="card">
 <div class="title"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#fff" stroke-width="2.2"/><line x1="15.3" y1="15.3" x2="20.5" y2="20.5" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg></span><h1>sys<span class="accent">1grep</span></h1></div>
 <form id="f" autocomplete="off" onsubmit="return false">
-<div class="group" id="startgrp"><div class="glabel">start</div><div id="fields"></div><button type="button" id="add" title="add a start" aria-label="add a start">+ start</button></div>
-<div class="row"><label title="chain a start meaning to one or more end meanings, following the call/reference graph between them (--step-to)"><input type="checkbox" id="step"> multi-step</label></div>
-<div class="group" id="steps" hidden><div class="glabel">end (--step-to)</div><div id="ends"></div><button type="button" id="addend" title="add an end" aria-label="add an end">+ end</button>
-<div class="row edges"><span class="note">edges</span><label title="how many hops the end may be from the start, e.g. 1..2">--hops <input name="hops" size="6"></label><label><input type="checkbox" name="reverse"> --reverse</label></div></div>
+<fieldset class="group" id="startgrp"><legend class="glabel">start</legend><div id="fields"></div><button type="button" id="add" title="add a start" aria-label="add a start">+ start</button></fieldset>
+<div class="row"><div class="withhint"><label title="chain a start meaning to one or more end meanings, following the call/reference graph between them (--step-to)"><input type="checkbox" id="step"> multi-step</label><small class="hint">chains a start meaning to matches reachable from it, instead of searching them directly</small></div></div>
+<fieldset class="group" id="steps" hidden><legend class="glabel">end (--step-to)</legend><div id="ends"></div><button type="button" id="addend" title="add an end" aria-label="add an end">+ end</button>
+<div class="row edges"><div class="withhint"><span class="note">edges</span><small class="hint">--hops limits how many hops away an end may be; --reverse searches backwards along the graph</small></div><label title="how many hops the end may be from the start, e.g. 1..2">--hops <input type="text" name="hops" size="6"></label><label><input type="checkbox" name="reverse"> --reverse</label></div></fieldset>
 <div class="row">
 <button type="submit" id="go">Search</button><button type="button" id="est" title="run with --dry-run: shows the request size and estimated cost, no results">Estimate cost</button><button type="button" id="stop" disabled>Stop</button>
-<label title="order matches by Jev's relevance score, or by plain substring match; off keeps file order">rank <select name="rank"><option value="">off</option><option value="jev">jev</option><option value="match">match</option></select></label>
-<label title="have a small model read the matches and answer in a sentence or two"><input type="checkbox" name="summarize"> summarize</label>
+<div class="withhint"><label title="order matches by Jev's relevance score, or by plain substring match; off keeps file order">rank <select name="rank"><option value="">off</option><option value="jev">jev</option><option value="match">match</option></select></label><small class="hint">off keeps file order</small></div>
+<div class="withhint"><label title="have a small model read the matches and answer in a sentence or two"><input type="checkbox" name="summarize"> summarize</label><small class="hint">answers in a sentence or two after the search</small></div>
 <input type="text" name="summarize-prompt" placeholder="summary instruction" style="display:none;flex:1;min-width:160px">
 </div>
-<div class="row" id="ex"><span class="note label">examples</span></div>
 <div class="row"><pre id="cmd"></pre><button type="button" id="copy">Copy</button></div>
 <main id="m"><div id="left"></div><div id="right" hidden></div></main>
+<div class="row" id="ex"><span class="note label">examples</span></div>
 <details id="d"><summary id="ds">Details</summary><div class="grid">
 <label>level <select name="level"><option>loose</option><option>normal</option><option>strict</option></select></label>
 <label>-t <input name="t" size="5" inputmode="decimal"></label><label>-T <input name="T" size="5" inputmode="decimal"></label>
@@ -358,7 +359,7 @@ iframe { width: 100%; border: 0; min-height: 80px; } pre.out { white-space: pre-
 <label>summarizerModel <input name="set-summarizerModel"><small class="note" id="src-summarizerModel"></small></label>
 <label>summarizerKey <input type="password" name="set-summarizerKey" autocomplete="new-password"><small class="note" id="src-summarizerKey"></small><span class="chk"><input type="checkbox" name="clear-summarizerKey"> remove</span></label>
 </div><div class="row"><button type="button" id="save">Save to ~/.config/sys1grep/settings.json</button><span class="note" id="sst"></span></div></form></details>
-</header>
+</div>
 <script>
 const CONTROLS = ${json(CONTROLS)}, INIT = ${json(init)}, LAUNCH = ${json(launch)}, AFTER = ${json(after)}, TOKEN = ${json(token)}, EXAMPLES = ${json(EXAMPLES)};
 const toArgv = ${toArgv};
@@ -392,6 +393,11 @@ const read = () => {
 };
 const show = () => {
   const p = read(), multi = p.x.some(x => x[0] === 'S');
+  // a numbered, distinct accessible name per row ("remove start condition 2"), renumbered on every change so a
+  // deletion in the middle doesn't leave a stale number on the rows after it.
+  for (const [box, label] of [[fields, 'start'], [ends, 'end']]) {
+    [...box.children].forEach((r, i) => { const d = r.children[2]; if (d) d.title = d.ariaLabel = 'remove ' + label + ' condition ' + (i + 1); });
+  }
   steps.hidden = !multi;
   f.elements.rank.disabled = f.elements.summarize.disabled = multi;
   f.elements['summarize-prompt'].style.display = p.summarize && !multi ? '' : 'none';

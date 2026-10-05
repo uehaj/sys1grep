@@ -1676,8 +1676,15 @@ printf '%s\n' 'def main():' '  helper()' 'def helper():' '  raise X' >"$tmp/m.py
 $E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$tmp/m.py" >"$tmp/serve4.url" 2>/dev/null &
 serve=$!
 i=0; while [ ! -s "$tmp/serve4.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (multi-step) did not start"; sleep 0.05; done
-eq "$(node serve-page.mjs "$(cat "$tmp/serve4.url")")" "reading order: ok
+eq "$(node serve-page.mjs "$(cat "$tmp/serve4.url")")" "card children: .title #f #sd
+form children: #startgrp .row #steps .row .row #m #ex #d
+start group: fieldset > .glabel #fields #add
+end group: fieldset > .glabel #ends #addend .row
+no <header>: ok
 no logo in the toolbar: ok
+--hops is type=text (styled like the other inputs): ok
+Details/Settings checkboxes keep their native size: ok
+dark .err override comes after its base rule: ok
 first start row: 3 children (select, input, delete)
 steps hidden: -e '/def main/'
 x=e:/def main/ hops=0.. reverse=0 -> 1 lines
@@ -1686,6 +1693,7 @@ x=e:/def main/|a:/helper/ hops=0.. reverse=0 -> 1 lines
 on, starts kept: steps shown: -e '/def main/' -a /helper/ --step-to
 on, 2 starts + 2 ends: steps shown: -e '/def main/' -a /helper/ --step-to -e '/raise /' -e '/sys\\.exit/'
 x=e:/def main/|a:/helper/|S:|e:/raise /|e:/sys\\.exit/ hops=0.. reverse=0 -> 2 lines
+delete names: remove start condition 1 | remove start condition 2 | remove end condition 1 | remove end condition 2 | remove end condition 3
 steps shown: -e '/def main/' --step-to
 steps shown: -e '/def main/' --step-to -e '/raise /' --hops=1..2
 x=e:/def main/|S:|e:/raise / hops=1..2 reverse=0 -> 2 lines
@@ -1698,7 +1706,7 @@ on true, 2 ends, steps shown: -e '/^ *def main/' --step-to -e '/raise /' -e '/sy
 on true, 1 ends, steps shown: -e '/^ *def helper/' --step-to -e '/^ *def main/' --reverse
 x=e:/^ *def helper/|S:|e:/^ *def main/ hops=0.. reverse=1 -> 2 lines
 empty end: Enter an end (--step-to)., 0 sent
-groups: b b b b b b b b [multi-step] b b b b
+groups: [] b b b b b b b b [multi-step] b b b b
 pressing every example sends 0
 on false, steps hidden: -e 'network or remote connection failure' -v 'a retry is happening or was attempted' -n
 x=e:network or remote connection failure|v:a retry is happening or was attempted hops=0.. reverse=0 -> 1 lines
