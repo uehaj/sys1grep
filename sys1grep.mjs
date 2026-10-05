@@ -12,7 +12,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { format, parseArgs } from 'node:util';
 import { FIELDS, SETTINGS_FILE, SETTINGS_SHOWN, maskOpts, readSettings } from './settings.mjs';
-import { OPTIONS } from './options.mjs';
+import { OFF, OPTIONS, fill, parseOpts } from './options.mjs';
 
 // Node 20 colors console.error red on a terminal (22 does not): stderr gets exactly what sys1grep writes.
 // A write error (EPIPE: the reader quit) is dropped, as console.error drops it, so it never turns into exit 2.
@@ -74,17 +74,9 @@ const SYS1GREP_URL = envURL.value, SYS1GREP_MODEL = envMODEL.value,
 const OPTS_NAME = envOPTS.file === SETTINGS_SHOWN ? 'settings.json opts' : 'SYS1GREP_OPTS';
 const optsArgs = Array.isArray(envOPTS.value) ? envOPTS.value : (envOPTS.value ?? '').split(/\s+/).filter(Boolean);
 
-// A bare --color means --color=auto (as in grep); parseArgs cannot express an optional value, so fill it in first.
-// --no-filename is grep's name for --no-with-filename, --null-data grep's name for -z.
-// --no-rank / --no-summarize: parseArgs negates booleans only, so they become a value no argument can hold (a NUL),
-// cleared below; the later one wins, as for any option.
-const OFF = '\0';
-const fill = a => (a === '--color' ? '--color=auto' : a === '--null-data' ? '-z' : a === '--no-filename' ? '--no-with-filename'
-  : a === '--summarize' ? `--summarize=${SYS1GREP_SUMMARIZER || 'claude'}` : a === '--dedup' ? '--dedup=always' : a === '--rank' ? '--rank=jev'
-  : a === '--no-rank' ? `--rank=${OFF}` : a === '--no-summarize' ? `--summarize=${OFF}` : a);
 // SYS1GREP_OPTS holds default options only: no meanings, no files, no --. It goes in front of the arguments, so the
-// command line wins (a later value counts; --no-X clears a flag).
-const defaults = optsArgs.map(fill);
+// command line wins (a later value counts; --no-X clears a flag). fill/OFF: options.mjs (shared with serve.mjs).
+const defaults = optsArgs.map(a => fill(a, SYS1GREP_SUMMARIZER));
 // --step-to X (#163) is --step-to -e X, and so is --step-to=X; a bare --step-to (followed by an option) opens the end
 // expression for the -e / -a / -v / -Q after it. After --, every argument is a file. X, and the MEANING of -e / -a /
 // -v / -Q, may start with a dash ("--summarize hands the lines on"): an option holds no space, and is -- and a word or
@@ -106,14 +98,11 @@ const openStep = args => {
 };
 let optsInteractive = false; // -i from SYS1GREP_OPTS: a script without a terminal is told where it came from
 try {
-  const { tokens: t } = parseArgs({ args: defaults, options: OPTIONS, allowPositionals: true, allowNegative: true, tokens: true });
+  const { tokens: t } = parseOpts(defaults);
   optsInteractive = t.some(k => k.name === 'interactive' && !k.rawName.startsWith('--no-'));
-  const command = k => k.name === 'install-templates' || (k.name === 'template' && k.value === 'list');
-  const bad = t.find(k => k.kind !== 'option' || ['e', 'a', 'v', 'question', 'step-to', 'cached', 'untracked'].includes(k.name) || command(k));
-  if (bad) die(`${OPTS_NAME}: ${bad.kind !== 'option' ? `'${bad.value ?? '--'}' is not an option` : command(bad) ? `${bad.rawName}${bad.value === undefined ? '' : `=${bad.value}`} is not allowed (it does something instead of searching)` : ['cached', 'untracked'].includes(bad.name) ? `--${bad.name} is not allowed (what is searched goes on the command line)` : `${bad.name.length > 1 ? '--' : '-'}${bad.name} is not allowed (${bad.name === 'step-to' ? 'expressions' : 'meanings'} go on the command line)`}`);
 } catch (e) { die(`${OPTS_NAME}: ${e.message}`); }
 const { values: opt, positionals: files, tokens } = parseArgs({
-  args: [...defaults, ...openStep(process.argv.slice(2)).map(fill)],
+  args: [...defaults, ...openStep(process.argv.slice(2)).map(a => fill(a, SYS1GREP_SUMMARIZER))],
   options: OPTIONS,
   allowPositionals: true,
   allowNegative: true,
