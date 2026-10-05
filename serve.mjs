@@ -7,6 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { FIELDS, maskOpts, maskUrl, readSettings, writeSettings } from './settings.mjs';
+import { OPTIONS, EQUALS_ONLY } from './options.mjs';
 
 // The settings panel's view of ~/.config/sys1grep/settings.json, one tuple per field: [the saved value (for a key, only
 // whether one is saved; for url and opts, with a --sys1-api-key or a url's userinfo masked, the same way --verbose
@@ -20,7 +21,7 @@ const settingsView = cli => {
   try { dotenv = parseEnv(readFileSync(`${homedir()}/.config/sys1grep/.env`, 'utf8')); } catch {}
   return Object.fromEntries(Object.entries(FIELDS).map(([f, v]) => {
     const names = [`SYS1GREP_${v}`, `SEMGREP_${v}`, ...(f === 'key' ? ['TYPESAFE_API_KEY'] : [])];
-    const env = names.find(n => process.env[n] !== undefined);
+    const env = names.find(n => process.env[n] !== undefined && (f === 'opts' || process.env[n] !== ''));
     const saved = KEYS.has(f) ? s[f] !== undefined : f === 'opts' ? (s.opts ? maskOpts(s.opts) : null) : f === 'url' ? (s.url ? maskUrl(s.url) : null) : s[f] ?? null;
     const src = cli[f] !== undefined ? ['cmd'] : env ? ['env', env] : s[f] !== undefined ? ['settings'] : names.some(n => dotenv[n] !== undefined) ? ['.env'] : ['default'];
     return [f, [saved, ...src]];
@@ -30,18 +31,23 @@ const settingsView = cli => {
 // The settings panel's opts refuses the same set, plus sys1-url/sys1-api-key (their own fields) and a bare target
 // (which would become a positional). sys1grep.mjs is still the real gate (SYS1GREP_OPTS already dies on a
 // positional, #196), so this is an early, specific error at save time rather than a cryptic one on the next search.
-// VALUED: options this build of sys1grep.mjs takes a separate value for, so that value is not mistaken for a
-// target; kept in sync with sys1grep.mjs's OPTIONS by the offline.sh cases that exercise both a VALUED option and a
-// rejection.
 const REFUSED = /^(-[eavQlcqoziHV]|-[eavQ].+|--(question|step-to|format|color|verbose|dry-run|interactive|help|version|install-templates|quiet|null-data)(=.*)?)$/;
-const VALUED = new Set(['-j', '-A', '-B', '-C', '-M', '--unit', '--dedup', '--rank', '--edges', '--hops', '--max-columns',
-  '--max-filesize', '--max-cost', '--include', '--exclude', '--changed-within', '--color', '--summarize',
-  '--summarize-prompt', '--format', '--template', '--sys1-model', '--level', '-t', '-T']);
+// VALUED: options this build of sys1grep.mjs takes a separate value for, so that value is not mistaken for a
+// target. Derived from sys1grep.mjs's own OPTIONS (options.mjs), so the two cannot drift (#199): every string-typed
+// option, as its long flag and (for a single-letter name or an explicit short) its short flag, except the ones in
+// EQUALS_ONLY, whose bare form sys1grep.mjs's fill() always rewrites to a fixed `=value` before a separate
+// following token could ever be read as that option's value.
+const VALUED = new Set(Object.entries(OPTIONS).flatMap(([k, o]) => (o.type !== 'string' || EQUALS_ONLY.has(k)
+  ? [] : [k.length === 1 ? `-${k}` : `--${k}`, ...(o.short ? [`-${o.short}`] : [])])));
 const optsError = opts => {
   for (const [i, tok] of opts.entries()) {
     if (tok === '--') return `${tok} is not allowed (it would start positionals)`;
     if (REFUSED.test(tok)) return `${tok} is not allowed (meanings, targets and output shape go on the command line)`;
     if (/^--sys1-(url|api-key)(=|$)/.test(tok)) return `${tok} is not allowed (use the url / key field instead)`;
+    // -r (unlike at launch) has no target field here to keep in check: on a --serve started with no target
+    // (stdin), sys1grep.mjs defaults a bare -r to ".", so saved opts could turn every search into a recursive
+    // scan of the server's own working directory.
+    if (/^(-r|--r)(=.*)?$/.test(tok)) return `${tok} is not allowed (it would widen the search past the launch's own targets)`;
     if (!tok.startsWith('-') && !(VALUED.has(opts[i - 1]) && !opts[i - 1].includes('='))) return `${tok} is not allowed (it would be a target, which goes on the command line)`;
   }
   return null;
@@ -58,6 +64,7 @@ const saveSettings = patch => {
     if (!Object.hasOwn(FIELDS, k)) throw new Error(`unknown field ${k}`);
     let value = v;
     if (k === 'opts' && Array.isArray(v)) {
+      if (!v.every(a => typeof a === 'string')) throw new Error('opts must be an array of strings');
       // An unchanged round trip skips optsError on purpose: a file written before this refusal existed, or edited
       // by hand, could already hold something optsError would now reject (a positional, say); resending it as-is
       // must not break (sys1grep.mjs still refuses it on the next search), only a real edit is validated here.
@@ -66,6 +73,9 @@ const saveSettings = patch => {
     }
     if (k === 'url' && typeof v === 'string' && v) {
       if (typeof next.url === 'string' && v === maskUrl(next.url)) value = next.url;
+      // A url that still carries the masked userinfo but does not match the mask exactly (the host or path was
+      // edited around it) would otherwise save the literal "***:***" as real credentials.
+      else if (/\*\*\*:\*\*\*@/.test(v)) throw new Error('url: re-enter the userinfo (the part before @) in full, or remove it, before saving');
       else if (!isHttpUrl(v)) throw new Error('url must be http(s)');
     }
     if (k === 'summarizer' && typeof v === 'string' && /^https?:\/\//.test(v) && !isHttpUrl(v)) throw new Error('summarizer must be http(s) when it is a URL');
@@ -218,11 +228,15 @@ export function serve(argv) {
   };
 
   const server = createServer(async (req, res) => {
-    const url = new URL(req.url, 'http://x'), host = req.headers.host;
+    const host = req.headers.host;
     const send = (code, type, body) => {
       res.writeHead(code, { 'content-type': `${type}; charset=utf-8`, 'cache-control': 'no-store', 'x-frame-options': 'DENY', ...(type === 'application/json' ? { 'x-content-type-options': 'nosniff' } : {}) });
       res.end(body);
     };
+    // req.url can be something new URL() rejects outright (a bare "//..." parses as scheme-relative and throws
+    // ERR_INVALID_URL): answered before any check below, not left to crash the process (an uncaughtException, #166).
+    let url;
+    try { url = new URL(req.url, 'http://x'); } catch { return send(400, 'text/plain', 'bad request'); }
     // a page on another site (or a rebound name) must not be able to start a search
     if (host !== `127.0.0.1:${server.address().port}` && host !== `localhost:${server.address().port}`) return send(403, 'text/plain', 'forbidden');
     // Every route, the page itself included, needs this launch's token: in the query (?k=, what the startup line and
