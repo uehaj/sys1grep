@@ -7,7 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { FIELDS, maskOpts, maskUrl, readSettings, writeSettings } from './settings.mjs';
-import { OPTIONS, EQUALS_ONLY } from './options.mjs';
+import { fill, parseOpts } from './options.mjs';
 
 // The settings panel's view of ~/.config/sys1grep/settings.json, one tuple per field: [the saved value (for a key, only
 // whether one is saved; for url and opts, with a --sys1-api-key or a url's userinfo masked, the same way --verbose
@@ -27,51 +27,31 @@ const settingsView = cli => {
     return [f, [saved, ...src]];
   }));
 };
-// --serve itself refuses REFUSED (below) at launch: the page replaces these, or their meaning comes from the page.
-// The settings panel's opts refuses the same set, plus sys1-url/sys1-api-key (their own fields) and a bare target
-// (which would become a positional). sys1grep.mjs is still the real gate (SYS1GREP_OPTS already dies on a
-// positional, #196), so this is an early, specific error at save time rather than a cryptic one on the next search.
-const REFUSED = /^(-[eavQlcqoziHV]|-[eavQ].+|--(question|step-to|format|color|verbose|dry-run|interactive|help|version|install-templates|quiet|null-data)(=.*)?)$/;
-// VALUED: options this build of sys1grep.mjs takes a separate value for, so that value is not mistaken for a
-// target. Derived from sys1grep.mjs's own OPTIONS (options.mjs), so the two cannot drift (#199): every string-typed
-// option, as its long flag and (for a single-letter name or an explicit short) its short flag, except the ones in
-// EQUALS_ONLY, whose bare form sys1grep.mjs's fill() always rewrites to a fixed `=value` before a separate
-// following token could ever be read as that option's value.
-const VALUED = new Set(Object.entries(OPTIONS).flatMap(([k, o]) => (o.type !== 'string' || EQUALS_ONLY.has(k)
-  ? [] : [k.length === 1 ? `-${k}` : `--${k}`, ...(o.short ? [`-${o.short}`] : [])])));
-// A short-option cluster (-nr, -rl, -nefoo) packs several single-dash flags into one token, the way sys1grep.mjs's
-// own parseArgs reads it; splitting it lets the per-flag checks below see "-r" or "-e" inside "-nr" / "-nefoo"
-// instead of only ever seeing the whole token. A VALUED short option consumes the rest of the cluster as its
-// glued value (as -e's MEANING does: -efoo is -e foo, not -e -f -o -o), so splitting stops there.
-const clusterFlags = tok => {
-  const m = /^-([A-Za-z]{2,})$/.exec(tok);
-  if (!m) return [tok];
-  const out = [];
-  for (const ch of m[1]) {
-    const flag = `-${ch}`;
-    out.push(flag);
-    if (VALUED.has(flag)) break;
-  }
-  return out;
-};
+// --serve itself refuses REFUSED_LAUNCH (below) at launch: the page replaces these, or their meaning comes from the
+// page. The settings panel's opts run through sys1grep.mjs's own parseOpts (options.mjs, shared: #199 — three
+// rounds of regex/cluster checks each missed a form parseArgs itself already handles correctly, from -nr to -rC1
+// to --r), which refuses a positional (a target, #196) and a meaning/expression on its own; DENY below refuses the
+// rest, by the canonical OPTIONS name parseOpts resolves a token to, however it was spelled (-r, --r, or inside a
+// cluster like -rC1 or -nr all resolve to "r").
+const REFUSED_LAUNCH = /^(-[eavQlcqoziHV]|-[eavQ].+|--(question|step-to|format|color|verbose|dry-run|interactive|help|version|install-templates|quiet|null-data)(=.*)?)$/;
+// l/c/quiet/o/z/interactive/with-filename/version/format/color/verbose/dry-run/help: the page's own replacements
+// for a search's output shape and tracing (REFUSED_LAUNCH's set, minus what parseOpts already refuses on its own:
+// e/a/v/question/step-to/install-templates). r: unlike at launch, there is no target field here to keep a bare -r
+// (or a --serve started with no target, which then defaults to ".") in check. sys1-url/sys1-api-key: their own
+// fields.
+const DENY = new Set(['l', 'c', 'quiet', 'o', 'z', 'interactive', 'with-filename', 'version', 'format', 'color',
+  'verbose', 'dry-run', 'help', 'r', 'sys1-url', 'sys1-api-key']);
 const optsError = opts => {
-  for (const [i, tok] of opts.entries()) {
-    if (tok === '--') return `${tok} is not allowed (it would start positionals)`;
-    if (REFUSED.test(tok)) return `${tok} is not allowed (meanings, targets and output shape go on the command line)`;
-    if (/^--sys1-(url|api-key)(=|$)/.test(tok)) return `${tok} is not allowed (use the url / key field instead)`;
-    // -r / -R (unlike at launch) have no target field here to keep in check: on a --serve started with no target
-    // (stdin), sys1grep.mjs defaults a bare -r to ".", so saved opts could turn every search into a recursive scan
-    // of the server's own working directory. Checked letter by letter (clusterFlags), not just as a whole token, so
-    // -nr / -rn / -rl are refused too, not only a bare -r; --recursive is refused outright, though sys1grep.mjs has
-    // no such option to begin with (parseArgs would already refuse it as unknown).
-    if (/^--recursive(=.*)?$/.test(tok)) return `${tok} is not allowed (it would widen the search past the launch's own targets)`;
-    for (const flag of clusterFlags(tok)) {
-      if (/^-[rR](=.*)?$/.test(flag)) return `${tok} is not allowed (it would widen the search past the launch's own targets)`;
-      if (REFUSED.test(flag)) return `${tok} is not allowed (meanings, targets and output shape go on the command line)`;
-    }
-    if (!tok.startsWith('-') && !(VALUED.has(opts[i - 1]) && !opts[i - 1].includes('='))) return `${tok} is not allowed (it would be a target, which goes on the command line)`;
-  }
-  return null;
+  let tokens;
+  try { ({ tokens } = parseOpts(opts.map(a => fill(a, 'x')))); }
+  catch (e) { return e.message; }
+  const bad = tokens.find(k => DENY.has(k.name));
+  if (!bad) return null;
+  const tok = opts[bad.index]; // the original, unfilled element: a cluster like "-nr" stays "-nr", not just "-r"
+  const why = bad.name === 'r' ? "it would widen the search past the launch's own targets"
+    : bad.name === 'sys1-url' || bad.name === 'sys1-api-key' ? 'use the url / key field instead'
+    : 'meanings, targets and output shape go on the command line';
+  return `${tok} is not allowed (${why})`;
 };
 const isHttpUrl = s => { try { return /^https?:$/.test(new URL(s).protocol); } catch { return false; } };
 // A POST's body: the fields to change. A string or a non-empty array sets one, null, '' or [] removes it, and a field
@@ -97,9 +77,12 @@ const saveSettings = patch => {
       else {
         // A url that still carries a masked username or password, whole or in part (the host, path or the other
         // half of the userinfo was edited around it), would otherwise save "***" itself as a real credential.
+        // URL's username/password getters return the percent-encoded form (https://%2A%2A%2A@... is "***"
+        // percent-encoded), so this decodes before comparing, or the same mask spelled that way would slip through.
         let parsed;
         try { parsed = new URL(v); } catch {}
-        if (parsed && (parsed.username === '***' || parsed.password === '***')) throw new Error('url: re-enter the userinfo (the part before @) in full, or remove it, before saving');
+        const decoded = s => { try { return decodeURIComponent(s); } catch { return s; } };
+        if (parsed && (decoded(parsed.username) === '***' || decoded(parsed.password) === '***')) throw new Error('url: re-enter the userinfo (the part before @) in full, or remove it, before saving');
         if (!isHttpUrl(v)) throw new Error('url must be http(s)');
       }
     }
@@ -225,7 +208,7 @@ export function serve(argv) {
   const before = dd < 0 ? rest : rest.slice(0, dd), after = dd < 0 ? [] : rest.slice(dd);
   // the key stays in this process (never in the page or the command shown); the summary instruction is a control, not a launch option
   const [noKey, key] = lift(before, 'sys1-api-key'), [launch, prompt] = lift(noKey, 'summarize-prompt');
-  const bad = launch.find(a => REFUSED.test(a));
+  const bad = launch.find(a => REFUSED_LAUNCH.test(a));
   if (bad) throw new Error(`--serve: ${bad.split('=')[0]} is not for --serve (the page sets the meaning and shows the results as html)`);
   const init = { ...initOf(launch), 'summarize-prompt': prompt ?? '' };
   const secret = key === undefined ? [] : [`--sys1-api-key=${key}`];
