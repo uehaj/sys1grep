@@ -11,7 +11,7 @@ import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { format, parseArgs } from 'node:util';
-import { FIELDS, SETTINGS_FILE, SETTINGS_SHOWN, readSettings } from './settings.mjs';
+import { FIELDS, SETTINGS_FILE, SETTINGS_SHOWN, maskOpts, readSettings } from './settings.mjs';
 
 // Node 20 colors console.error red on a terminal (22 does not): stderr gets exactly what sys1grep writes.
 // A write error (EPIPE: the reader quit) is dropped, as console.error drops it, so it never turns into exit 2.
@@ -1118,7 +1118,7 @@ if (logPlan) {
   // --sys1-api-key's value is masked here too: the default options may hold it (they refuse only meanings and the
   // like), and it would otherwise leak in full, unlike the option typed on the command line (line above).
   if (optsArgs.length) {
-    const masked = optsArgs.map((tok, i, toks) => (toks[i - 1] === '--sys1-api-key' ? '***' : tok.replace(/^--sys1-api-key=.*$/, '--sys1-api-key=***'))).join(' ');
+    const masked = maskOpts(optsArgs).join(' ');
     logPlan(`${envOPTS.file === SETTINGS_SHOWN ? OPTS_NAME : envOPTS.name}: ${masked}`);
   }
   const thresholds = optSrc('t') === null && optSrc('T') === null
@@ -1396,6 +1396,10 @@ function gitIgnored(dir) {
   try { return new Set(git(['ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory']).split('\0').map(p => p.replace(/\/$/, ''))); }
   catch { return new Set(); } // not in a repository, or no git: nothing is ignored
 }
+// settings.json's basename matches no SKIP_FILE pattern (it is not a dotfile), so a recursive -r scan whose scope
+// happens to reach ~/.config/sys1grep (e.g. -r over $HOME) would otherwise hand a match on sys1grep's own saved key
+// to whatever reads the results (--serve included). Skipped by its one known absolute path, not by name, so an
+// unrelated project's own settings.json is still searched.
 function expand(path, rel = '', ignored) {
   let st;
   try { st = statSync(path); } catch (e) { warn(path, e); return []; }
@@ -1407,6 +1411,7 @@ function expand(path, rel = '', ignored) {
   return ents
     .filter(d => !d.isSymbolicLink() && !(d.isDirectory() ? SKIP_DIRS.includes(d.name) : SKIP_FILE.test(d.name) || GENERATED_FILE.test(d.name)))
     .filter(d => !ignored.has(rel + d.name))
+    .filter(d => d.isDirectory() || resolve(path, d.name) !== SETTINGS_FILE)
     .sort((a, b) => a.name.localeCompare(b.name))
     .flatMap(d => expand(path.endsWith('/') ? path + d.name : `${path}/${d.name}`, `${rel}${d.name}/`, ignored)); // not path.join(): it would drop the leading ./
 }

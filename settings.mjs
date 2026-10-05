@@ -41,3 +41,17 @@ export const readSettings = () => {
   try { text = readFileSync(SETTINGS_FILE, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return null; throw e; }
   return parseSettings(text);
 };
+
+// --sys1-api-key's value, wherever opts carries it: masked the same way for sys1grep.mjs's --verbose line and for
+// the --serve settings panel's GET, so the two never drift apart.
+export const maskOpts = opts => opts.map((tok, i, toks) => (toks[i - 1] === '--sys1-api-key' ? '***' : tok.replace(/^--sys1-api-key=.*$/, '--sys1-api-key=***')));
+// A url's userinfo: the name and password a URL can carry before its "@", masked the same way, for the settings
+// panel's GET.
+export const maskUrl = u => {
+  try {
+    const x = new URL(u);
+    if (!x.username && !x.password) return u;
+    x.username = x.password = '***';
+    return x.toString();
+  } catch { return u; }
+};
