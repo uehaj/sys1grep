@@ -6,12 +6,43 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 ## [Unreleased]
 
 ### Added
-- `--serve`: the first field is a question (`-Q`), pills of suggested questions (`--suggest=Q:TEXT` / `--suggest=e:TEXT`, repeatable) fill it and search, and every control, field and area has a hover text. Fixes the text of a second field (`-a`, `-v`, ...) not being read.
+- `--serve`: the first field is a question (`-Q`), `--suggest=Q:TEXT` / `--suggest=e:TEXT` (repeatable) puts your own suggested-question buttons first in the examples, and the options in Details have "?" hints.
+- `~/.config/sys1grep/settings.json` holds the settings as JSON, one optional field per variable: `url`, `key`,
+  `model`, `opts` (an array, one argument each), `summarizer`, `summarizerModel`, `summarizerKey`. The command line
+  wins, then the environment, then settings.json, then `~/.config/sys1grep/.env`, then the defaults. An environment
+  variable set to empty counts as unset and falls through to settings.json, except `SYS1GREP_OPTS=`, which still
+  drops the default options. Every environment variable works as before.
+  A wrong type or a file that is not JSON is an error naming the file and the field, never a value; an unknown field
+  only warns (so an older sys1grep keeps working once a newer one adds a field) and is ignored. A key in a file
+  others can read gets a warning. `--verbose` / `--dry-run` name a value's field and the file
+  (`key: key (~/.config/sys1grep/settings.json)`, `(settings.json opts)`). The no-key error points at the file.
+- `-r` (and git sys1grep) now also skips `~/.config/sys1grep/settings.json` by its one known path, not by name: its
+  basename matches no existing skip pattern, so a recursive search whose scope happened to reach it (e.g. `-r` over
+  `$HOME`) would otherwise hand a match on the saved key to whatever reads the results.
+- `--serve`: every route, the page itself included, now needs the launch's token (`?k=...` in the printed URL, carried
+  on every request the page makes): without it the server answers 404 to everything, so another local account or
+  process cannot read the page, its token, or a search's results merely by knowing the port.
+- `--serve`: a Settings panel edits `~/.config/sys1grep/settings.json` and saves it for the next search. Each field says
+  where the value in effect comes from (command line, environment variable, settings.json, `.env`, default), so a save
+  that an environment variable would override says so. A key is only ever sent in, never shown as saved/not-saved; a
+  `--sys1-api-key` inside `opts`, and a `url`'s userinfo, come back masked as `***` (as `--verbose` masks them), and
+  resending a masked value unchanged does not overwrite the real one. `opts` refuses a target, a flag `--serve` itself
+  refuses at launch, or `--sys1-url` / `--sys1-api-key` (their own fields); `url` and a URL summarizer must be
+  `http(s)`. Saving is a `POST` with the page's token and this request's own Host as the required `Origin`; the file
+  is written whole at 0600 (directory 0700 when created) and renamed into place, and a value that fails the file's
+  checks is refused.
 - `--format=html` marks what matched with `<mark>` (the regex matches, else the matching sentences, else the whole matching line);
   `--color=never` turns it off. `--serve` shows the colors of `--color=always` on the matches in file order, and the marks on the cards, by default.
 - `--serve[=PORT]` serves a search page on `127.0.0.1` (#166): a box for the meanings, `--rank` / `--summarize` and the other
   options as controls, results as the `--rank --format=html` cards, and the command line for the current controls with a Copy
   button. Each search runs sys1grep with the launch options plus the controls' changes. `node:http` only.
+- `--serve`: a multi-step switch takes the place of the `--step-to:` field kind. On, it shows the ends (`--step-to`, one or
+  more meanings) and the edges (`--hops`, `--reverse`); off, they leave the command line and the search. Example buttons turn it
+  on with a walk filled in. A meaning field added with `+` is now searched (it was read from its remove button).
+- `--serve`: eight example buttons for ordinary searches, from the README and docs/use-cases.md (a meaning, `-Q`, two
+  meanings with `-p`, `-v`, a regex with a meaning, `--level strict`, `--dedup`, `--unit=sentence-by-jev`), before the
+  multi-step ones. Each fills the fields and the controls it needs, puts the rest back to their launch values (a plain
+  example turns multi-step off), and sends nothing until Search.
 - `-r` and `git sys1grep` warn before sending a large tree through a term no regex narrows (#138). When such a
   term is about to send more than 10,000 units, one stderr line before the judging requests gives the totals
   `--dry-run` would (units, files, estimated input tokens and, for TypeSafe itself, the price), names the term and
@@ -66,7 +97,8 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   (`sys1grep: big.log: skipped, 25 MB is over --max-filesize=10M`), named on stderr, and `-y` does not affect it
   (a named file over the limit is skipped too). Separately, the input about to be sent (including the setup
   requests above, if any ran) is priced (`--max-cost`, default 1 USD) and asks to continue on the terminal if it
-  is over; a custom `SYS1GREP_URL` is still priced at TypeSafe's list price, and the question says so.
+  is over; the price is Jev's unless the URL is local or the model has its own price (see Changed), and the
+  question says whose.
   `-y`/`--yes` answers that question yes without asking, and without a terminal a limit exceeded is exit 2.
   `-i` already asks unconditionally and earlier, so this does not ask again; `--dry-run` and `-i` show the same
   verdict. `-M`/`--max-columns` (default 2000, 8000 with `-z`) is unchanged from before this PR: it bounds only
@@ -171,6 +203,13 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   (units, templates, requests, tokens) for every `--dedup` value.
 
 ### Changed
+- The price shown and checked by `--max-cost` (`--dry-run`, the large-send warning, the question, the summary line)
+  depends on the URL and the model: a local URL (`localhost`, `127.0.0.1`, `[::1]`, by the host as typed, only for a
+  URL you set) is free, so `--max-cost` asks about nothing there and no longer stops a run without a terminal; a
+  model in the table is priced at its own price (`jev-latest` 0.042, `clef` 0.24, `clef-flash` 0.09 USD per M input
+  tokens); any other model at Jev's 0.042. For another URL the price says whose it is (`at TypeSafe's list price`,
+  `at clef's list price`, `(local URL, free)`). Before, a custom URL was priced at Jev's list price whatever it was
+  (the owner's decision of 2026-09-27, replaced on 2026-10-04). An endpoint that reports `usage.cost` still shows that.
 - `--dedup` takes `auto`, `always` or `never` (#143); a bare `--dedup` is `--dedup=always`, unchanged from
   before. **Default is `never` for now**, kept off until real-run stats say `auto` should be the default; a
   run that would have paid to fold prints one stderr hint naming `--dedup=auto` (not with `-q`, gated like the

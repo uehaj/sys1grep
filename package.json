@@ -25,6 +25,8 @@
   "files": [
     "sys1grep.mjs",
     "serve.mjs",
+    "settings.mjs",
+    "options.mjs",
     "git-sys1grep.mjs",
     "README.md",
     "README.ja.md",
@@ -45,7 +47,10 @@
     "judge": "node --no-warnings --env-file-if-exists=.env tests/judge.mts",
     "scope-eval": "node tests/scope-eval.mjs",
     "dedup-eval": "node tests/dedup-eval.mjs",
+    "cause-eval": "node tests/cause-eval.mjs",
     "skill-eval": "bash tests/skill-eval/run.sh",
-    "release": "sh scripts/release.sh"
+    "serve": "node sys1grep.mjs --serve",
+    "release": "sh scripts/release.sh",
+    "smoke": "node --no-warnings tests/smoke.mts"
   }
 }

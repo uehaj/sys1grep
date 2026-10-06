@@ -173,8 +173,8 @@ Jev に送る行が増えるほど、費用も時間もかかります。いち�
   違う行をまとめて、テンプレートごとに 1 行だけ判定します。`auto`/`always`/`never`、当面は既定で off。
   `--dedup=auto` が割に合うときはヒントを出します。
 - **払う前に確かめる。** `--dry-run` は何も送らず、この検索が使う設定、検索するファイル、ファイルごとの
-  送る行数、各リクエストとその質問を表示します。最後の行には入力トークン数と、TypeSafe 本体なら料金の
-  見積もりが出ます（`~3178 input tokens, ~$0.000133`。誤差 1 割程度）。`-i` は同じ集計を端末に出し、
+  送る行数、各リクエストとその質問を表示します。最後の行には入力トークン数と、料金の
+  見積もりが出ます（`~3178 input tokens, ~$0.000133`。誤差 1 割程度。誰の価格かは「他のエンドポイント」を参照）。`-i` は同じ集計を端末に出し、
   `y` と答えたときだけ送ります。
   リクエストの本体を送る前に、まず対象のサイズ（`--max-filesize`、既定 10M）を計測し、超えるものは
   rg の `--max-filesize` と同じく無条件に飛ばして stderr に名前を出します（`-y` は効きません）。`.gz` は
@@ -196,13 +196,13 @@ $ sys1grep --dry-run -r --include='*.log' --changed-within=today -e '/ERROR|FATA
 ```
 
 `--verbose`（や `--dry-run`）は、コマンドラインで指定しなかった設定が*どこから*来たか
-（`SYS1GREP_OPTS`、環境変数、`~/.config/sys1grep/.env`、プリセットの既定値のいずれか）も表示するので、
+（`SYS1GREP_OPTS`、環境変数、`~/.config/sys1grep/settings.json` か `.env`、プリセットの既定値のいずれか）も表示するので、
 想定と違う結果をその設定まで辿れます。キーの値は表示せず、どのオプションや変数が渡したかだけを表示します。
 
 ```sh
 $ SYS1GREP_OPTS='--level strict' sys1grep --verbose -e "APIキーがファイルから読まれている" .
 sys1grep: endpoint api.typesafe.ai/v1/systemone (default), model jev-latest (default)
-sys1grep: key: SYS1GREP_API_KEY (~/.config/sys1grep/.env)
+sys1grep: key: key (~/.config/sys1grep/settings.json)
 sys1grep: SYS1GREP_OPTS: --level strict
 sys1grep: options: --level strict (SYS1GREP_OPTS) = -t 0.7 -T 0.3, --chunk 30, -j 8, scope on, -M 2000, --max-filesize 10M, --max-cost 1
 sys1grep: file ./a.py: 120 lines, 120 to send
@@ -232,13 +232,38 @@ npx @uehaj/sys1grep -n -e "顧客が怒っている、または不満を持っ�
 
 ```sh
 export SYS1GREP_API_KEY=your-key                       # 環境変数
-echo 'SYS1GREP_API_KEY=your-key' > ~/.config/sys1grep/.env    # ユーザー単位 (先に mkdir -p)
+# ユーザー単位: ~/.config/sys1grep/settings.json (先に mkdir -p。権限は 0600 に)
+(umask 077; echo '{"key": "your-key"}' > ~/.config/sys1grep/settings.json)
 ```
 
-環境変数が優先で、足りない分は `~/.config/sys1grep/.env` から補います。カレントディレクトリの `.env` は読みません。
+環境変数が優先で、足りない分は `~/.config/sys1grep/settings.json` から補います。項目は環境変数 1 つに 1 つです。
+
+| 項目 | 環境変数 |
+|---|---|
+| `url` | `SYS1GREP_URL` |
+| `key` | `SYS1GREP_API_KEY`（と `TYPESAFE_API_KEY`） |
+| `model` | `SYS1GREP_MODEL` |
+| `opts` | `SYS1GREP_OPTS`。配列で書く: `["--level", "strict", "-n"]` |
+| `summarizer` | `SYS1GREP_SUMMARIZER` |
+| `summarizerModel` | `SYS1GREP_SUMMARIZER_MODEL` |
+| `summarizerKey` | `SYS1GREP_SUMMARIZER_API_KEY` |
+
+どの項目も省略できます。型の違う値、JSON でないファイルはエラーです。知らない項目は警告（stderr に項目名を出す）
+だけで無視し、処理は続けます。新しいバージョンが項目を追加しても、古い sys1grep がそのまま動くようにするためです。
+キーを含むファイルを他人が読める権限にしていると警告します。`~/.config/sys1grep/.env`（`名前=値` の行）も引き続き読みますが、settings.json より
+下で、同じ変数なら settings.json の値が勝ちます。カレントディレクトリの `.env` は読みません。
 clone したばかりのリポジトリのものかもしれず、`SYS1GREP_URL` を通じてキーを別のサーバへ送らせ得るからです。
 プロジェクト単位の設定は、自分で読み込ませてください: `node --env-file=.env "$(command -v sys1grep)" ...`。
 `SYS1GREP_API_KEY` が無ければ `TYPESAFE_API_KEY` も使えます。
+
+`--serve`（検索ページ。詳細は英語版 README の "A search page" を参照）の **Settings** パネルは、この
+settings.json を画面から編集する。保存すると次の検索から効く。キーは「保存済み / 未保存」としてしか返らず、
+`opts` に入った `--sys1-api-key` と `url` のユーザ情報（`user:pass@`）は `***` に伏せて返る（`--verbose` と同じ
+伏せ方）。`opts` には検索オプションしか置けず、ターゲット（パス）や `--serve` 自身が起動時に拒否するフラグ、
+`--sys1-url`・`--sys1-api-key`（専用の欄がある）は保存を拒否される。`url` と URL 形式の summarizer は http(s)
+でなければならない。保存は `POST` で、ページのトークンとこのリクエスト自身の Host を `Origin` として要求し、
+ファイルは丸ごと書いて（0600、作成時のみディレクトリを 0700 に）置き換える。ページ自体を含むどのルートにも
+起動時に発行されるトークン（`?k=...`）が要り、無いと 404 になる。
 
 ### 既定のオプション
 
@@ -251,15 +276,18 @@ sys1grep -e "決済の失敗" app.log                    # strict、8 並列、�
 sys1grep --level loose --no-n -e "決済の失敗" app.log
 ```
 
+同じ既定値は settings.json に `"opts": ["--level", "strict", "-j", "8", "-n"]` とも書けます。1 要素が 1 引数なので、
+値に空白を含められます。`SYS1GREP_OPTS` が設定されていれば、足し合わせずにそちらで置き換えます。
+
 sys1grep を呼ぶスクリプトもこの既定値を拾います（grep が `GREP_OPTIONS` を廃止した理由です）。スクリプトからは
-`SYS1GREP_OPTS= sys1grep ...` と空にして呼んでください。
+`SYS1GREP_OPTS= sys1grep ...` と空にして呼んでください。空の変数は settings.json の `opts` も外します。
 
 ### 他のエンドポイント
 
 API の設定は `SYS1GREP_API_KEY`（または `TYPESAFE_API_KEY`）、`SYS1GREP_URL`、`SYS1GREP_MODEL` の 3 つだけです。
 TypeSafe の `POST /v1/systemone` と同じ形で話すエンドポイントなら使えます。キーは `SYS1GREP_URL` の先へそのまま
 送られるので、2 つは組にして設定してください。コマンドラインの `--sys1-model=ID`、`--sys1-url=URL`、`--sys1-api-key=KEY` は
-この 3 つより優先します。コマンドラインのキーは `ps` やシェル履歴に残るので、キーはなるべく `~/.config/sys1grep/.env` に書いてください。
+この 3 つより優先します。コマンドラインのキーは `ps` やシェル履歴に残るので、キーはなるべく `~/.config/sys1grep/settings.json` に書いてください。
 
 ```sh
 # OpenRouter
@@ -270,7 +298,29 @@ SYS1GREP_URL=https://ai-gateway.vercel.sh/typesafe/v1/systemone SYS1GREP_MODEL=t
 SYS1GREP_URL=http://localhost:8000/v1/systemone sys1grep -e ...
 ```
 
-集計行には、エンドポイントが返した費用（`usage.cost`）を出します。TypeSafe 本体の場合は定価での推定を `~` 付きで出します。
+sys1grep が出す価格（`--dry-run`、大量送信の警告、`--max-cost` の質問、集計行）は、エンドポイントが返した費用（`usage.cost`）か、
+返さなければ `~` 付きの推定です。推定の 100 万入力トークンあたりの価格は、ローカルの URL なら 0（無料。`localhost`、`127.0.0.1`、`[::1]`。
+書いたとおりのホスト名で判定し、DNS は引かず、`SYS1GREP_URL` か `--sys1-url` で自分で指定した URL のときだけ）、下の表のモデルなら
+そのモデルの価格（`jev-latest` 0.042、`clef` 0.24、`clef-flash` 0.09、USD）、それ以外のモデルは Jev と同じ 0.042 です。
+別の URL のときは、誰の価格かを添えます（`at TypeSafe's list price`、`at clef's list price`、`(local URL, free)`）。
+`--max-cost` も同じ価格を使うので、ローカルの URL では何も聞きません。
+
+**ローカルの判定モデル。** 同じ `POST /v1/systemone` を話すモデルは、キーもネットワークも無しで Jev の代わりに使えます。
+ただし、これまでに試した 2 つは、どちらも Jev より精度が低いので、`-t` を上げ、`npm run judge` で調整し、偽陽性が増えることを前提にしてください。
+どちらも 1 度に 1 リクエストしか受けないので、`-j 1` にしてください。
+
+- [Jeff](https://github.com/firelex/jeff)（`jeff-serve`、0.8B、ベース v1.2、ゼロショット、MLX）:
+  `--sys1-url=http://127.0.0.1:8765/v1/systemone --sys1-model=jeff-latest` で動きます。2 つ目のリクエストにはすぐ
+  `529 "The model is busy"` を返し、既定の `-j 8` は再試行が尽きます。`npm run judge`（51 行、10 ケース、`-j 1`）では、
+  既定のしきい値で適合率 0.68、再現率 0.61、F1 0.64、`-t 0.75 -T 0.85` で F1 0.77 でした。別の日の Jev の実行は F1 0.96 で、
+  置き換えにはなりません。v1.2 はコミュニティプレビューで、アダプタは版をまたいで引き継げません。
+- [strands-decider](https://github.com/strands-labs/strands-decider)（`strands-decider serve`、2B、M4 の `mps`）:
+  `SYS1GREP_URL=http://127.0.0.1:8000/v1/systemone` だけで、キーなしでそのまま動きます（30 行が 2.7 秒）。2 つのリクエストが
+  同時に届くとサーバーが落ちます（exit 134、Metal のアサーション）。同じ `npm run judge` の組で、既定のしきい値で適合率 0.64、
+  再現率 0.94、F1 0.76、`-t 0.6 -T 0.45` で F1 0.81 でした。
+- sys1grep ではまだ試していないもの: Cloudflare の Clef。
+
+1 リクエストの質問数は、どのバックエンドでも 64 までです。
 
 ソースから使うなら `git clone https://github.com/uehaj/sys1grep.git && cd sys1grep && npm install -g .`、
 またはそのまま `node sys1grep.mjs ...` で動きます。
@@ -279,6 +329,8 @@ SYS1GREP_URL=http://localhost:8000/v1/systemone sys1grep -e ...
 
 例はすべて [`tests/corpus.txt`](tests/corpus.txt) に対するものです。サーバログ、日英の問い合わせ、
 ソースコード、SQL、雑談が混ざった 51 行のファイルです。
+
+仕事別（障害対応、問い合わせの仕分け、リリースノートなど）に実データで試した例は [docs/use-cases.md](docs/use-cases.md)（英語）にあります。
 
 ### 概念で探す。言語は問わない
 
@@ -787,6 +839,62 @@ tickets/a.txt-13-確認いたします。
 - `--summarize` には順位どおりに渡します。`--dedup` では代表 1 つが 1 つの結果です。
 - 意味が要ります（正規表現・`!`・`-v` だけでは並べられない）。`-c`・`-o`・`-q` とは併用できません。
   `--no-rank` はそれより前の `--rank`（`SYS1GREP_OPTS` のものなど）を取り消します。
+
+### 失敗したコマンドの原因を探す
+
+失敗したジョブの最後のエラーはたいてい症状だけを言い（`214 accounts out of balance ... day-close aborted`）、
+ほかの `ERROR` / `WARN` はリトライで回復したものです。原因はずっと上の、目立たない `INFO` や `DEBUG` の 1 行である
+ことがよくあります。症状や `-Q "why did the job fail"` で聞くと、そのノイズが見つかります。#156 の 30,000 行の
+ログでは、回復した `ERROR` 行しか返りませんでした。代わりに原因の種類で聞き、結果を並べます。
+
+```sh
+$ sys1grep -n --dedup --level strict --rank \
+    -e "a component, writer, job or feature was paused, disabled, skipped or put on hold" \
+    -e "a configuration, endpoint, region, credential or data source was changed or switched" \
+    -e "an input, file or table was empty, missing, or had fewer records or columns than expected" \
+    -e "a fallback or default value was used instead of the real one" \
+    job.log
+```
+
+この 4 つの意味で、生成した失敗ジョブのログ 24 本（原因の種類ごとに 6 本、各 10,008 行）を測りました
+（`npm run cause-eval`、各行は `tests/cause-results.tsv`。24 行は旧版のスクリプトの出力で、`top 2 jev` 列は
+再実行の 2 行にだけあります）。結果は 1 本あたり 366〜464 件です。`--rank=match` の列は別の走行ではなく、
+`--rank` の走行の `-p` 列から再計算したものです（`--rank=match` は結果をその最大値で並べるため）。この再計算と
+実際の `--rank=match` の走行との突き合わせは、原因が結果に入らなかった config-5 の 1 本だけです。「一致せず」は、
+`strict` 未満と判定されたのか、`--dedup` で似た行に畳まれたのかを区別しません。
+
+| 原因 | 原因が 1 位、`--rank` | 原因が 1 位、`--rank=match` | それ以外 |
+|---|---|---|---|
+| 設定・接続先・認証情報が切り替わった | 6 本中 5 | 6 本中 5 | 1 本は一致せず |
+| 入力が空、または少ない | 6 本中 2 | 6 本中 2 | 2 本は 62 位（`match` では 343〜371 位）と 81 位（同 191〜219 位）、2 本は一致せず |
+| 本来の値の代わりに既定値を使った | 6 本中 6 | 6 本中 5 | `match` で 2〜9 位（上に 1 件、0.90 で並ぶものが 7 件） |
+| 来なかった行（開始したが終了がない） | 6 本中 0 | 6 本中 0 | 開始の行は一度も結果に入らず |
+
+1 本あたり約 $0.088（入力 210 万トークン、643〜646 リクエスト）、16〜17 秒でした。`--rank`（`jev`）は結果ごとに
+質問を 1 つ足し、入力トークンは `--rank=match` より約 3% 多くなります（1 本を両方で走らせた値。TSV には未記録）。
+`--rank=match` より原因を上に置いたログが 3 本、下に置いたログは 0 本です。
+
+上位の結果が関係なさそうに見えるとき（ローテーション、リフレッシュ、最後のエラーそのもの）は、原因はおそらく次のどれかです。
+
+- **値だけを述べる行**: `stock snapshot downloaded: 1204 bytes`、`input directory ... holds 2 files`、
+  `resolved db-primary.internal to 10.0.4.22 (replica-2)`。行のどこにもおかしいとは書いていないので、どの仮説も
+  当たりません。最後のエラーから書いた意味
+  （`-e "the job connected to a read-only replica instead of the primary database"`）でも当たりませんでした。
+  エラーが名指すもので探し（`-e '/snapshot|replica/'`）、数値を読んでください。
+- **来なかった行**: シャードを取ったまま終えなかったワーカー、始まって終わらなかったステップやマイグレーション。
+  この 6 本ではどれも開始の行が結果に入りませんでした。1 位は日常の行か最後のエラー、1 本は前回の実行の
+  `alias products switched to products-20260927` で、09-28 のそれは来ていません。これを狙った意味
+  （`-e "a worker, step or upload started but never reported that it finished"`）でも、1 位は開始の行ではなく最後の
+  エラーでした。`--dedup` は開始の行を似た開始の行に畳むことがあります。開始の行は互いに似ていて、違うのは終了が
+  来ないことだけだからです。開始と終了は目か grep で突き合わせてください。
+- **点数では分からない**: 原因が 1 位だったログでは `--rank` で 0.93〜0.97、一度も一致しなかったログ 2 本では
+  1 位が 0.88 と 0.91 でした。
+
+最初の 2 点の裏付けにした追試（原因の行を 31 行の窓で単独に判定させたもの、エラーから書いた意味、来なかった終了を
+狙った意味）は PR #192 の説明にあります。`tests` には再現の手段がありません。
+
+検索する行はすべて Jev（TypeSafe、または `SYS1GREP_URL` の先）に送られ、`--summarize` では一致した行が TOOL の
+提供元にも送られます。ビルドやジョブのログにはトークン・パスワード・顧客データがよく入っています。
 
 ### HTML のテンプレート (`--template`)
 

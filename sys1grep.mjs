@@ -11,6 +11,8 @@ import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { format, parseArgs } from 'node:util';
+import { FIELDS, SETTINGS_FILE, SETTINGS_SHOWN, maskOpts, readSettings } from './settings.mjs';
+import { OFF, OPTIONS, fill, parseOpts } from './options.mjs';
 
 // Node 20 colors console.error red on a terminal (22 does not): stderr gets exactly what sys1grep writes.
 // A write error (EPIPE: the reader quit) is dropped, as console.error drops it, so it never turns into exit 2.
@@ -26,11 +28,16 @@ if (process.argv.slice(2, process.argv.indexOf('--') < 0 ? undefined : process.a
   await new Promise(() => {}); // the server keeps the process alive; Ctrl-C ends it
 }
 
-// Settings come from the environment; ~/.config/sys1grep/.env fills in what it lacks. Never ./.env: the current
-// directory may be an untrusted checkout, and its .env could point SYS1GREP_URL at a server that collects the key.
+// Settings come from the environment, then ~/.config/sys1grep/settings.json, then ~/.config/sys1grep/.env. Never
+// ./.env: the current directory may be an untrusted checkout, and its .env could point SYS1GREP_URL at a server that
+// collects the key. settings.json wins over .env so that a value saved there takes effect.
 // For one minor release (removed in 1.0.0, see #93): fall back to the old SEMGREP_* names and
 // ~/.config/semgrep/.env, printing one deprecation line to stderr each time a fallback is actually used.
 const deprecated = (was, now) => console.error(`sys1grep: ${was} is deprecated; use ${now}`);
+let settings;
+try { settings = readSettings() ?? {}; } catch (e) { die(`${SETTINGS_SHOWN}: ${e.message}`, false); }
+if (process.platform !== 'win32' && (settings.key || settings.summarizerKey) && statSync(SETTINGS_FILE).mode & 0o077)
+  console.error(`sys1grep: warning: ${SETTINGS_SHOWN} holds a key and others can read it; chmod 600 ${SETTINGS_SHOWN}`);
 // --verbose / --dry-run (#90) trace a setting's source back to here: a name in shellEnv came from the real
 // environment, one that only shows up after loadEnvFile came from envFile.
 const shellEnv = new Set(Object.keys(process.env));
@@ -40,91 +47,36 @@ let envFile = null;
 if (existsSync(newUserEnv)) { process.loadEnvFile(newUserEnv); envFile = newUserEnv; } // never overrides variables already set
 else if (existsSync(oldUserEnv)) { process.loadEnvFile(oldUserEnv); envFile = oldUserEnv; deprecated('~/.config/semgrep/.env', '~/.config/sys1grep/.env'); }
 const tildeEnvFile = envFile && envFile.replace(homedir(), '~');
-// A setting's source, for --verbose / --dry-run: the env var name that supplied it, plus the .env file
-// when it wasn't already in the real environment.
-const envLabel = name => (shellEnv.has(name) ? name : `${name}, ${tildeEnvFile}`);
-const fromEnv = name => { // { value, name }: SYS1GREP_<name>, falling back to SEMGREP_<name>
-  const newName = `SYS1GREP_${name}`, oldName = `SEMGREP_${name}`;
-  if (process.env[newName] !== undefined) return { value: process.env[newName], name: newName };
-  if (process.env[oldName] !== undefined) { deprecated(oldName, newName); return { value: process.env[oldName], name: oldName }; }
-  return { value: undefined, name: null };
+// A setting's source, for --verbose / --dry-run: { value, name, file }. name: the env var or settings.json field that
+// supplied it (null: none did); file: where it was written, null for the real environment.
+// envLabel: "NAME" or "NAME, FILE"; keyLabel the same as "NAME (FILE)", for the key lines.
+const envLabel = m => (m.file ? `${m.name}, ${m.file}` : m.name);
+const keyLabel = m => (m.file ? `${m.name} (${m.file})` : m.name);
+// The first set of SYS1GREP_<name>, SEMGREP_<name> (deprecated) and the other names given, as before settings.json;
+// settings.json's field comes in only where that one came from the .env file or was not set at all. An env var set
+// to '' counts as unset here (main's SYS1GREP_API_KEY || TYPESAFE_API_KEY did the same), so it falls through to the
+// next name and then to settings.json, except OPTS: SYS1GREP_OPTS= is documented to still drop settings.json's opts.
+const fromEnv = (name, ...more) => {
+  const field = Object.keys(FIELDS).find(f => FIELDS[f] === name);
+  const isSet = v => process.env[v] !== undefined && (field === 'opts' || process.env[v] !== '');
+  const n = [`SYS1GREP_${name}`, `SEMGREP_${name}`, ...more].find(isSet);
+  if (!shellEnv.has(n) && settings[field] !== undefined) return { value: settings[field], name: field, file: SETTINGS_SHOWN };
+  if (n === undefined) return { value: undefined, name: null, file: null };
+  if (n.startsWith('SEMGREP_')) deprecated(n, `SYS1GREP_${name}`);
+  return { value: process.env[n], name: n, file: shellEnv.has(n) ? null : tildeEnvFile };
 };
-const envURL = fromEnv('URL'), envMODEL = fromEnv('MODEL'), envAPI_KEY = fromEnv('API_KEY'), envOPTS = fromEnv('OPTS'),
+const envURL = fromEnv('URL'), envMODEL = fromEnv('MODEL'), envAPI_KEY = fromEnv('API_KEY', 'TYPESAFE_API_KEY'), envOPTS = fromEnv('OPTS'),
   envSUMMARIZER = fromEnv('SUMMARIZER'), envSUMMARIZER_MODEL = fromEnv('SUMMARIZER_MODEL'), envSUMMARIZER_API_KEY = fromEnv('SUMMARIZER_API_KEY');
-const SYS1GREP_URL = envURL.value, SYS1GREP_MODEL = envMODEL.value, SYS1GREP_API_KEY = envAPI_KEY.value,
-  SYS1GREP_OPTS = envOPTS.value ?? '', SYS1GREP_SUMMARIZER = envSUMMARIZER.value, SYS1GREP_SUMMARIZER_MODEL = envSUMMARIZER_MODEL.value;
-const { TYPESAFE_API_KEY } = process.env;
+const SYS1GREP_URL = envURL.value, SYS1GREP_MODEL = envMODEL.value,
+  SYS1GREP_SUMMARIZER = envSUMMARIZER.value, SYS1GREP_SUMMARIZER_MODEL = envSUMMARIZER_MODEL.value;
+// The default options: SYS1GREP_OPTS split on spaces, or settings.json's opts as they are. OPTS_NAME names them in
+// messages and in --verbose's "(SOURCE)" tags.
+const OPTS_NAME = envOPTS.file === SETTINGS_SHOWN ? 'settings.json opts' : 'SYS1GREP_OPTS';
+const optsArgs = Array.isArray(envOPTS.value) ? envOPTS.value : (envOPTS.value ?? '').split(/\s+/).filter(Boolean);
 
-// A bare --color means --color=auto (as in grep); parseArgs cannot express an optional value, so fill it in first.
-// --no-filename is grep's name for --no-with-filename, --null-data grep's name for -z.
-// --no-rank / --no-summarize: parseArgs negates booleans only, so they become a value no argument can hold (a NUL),
-// cleared below; the later one wins, as for any option.
-const OFF = '\0';
-const fill = a => (a === '--color' ? '--color=auto' : a === '--null-data' ? '-z' : a === '--no-filename' ? '--no-with-filename'
-  : a === '--summarize' ? `--summarize=${SYS1GREP_SUMMARIZER || 'claude'}` : a === '--dedup' ? '--dedup=always' : a === '--rank' ? '--rank=jev'
-  : a === '--no-rank' ? `--rank=${OFF}` : a === '--no-summarize' ? `--summarize=${OFF}` : a);
-const OPTIONS = {
-  e: { type: 'string', multiple: true },
-  a: { type: 'string', multiple: true },
-  v: { type: 'string', multiple: true },
-  question: { type: 'string', multiple: true, short: 'Q' },
-  level: { type: 'string', default: 'normal' }, // strictness preset: loose / normal / strict
-  r: { type: 'boolean', default: false }, // recurse into directories
-  cached: { type: 'boolean', default: false }, // git sys1grep only: search the index instead of the working tree
-  untracked: { type: 'boolean', default: false }, // git sys1grep only: also search untracked files (.gitignore still applies)
-  l: { type: 'boolean', default: false }, // print only matching file names
-  'with-filename': { type: 'boolean', short: 'H' }, // prefix file names even for one file; --no-filename: never
-  t: { type: 'string' }, // positive threshold: match when p >= t (default from preset)
-  T: { type: 'string' }, // negative threshold: "not X" when p < T (default from preset)
-  chunk: { type: 'string', default: '30' }, // lines per request
-  c: { type: 'boolean', default: false }, // count of matching lines per file (grep -c)
-  quiet: { type: 'boolean', short: 'q', default: false }, // print nothing, exit status only (grep -q)
-  j: { type: 'string', default: '8' }, // concurrent requests
-  A: { type: 'string' }, // N lines of trailing context
-  B: { type: 'string' }, // N lines of leading context
-  C: { type: 'string' }, // N lines of context on both sides
-  n: { type: 'boolean', default: false }, // line numbers
-  z: { type: 'boolean', default: false }, // records are NUL-terminated, on input and output (grep -z); --unit=zero
-  unit: { type: 'string', default: 'line' }, // line / zero / sentence-by-jev / sentence-by-rule
-  o: { type: 'boolean', default: false }, // with --unit=sentence-by-*, print only the matching sentences (grep -o)
-  p: { type: 'boolean', default: false }, // print each meaning's probability
-  dedup: { type: 'string', default: 'never' }, // auto|always|never: judge one representative per template, reuse its answer
-  rank: { type: 'string' }, // jev|match: print the results best first, scored by Jev's answer on each or by its best match
-  // multi-step matching (#163): the expression before --step-to finds the start, the one after it the end
-  'step-to': { type: 'boolean', multiple: true },
-  edges: { type: 'string' }, // FILE: the edges to walk, one per line; default: the calls between functions
-  reverse: { type: 'boolean', default: false }, // walk the edges backwards
-  hops: { type: 'string', default: '0..' }, // N, M..N or M..: the hops an end may be at
-  'dry-run': { type: 'boolean', default: false }, // print the files and requests, send nothing
-  verbose: { type: 'boolean', default: false }, // print the files and requests to stderr while searching
-  interactive: { type: 'boolean', short: 'i', default: false }, // show what --dry-run would send, search on a yes
-  yes: { type: 'boolean', short: 'y', default: false }, // skip the size/cost guard's question, answering yes (#58)
-  'max-columns': { type: 'string', short: 'M' }, // a unit past this many characters is skipped (rg's -M/--max-columns)
-  'max-filesize': { type: 'string' }, // a target past this size (K/M/G) is listed and confirmed (rg's name)
-  'max-cost': { type: 'string', default: '1' }, // ask before sending when the estimated price is over this many USD
-  // which files -r finds and git sys1grep lists; with -r a file named on the command line is always searched
-  include: { type: 'string', multiple: true }, // only names matching one of these globs
-  exclude: { type: 'string', multiple: true }, // not names matching one of these globs
-  'changed-within': { type: 'string' }, // only files modified within 30m / 2h / 7d / 2w, since a date, today, ...
-  gitlog: { type: 'boolean', short: 'g', default: false }, // search git log's commits, one record each; auto-scope picks which
-  'auto-scope': { type: 'boolean', default: true }, // narrow those files by what Jev says a meaning restricts to; --no-auto-scope: don't
-  color: { type: 'string', default: 'auto' }, // auto / always / never
-  summarize: { type: 'string' }, // pipe what would print to this LLM CLI and print its answer instead
-  'summarize-prompt': { type: 'string' }, // the user's own instruction, added after the fixed one
-  format: { type: 'string', default: 'plain' }, // plain / markdown / html: --rank's output, or asked of the summarizer
-  template: { type: 'string' }, // --rank's or --summarize's --format=html document: a NAME under the templates dirs, or a file; list: the names
-  'install-templates': { type: 'boolean', default: false }, // copy the bundled templates to ~/.config/sys1grep/templates
-  'summarize-format': { type: 'string' }, // removed (--format): parsed only to say so
-  // the API settings, each overriding its environment variable
-  'sys1-model': { type: 'string' }, // SYS1GREP_MODEL
-  'sys1-url': { type: 'string' }, // SYS1GREP_URL
-  'sys1-api-key': { type: 'string' }, // SYS1GREP_API_KEY / TYPESAFE_API_KEY
-  help: { type: 'boolean', short: 'h', default: false },
-  version: { type: 'boolean', short: 'V', default: false },
-};
 // SYS1GREP_OPTS holds default options only: no meanings, no files, no --. It goes in front of the arguments, so the
-// command line wins (a later value counts; --no-X clears a flag).
-const defaults = SYS1GREP_OPTS.split(/\s+/).filter(Boolean).map(fill);
+// command line wins (a later value counts; --no-X clears a flag). fill/OFF: options.mjs (shared with serve.mjs).
+const defaults = optsArgs.map(a => fill(a, SYS1GREP_SUMMARIZER));
 // --step-to X (#163) is --step-to -e X, and so is --step-to=X; a bare --step-to (followed by an option) opens the end
 // expression for the -e / -a / -v / -Q after it. After --, every argument is a file. X, and the MEANING of -e / -a /
 // -v / -Q, may start with a dash ("--summarize hands the lines on"): an option holds no space, and is -- and a word or
@@ -146,14 +98,11 @@ const openStep = args => {
 };
 let optsInteractive = false; // -i from SYS1GREP_OPTS: a script without a terminal is told where it came from
 try {
-  const { tokens: t } = parseArgs({ args: defaults, options: OPTIONS, allowPositionals: true, allowNegative: true, tokens: true });
+  const { tokens: t } = parseOpts(defaults);
   optsInteractive = t.some(k => k.name === 'interactive' && !k.rawName.startsWith('--no-'));
-  const command = k => k.name === 'install-templates' || (k.name === 'template' && k.value === 'list');
-  const bad = t.find(k => k.kind !== 'option' || ['e', 'a', 'v', 'question', 'step-to', 'cached', 'untracked'].includes(k.name) || command(k));
-  if (bad) die(`SYS1GREP_OPTS: ${bad.kind !== 'option' ? `'${bad.value ?? '--'}' is not an option` : command(bad) ? `${bad.rawName}${bad.value === undefined ? '' : `=${bad.value}`} is not allowed (it does something instead of searching)` : ['cached', 'untracked'].includes(bad.name) ? `--${bad.name} is not allowed (what is searched goes on the command line)` : `${bad.name.length > 1 ? '--' : '-'}${bad.name} is not allowed (${bad.name === 'step-to' ? 'expressions' : 'meanings'} go on the command line)`}`);
-} catch (e) { die(`SYS1GREP_OPTS: ${e.message}`); }
+} catch (e) { die(`${OPTS_NAME}: ${e.message}`); }
 const { values: opt, positionals: files, tokens } = parseArgs({
-  args: [...defaults, ...openStep(process.argv.slice(2)).map(fill)],
+  args: [...defaults, ...openStep(process.argv.slice(2)).map(a => fill(a, SYS1GREP_SUMMARIZER))],
   options: OPTIONS,
   allowPositionals: true,
   allowNegative: true,
@@ -166,7 +115,7 @@ for (const k of ['rank', 'summarize']) if (opt[k] === OFF) delete opt[k];
 // its last token is one of the `defaults` this run prepended.
 const optSrc = name => {
   const last = tokens.filter(k => k.kind === 'option' && k.name === name).at(-1);
-  return !last ? null : last.index < defaults.length ? 'SYS1GREP_OPTS' : '';
+  return !last ? null : last.index < defaults.length ? OPTS_NAME : '';
 };
 // --help: Japanese when the locale starts with ja, English otherwise
 const HELP_EN = `usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION [-a MEANING] [-v MEANING]... [FILE...]
@@ -322,7 +271,7 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
                command line, then each file searched (units, and how many would be sent) and each request
                with its questions, grouped by wording (line ids read Lnnn). The key's value never prints.
                The --dedup and --unit=sentence-by-jev questions are answered no, so their counts are an estimate.
-               The last line estimates the input tokens and, for TypeSafe itself, the price (~, within about 10%)
+               The last line estimates the input tokens and the price (~, within about 10%; --max-cost says whose)
   --verbose    print the same to stderr while searching, and the summary line even when not a terminal
   -i, --interactive  first show what --dry-run would send (files, lines, requests) and ask on the
                terminal; search only on y. Nothing is sent before the answer; no terminal is an error
@@ -336,7 +285,8 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
                from their content too. a .gz is
                sized decompressed (zlib stops at the limit). -g's commits stay out of this: each is already bounded by -M
                when sent
-  --max-cost=USD  the input tokens about to be sent are estimated and priced; over this (default 1) the
+  --max-cost=USD  the input tokens about to be sent are estimated and priced (a local URL is free; jev-latest 0.042,
+               clef 0.24, clef-flash 0.09 USD per M tokens; any other model as Jev); over this (default 1) the
                run asks to continue, on the terminal. No terminal and the limit exceeded is exit 2,
                naming the option that would let it through; -q does not change this (scripts pass -y).
                -i already asks unconditionally and earlier, so this does not ask again
@@ -396,7 +346,7 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
                --max-cost, -y, --edges, --template and the API settings stay as given. The meanings come from the page,
                so -e -a -v -Q --step-to and what the page replaces (-l -c -q -o -z -i --format --color --dry-run) are
                refused. Needs -y (or a higher --max-cost) to search over the cost guard. One Jev request per search.
-               --suggest=Q:TEXT or --suggest=e:TEXT (repeat; bare TEXT is a question) sets the suggested-question pills
+               --suggest=Q:TEXT or --suggest=e:TEXT (repeat; a bare TEXT is a question) sets suggested-question buttons
   --template=NAME  the document --rank or --summarize --format=html writes (default: SYS1GREP_TEMPLATE, else default):
                ~/.config/sys1grep/templates/NAME.html, else the bundled one (default, print, search, terminal); a
                value with / or ending in .html is a file. Placeholders: {{title}} {{query}} {{count}}, and
@@ -408,14 +358,15 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
                file is kept. It and --template=list must stand alone, and are refused in SYS1GREP_OPTS
   --sys1-model=ID, --sys1-url=URL, --sys1-api-key=KEY
                the API settings, overriding SYS1GREP_MODEL, SYS1GREP_URL, SYS1GREP_API_KEY below.
-               A key on the command line shows up in ps and shell history; prefer ~/.config/sys1grep/.env
+               A key on the command line shows up in ps and shell history; prefer settings.json (below)
   -h, --help   this help (Japanese when LANG / LC_ALL / LC_MESSAGES starts with ja)
   -V, --version  print the version and exit
 
 Exit status: 0 matched / 1 no match / 2 error
   On 1, when lines were sent, stderr names the highest probability and its line (not with -q, --summarize, --step-to, or when only a negation failed)
 
-Environment (read from the environment, else from ~/.config/sys1grep/.env; ./.env is never read):
+Environment (read from the environment, else from ~/.config/sys1grep/settings.json, else from
+~/.config/sys1grep/.env; ./.env is never read):
   SYS1GREP_API_KEY    API key. Falls back to TYPESAFE_API_KEY. Get one at https://console.typesafe.ai/
   SYS1GREP_URL        endpoint (default https://api.typesafe.ai/v1/systemone). Any TypeSafe-compatible
                      /v1/systemone works, e.g. https://openrouter.ai/api/v1/systemone
@@ -430,7 +381,12 @@ Environment (read from the environment, else from ~/.config/sys1grep/.env; ./.en
                      --no-X turns a boolean flag off (--color takes --color=never). Options only: no
                      meanings, files or --. e.g. SYS1GREP_OPTS='--level strict -n'. Scripts: SYS1GREP_OPTS= sys1grep
   The key goes to SYS1GREP_URL, whatever it is. With SYS1GREP_URL set and no key, no auth header is sent.
-  e.g.  mkdir -p ~/.config/sys1grep && echo 'SYS1GREP_API_KEY=your-key' > ~/.config/sys1grep/.env`;
+  ~/.config/sys1grep/settings.json: a JSON object, every field optional, each the default for one variable:
+    url key model opts summarizer summarizerModel summarizerKey = SYS1GREP_URL SYS1GREP_API_KEY SYS1GREP_MODEL
+    SYS1GREP_OPTS SYS1GREP_SUMMARIZER SYS1GREP_SUMMARIZER_MODEL SYS1GREP_SUMMARIZER_API_KEY. opts is an array, one
+    argument each. A variable set to empty counts as unset and falls through, except SYS1GREP_OPTS=, which still
+    drops opts. Keep the file at 0600.
+  e.g.  {"key": "your-key", "opts": ["--level", "strict", "-n"]}`;
 const HELP_JA = `usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION [-a MEANING] [-v MEANING]... [FILE...]
        sys1grep [OPTION]... -e START1 [-e START2]... --step-to END1 [-e END2]... [FILE...]
 jev (TypeSafe System One) で意味的にマッチする行を探す grep。FILE 省略時は stdin。
@@ -580,7 +536,7 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                検索するファイル (単位の数と送る数) と各リクエストの質問を表示する (質問は文面ごとにまとめて
                数え、行の ID は Lnnn と表示)。キーの値は表示しない。--dedup と --unit=sentence-by-jev の事前の問い合わせは
                no と答えたものとして数えるので、その場合の数は目安。最後の行に
-               入力トークン数と、TypeSafe 本体なら料金の見積もりを出す (~ 付き、誤差 1 割程度)
+               入力トークン数と料金の見積もりを出す (~ 付き、誤差 1 割程度。誰の価格かは --max-cost の項)
   --verbose    同じ表示を検索しながら stderr に出す。端末でなくても最後の集計行を出す
   -i, --interactive  まず --dry-run と同じ内容 (ファイル・行数・リクエスト数) を見せて端末で聞き、
                y のときだけ検索する。答えるまで何も送らない。端末が無ければエラー
@@ -592,7 +548,8 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                標準入力は読んでから計測し、超えていれば同じく飛ばす。--cached / <tree>: の対象は blob
                で、その内容から計測する。.gz は展開後の大きさで計測する (上限で展開を止める)。
                -g のコミットはここに含まれない (送るときに -M ですでに上限がある)
-  --max-cost=USD  送る予定の入力トークンを見積もって値段を出す。これ (既定 1) を超えたら端末で続けるか
+  --max-cost=USD  送る予定の入力トークンを見積もって値段を出す (ローカル URL は無料、jev-latest 0.042、clef 0.24、
+               clef-flash 0.09 USD/M トークン、他のモデルは Jev と同じ)。これ (既定 1) を超えたら端末で続けるか
                聞く。端末が無く上限を超えていれば終了コード 2 で、どのオプションを緩めれば通るかを言う。
                -q でも変わらない (スクリプトからは -y)。
                -i は無条件かつこれより前に聞くので、二重には聞かない
@@ -650,7 +607,7 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                --max-cost・-y・--edges・--template・API 設定は指定のまま。意味はページから来るので -e -a -v -Q --step-to と、
                ページが置き換えるもの (-l -c -q -o -z -i --format --color --dry-run) は受け付けない。費用の確認を通すには
                -y (か高めの --max-cost) が要る。検索ごとに Jev へ 1 リクエスト。
-               --suggest=Q:TEXT か --suggest=e:TEXT (繰り返せる。TEXT だけなら質問) でおすすめの質問のピルを指定する
+               --suggest=Q:TEXT か --suggest=e:TEXT (繰り返せる。TEXT だけなら質問) でおすすめ質問のボタンを指定する
   --template=NAME  --rank か --summarize の --format=html が書く文書 (既定は SYS1GREP_TEMPLATE、無ければ default)。
                ~/.config/sys1grep/templates/NAME.html、無ければ同梱のもの (default, print, search, terminal)。/ を含むか
                .html で終わる値はファイル。置き換える文字列は {{title}} {{query}} {{count}} と、<!--result--> と
@@ -663,14 +620,15 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                SYS1GREP_OPTS には書けない
   --sys1-model=ID, --sys1-url=URL, --sys1-api-key=KEY
                API の設定。下の SYS1GREP_MODEL / SYS1GREP_URL / SYS1GREP_API_KEY より優先。
-               コマンドラインのキーは ps やシェル履歴に残るので、なるべく ~/.config/sys1grep/.env に書く
+               コマンドラインのキーは ps やシェル履歴に残るので、なるべく settings.json (下) に書く
   -h, --help   このヘルプ (LANG / LC_ALL / LC_MESSAGES が ja 以外なら英語)
   -V, --version  バージョンを表示して終了
 
 終了コード: 一致あり 0 / なし 1 / エラー 2 (引数・読めないファイル・API 障害)
   行を送って 1 のときは、最も高かった確率とその行を stderr に出す (-q・--summarize・--step-to と、否定だけで落ちたときは出さない)
 
-環境変数 (環境、無ければ ~/.config/sys1grep/.env から読む。./.env は読まない):
+環境変数 (環境、無ければ ~/.config/sys1grep/settings.json、それも無ければ ~/.config/sys1grep/.env から読む。
+./.env は読まない):
   SYS1GREP_API_KEY    API キー。無ければ TYPESAFE_API_KEY。取得は https://console.typesafe.ai/
   SYS1GREP_URL        送信先 (既定 https://api.typesafe.ai/v1/systemone)。TypeSafe 互換の
                      /v1/systemone なら可。例 https://openrouter.ai/api/v1/systemone
@@ -686,7 +644,11 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                      オプションだけで、意味・ファイル・-- は書けない。例 SYS1GREP_OPTS='--level strict -n'。
                      スクリプトからは SYS1GREP_OPTS= sys1grep と空にして呼ぶ
   キーは SYS1GREP_URL の先へそのまま送られる。SYS1GREP_URL 指定時にキーが無ければ認証ヘッダを付けない。
-  例:  mkdir -p ~/.config/sys1grep && echo 'SYS1GREP_API_KEY=your-key' > ~/.config/sys1grep/.env`;
+  ~/.config/sys1grep/settings.json: JSON のオブジェクト。どの項目も省略でき、それぞれ 1 つの環境変数の既定値になる:
+    url key model opts summarizer summarizerModel summarizerKey = SYS1GREP_URL SYS1GREP_API_KEY SYS1GREP_MODEL
+    SYS1GREP_OPTS SYS1GREP_SUMMARIZER SYS1GREP_SUMMARIZER_MODEL SYS1GREP_SUMMARIZER_API_KEY。opts は配列で、
+    1 要素が 1 引数。環境変数は空だと未設定扱いでこの先へ進むが、SYS1GREP_OPTS= だけは空のまま勝ち、opts を外す。権限は 0600 に
+  例:  {"key": "your-key", "opts": ["--level", "strict", "-n"]}`;
 if (opt.version) {
   console.log(`sys1grep ${JSON.parse(readFileSync(new URL('package.json', import.meta.url), 'utf8')).version}`);
   process.exit(0);
@@ -735,8 +697,17 @@ const customUrl = opt['sys1-url'] || SYS1GREP_URL;
 const apiUrl = customUrl || 'https://api.typesafe.ai/v1/systemone';
 const apiHost = (() => { try { return new URL(apiUrl).host; } catch { die(`not a URL: ${apiUrl} (--sys1-url / SYS1GREP_URL)`); } })();
 const model = opt['sys1-model'] || SYS1GREP_MODEL || 'jev-latest';
-const credential = opt['sys1-api-key'] || SYS1GREP_API_KEY || TYPESAFE_API_KEY;
-if (credential && new URL(apiUrl).protocol === 'http:' && !/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(apiHost))
+// The price shown and checked by --max-cost (#174), USD per M input tokens, unless the endpoint reports its own cost
+// (usage.cost): a local URL is free, a model in PRICES has its own, anything else is Jev's list price. The host as typed
+// decides locality, with no DNS lookup, and only for a URL the user gave (SYS1GREP_URL / --sys1-url).
+const PRICES = { 'jev-latest': 0.042, clef: 0.24, 'clef-flash': 0.09 };
+const LOCAL_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
+const localUrl = !!customUrl && LOCAL_HOST.test(apiHost);
+const pricePerM = localUrl ? 0 : Object.hasOwn(PRICES, model) ? PRICES[model] : PRICES['jev-latest'];
+const priceTag = localUrl ? ' (local URL, free)' : !customUrl ? ''
+  : Object.hasOwn(PRICES, model) && model !== 'jev-latest' ? ` at ${model}'s list price` : " at TypeSafe's list price";
+const credential = opt['sys1-api-key'] || envAPI_KEY.value;
+if (credential && new URL(apiUrl).protocol === 'http:' && !LOCAL_HOST.test(apiHost))
   console.error(`sys1grep: warning: the API key goes to ${apiHost} over plain http`);
 // --dry-run prints the files and the requests that would be sent, to stdout, and sends nothing. --verbose prints
 // the same to stderr while searching. -q's early exits would cut the list short, so --dry-run turns -q off.
@@ -834,7 +805,7 @@ if (opt.rank !== undefined) {
 // A compatible local server may need no key; the TypeSafe default always does. Regex-only queries never call the API.
 // --unit=sentence-by-jev asks Jev where wrapped lines join; with regex terms only, nothing else is sent, so rules decide.
 if (opt.unit === 'sentence-by-jev' && !hasMeanings) opt.unit = 'sentence-by-rule';
-if (hasMeanings && !credential && !customUrl) die('SYS1GREP_API_KEY is not set. Export it or put it in ~/.config/sys1grep/.env');
+if (hasMeanings && !credential && !customUrl) die(`SYS1GREP_API_KEY is not set. Export it or put it in ${SETTINGS_SHOWN} as "key"`);
 
 const levels = { loose: [0.3, 0.7], normal: [0.5, 0.5], strict: [0.7, 0.3] };
 const level = Object.hasOwn(levels, opt.level) && levels[opt.level];
@@ -1080,27 +1051,19 @@ const wanted = (path, st) => {
 
 // --verbose / --dry-run (#90): the settings this run actually used, and where each not typed on the command
 // line came from, so a result that surprises can be traced back to its source. The key's value never prints,
-// only which option or variable supplied it. optTag: the "(SYS1GREP_OPTS)" suffix options: lists a setting
+// only which option or variable supplied it. optTag: the "(SYS1GREP_OPTS)" or "(settings.json opts)" suffix options: lists a setting
 // with, or '' for the command line or a default (this line only marks the one source that isn't obvious).
-const optTag = name => (optSrc(name) === 'SYS1GREP_OPTS' ? ' (SYS1GREP_OPTS)' : '');
+const optTag = name => (optSrc(name) === OPTS_NAME ? ` (${OPTS_NAME})` : '');
 if (logPlan) {
-  const envTag = (cliVal, meta) => (cliVal ? '' : ` (${meta.name === null ? 'default' : envLabel(meta.name)})`);
-  // key: the name only; a value from the .env file gets the file in parens, same as elsewhere, but the value
-  // itself is never shown, so a real-environment variable gets no parens at all (it needs no further source).
-  const keyFileTag = name => (shellEnv.has(name) ? '' : ` (${tildeEnvFile})`);
+  const envTag = (cliVal, meta) => (cliVal ? '' : ` (${meta.name === null ? 'default' : envLabel(meta)})`);
   logPlan(`endpoint ${apiHost}${new URL(apiUrl).pathname}${envTag(opt['sys1-url'], envURL)}, model ${model}${envTag(opt['sys1-model'], envMODEL)}`);
-  if (hasMeanings) {
-    if (opt['sys1-api-key']) logPlan('key: --sys1-api-key');
-    else if (envAPI_KEY.name) logPlan(`key: ${envAPI_KEY.name}${keyFileTag(envAPI_KEY.name)}`);
-    else if (TYPESAFE_API_KEY !== undefined) logPlan(`key: TYPESAFE_API_KEY${keyFileTag('TYPESAFE_API_KEY')}`);
-    else logPlan('key: none (no auth header sent)');
-  }
-  // --sys1-api-key's value is masked here too: SYS1GREP_OPTS is not on the rejected-option list (only
-  // e/a/v/question/summarize are), so a key placed there would otherwise leak in full, unlike the option
-  // typed on the command line, which only ever shows as its name (line above).
-  if (SYS1GREP_OPTS) {
-    const masked = SYS1GREP_OPTS.split(/\s+/).filter(Boolean).map((tok, i, toks) => (toks[i - 1] === '--sys1-api-key' ? '***' : tok.replace(/^--sys1-api-key=.*$/, '--sys1-api-key=***'))).join(' ');
-    logPlan(`${envOPTS.name}: ${masked}`);
+  // key: the name and file only, never the value
+  if (hasMeanings) logPlan(`key: ${opt['sys1-api-key'] ? '--sys1-api-key' : envAPI_KEY.name ? keyLabel(envAPI_KEY) : 'none (no auth header sent)'}`);
+  // --sys1-api-key's value is masked here too: the default options may hold it (they refuse only meanings and the
+  // like), and it would otherwise leak in full, unlike the option typed on the command line (line above).
+  if (optsArgs.length) {
+    const masked = maskOpts(optsArgs).join(' ');
+    logPlan(`${envOPTS.file === SETTINGS_SHOWN ? OPTS_NAME : envOPTS.name}: ${masked}`);
   }
   const thresholds = optSrc('t') === null && optSrc('T') === null
     ? `--level ${opt.level}${optTag('level')} = -t ${tPos} -T ${tNeg}`
@@ -1122,16 +1085,16 @@ if (logPlan) {
   ].filter(Boolean);
   logPlan(`options: ${options.join(', ')}`);
   if (summarizer) {
-    const raw = [...SYS1GREP_OPTS.split(/\s+/), ...process.argv.slice(2)].filter(a => a === '--summarize' || a.startsWith('--summarize='));
+    const raw = [...optsArgs, ...process.argv.slice(2)].filter(a => a === '--summarize' || a.startsWith('--summarize='));
     const bare = raw.at(-1) === '--summarize';
-    const toolTag = bare ? ` (${envSUMMARIZER.name ? envLabel(envSUMMARIZER.name) : 'default'})` : '';
+    const toolTag = bare ? ` (${envSUMMARIZER.name ? envLabel(envSUMMARIZER) : 'default'})` : '';
     // The model: SYS1GREP_SUMMARIZER_MODEL, else claude's haiku, else llm's / pi's own default (the HTTP servers
     // have none and died above without one). The summarizer key, like Jev's, by name only, and only for a URL TOOL,
     // the one it goes to. --summarize-prompt by its source only: its text is in the argv line, or the POST body.
-    const summModel = envSUMMARIZER_MODEL.name ? `${SYS1GREP_SUMMARIZER_MODEL} (${envLabel(envSUMMARIZER_MODEL.name)})`
+    const summModel = envSUMMARIZER_MODEL.name ? `${SYS1GREP_SUMMARIZER_MODEL} (${envLabel(envSUMMARIZER_MODEL)})`
       : opt.summarize === 'claude' ? 'haiku (default)' : `(${opt.summarize}'s default)`;
     const keyTag = Array.isArray(summarizer) || !/^https?:\/\//.test(opt.summarize) ? ''
-      : envSUMMARIZER_API_KEY.name ? `, key ${envSUMMARIZER_API_KEY.name}${keyFileTag(envSUMMARIZER_API_KEY.name)}` : ', key none (no auth header sent)';
+      : envSUMMARIZER_API_KEY.name ? `, key ${keyLabel(envSUMMARIZER_API_KEY)}` : ', key none (no auth header sent)';
     const promptTag = opt['summarize-prompt'] ? `, --summarize-prompt${optTag('summarize-prompt')}` : '';
     logPlan(`summarize: ${opt.summarize}${toolTag}${optTag('summarize')}, model ${summModel}${keyTag}${promptTag}`);
     logPlan(`summarize: ${Array.isArray(summarizer) ? summarizer.map(a => (/^[\w./=:-]+$/.test(a) ? a : JSON.stringify(a))).join(' ')
@@ -1377,6 +1340,10 @@ function gitIgnored(dir) {
   try { return new Set(git(['ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory']).split('\0').map(p => p.replace(/\/$/, ''))); }
   catch { return new Set(); } // not in a repository, or no git: nothing is ignored
 }
+// settings.json's basename matches no SKIP_FILE pattern (it is not a dotfile), so a recursive -r scan whose scope
+// happens to reach ~/.config/sys1grep (e.g. -r over $HOME) would otherwise hand a match on sys1grep's own saved key
+// to whatever reads the results (--serve included). Skipped by its one known absolute path, not by name, so an
+// unrelated project's own settings.json is still searched.
 function expand(path, rel = '', ignored) {
   let st;
   try { st = statSync(path); } catch (e) { warn(path, e); return []; }
@@ -1388,6 +1355,7 @@ function expand(path, rel = '', ignored) {
   return ents
     .filter(d => !d.isSymbolicLink() && !(d.isDirectory() ? SKIP_DIRS.includes(d.name) : SKIP_FILE.test(d.name) || GENERATED_FILE.test(d.name)))
     .filter(d => !ignored.has(rel + d.name))
+    .filter(d => d.isDirectory() || resolve(path, d.name) !== SETTINGS_FILE)
     .sort((a, b) => a.name.localeCompare(b.name))
     .flatMap(d => expand(path.endsWith('/') ? path + d.name : `${path}/${d.name}`, `${rel}${d.name}/`, ignored)); // not path.join(): it would drop the leading ./
 }
@@ -1397,7 +1365,9 @@ const lsFiles = (...extra) => {
   try { return execFileSync('git', ['ls-files', '-z', ...extra, '--', ...pathspecs], { encoding: 'utf8', maxBuffer: Infinity }); }
   catch (e) { if (e.status == null) die(`git ls-files: ${e.message}`); process.exit(2); } // git exited non-zero: it has said why
 };
-const skipPath = p => p.split('/').some(d => SKIP_DIRS.includes(d)) || SKIP_FILE.test(p.split('/').at(-1)) || GENERATED_FILE.test(p.split('/').at(-1));
+// The resolve(p) === SETTINGS_FILE check: settings.json too, as expand()'s own skip does for -r (#199); a tracked
+// or cached file can land at that one known path just as a working-tree one can.
+const skipPath = p => p.split('/').some(d => SKIP_DIRS.includes(d)) || SKIP_FILE.test(p.split('/').at(-1)) || GENERATED_FILE.test(p.split('/').at(-1)) || resolve(p) === SETTINGS_FILE;
 const listed = raw => [...new Set(raw.split('\0'))] // a conflicted path is listed once per stage
   .filter(p => {
     if (!p || skipPath(p)) return false;
@@ -1487,13 +1457,13 @@ const stdinBuf = found.includes('-') ? readFileSync(0) : null;
 // Nothing is sent before the answer. The answer comes from /dev/tty, so stdin can still carry the data.
 if (opt.interactive && !dry) {
   let tty;
-  try { tty = openSync('/dev/tty', 'r+'); } catch { die(`-i needs a terminal to ask on${optsInteractive ? ' (-i is in SYS1GREP_OPTS; from a script, run SYS1GREP_OPTS= sys1grep ...)' : ''}`, !optsInteractive); }
+  try { tty = openSync('/dev/tty', 'r+'); } catch { die(`-i needs a terminal to ask on${optsInteractive ? ` (-i is in ${OPTS_NAME}; from a script, run SYS1GREP_OPTS= sys1grep ...)` : ''}`, !optsInteractive); }
   const plan = spawnSync(process.execPath, [...process.execArgv, process.argv[1], '--dry-run', ...process.argv.slice(2)], { input: stdinBuf ?? '', encoding: 'utf8', maxBuffer: Infinity });
   if (plan.status !== 0 && plan.status !== 2) { process.stderr.write(plan.stderr); process.exit(2); } // 2: a file could not be read
   // A file that could not be read shows up only while reading, in the dry run: say so next to the question. What
   // this process already printed (the file list's warnings, the option warnings) is not repeated.
   const errors = plan.stderr.split('\n').filter(l => l.startsWith('sys1grep: ') && !l.startsWith('sys1grep: warning: ') && !l.includes(' is deprecated; use ') && !warned.includes(l));
-  const shown = [...plan.stdout.split('\n').filter(l => /^sys1grep: (file |dry run: |walk |summarize: |rank: |endpoint |key: |options: |SYS1GREP_OPTS: |SEMGREP_OPTS: )/.test(l)), ...errors].map(safe);
+  const shown = [...plan.stdout.split('\n').filter(l => /^sys1grep: (file |dry run: |walk |summarize: |rank: |endpoint |key: |options: |SYS1GREP_OPTS: |SEMGREP_OPTS: |settings\.json opts: )/.test(l)), ...errors].map(safe);
   warned.push(...errors); // its scope lines among them: not printed again after the answer
   if (!/^sys1grep: dry run: 0 requests/.test(shown.findLast(l => l.startsWith('sys1grep: dry run: ')))) {
     writeSync(tty, `${shown.join('\n')}\nSearch, sending the above${opt.rank === 'jev' ? ', then a question per result' : ''}${summarizer ? `, then the matching lines to ${opt.summarize}` : ''}? [y/N] `);
@@ -2115,19 +2085,18 @@ function guardCost(chunks, asks, terms) {
     return { bytes: t.bytes + Buffer.byteLength(body), cjk: t.cjk + cjkBytesOf(body) };
   }, { bytes: sentBytes, cjk: sentCjkBytes });
   const estTokens = estimateTokens(sentRequests + chunks.length, bits.bytes, bits.cjk);
-  // Unlike --dry-run's own display, --max-cost is checked at TypeSafe's list price even for a custom endpoint
-  // (OpenRouter, a local server): a wrong number the guard can act on beats none it cannot (#58's open question).
-  // #125 review (item 4): say so in the question itself, so a custom endpoint's own price is never mistaken for it.
-  const estPrice = (estTokens * 0.042) / 1e6;
+  // pricePerM (the owner's decision of 2026-10-04, replacing item 4 of 2026-09-27): a local URL is free, a model of
+  // PRICES has its own price, anything else Jev's. For another URL the question says whose price it is (priceTag).
+  const estPrice = (estTokens * pricePerM) / 1e6;
   const meaning = wide && wide.find(lit => lit.kind === 'm').text;
   if (meaning) {
     const short = meaning.length > 40 ? `${meaning.slice(0, 40).replace(/\s+\S*$/, '')}…` : meaning;
-    const cost = `~${new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(estTokens)} input tokens${customUrl ? '' : `, ~$${estPrice.toFixed(2)}`}`;
+    const cost = `~${new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(estTokens)} input tokens, ~$${estPrice.toFixed(2)}${priceTag}`;
     const msg = `sys1grep: sending ${units.toLocaleString('en-US')} of ${totalUnits.toLocaleString('en-US')} ${unitName} from ${read.size.toLocaleString('en-US')} file${read.size === 1 ? '' : 's'} (${cost}); the term "${safe(short)}" has no regex to narrow it. Add -a '/RE/' to it, or --include / --changed-within, or --dry-run to see the requests`;
     if (!warned.includes(msg)) { console.error(msg); warned.push(msg); }
   }
   if (opt.yes) return;
-  const at = customUrl ? " at TypeSafe's list price (SYS1GREP_URL is another endpoint)" : '';
+  const at = priceTag + (customUrl && !localUrl ? ' (SYS1GREP_URL is another endpoint)' : '');
   if (estPrice > MAX_COST) askToContinue(`sys1grep: about ${estTokens.toLocaleString('en-US')} input tokens, ~$${estPrice.toFixed(2)}${at}  (--max-cost ${MAX_COST})`);
 }
 guardCost(chunks, asksByUnit, starting);
@@ -2515,10 +2484,10 @@ if (summarizer && !dry && matched && pipedBytes > SUMMARY_MAX) {
 // Summary only when interactive; grep prints nothing to stderr when scripted.
 if (dry) {
   const assumed = [willFold && `--dedup=${opt.dedup}`, opt.unit === 'sentence-by-jev' && '--unit=sentence-by-jev'].filter(Boolean);
-  const tokens = estimateTokens(traced, tracedBytes, tracedCjkBytes), price = customUrl ? '' : `, ~$${(tokens * 0.042 / 1e6).toFixed(6)}`;
+  const tokens = estimateTokens(traced, tracedBytes, tracedCjkBytes), price = `, ~$${(tokens * pricePerM / 1e6).toFixed(6)}${priceTag}`;
   // #125 review: the size guard is gone (an oversized file is skipped outright above, not asked about); --dry-run
   // and -i show only the cost guard's verdict here, consistent with what a real run would ask.
-  const guard = (tokens * 0.042) / 1e6 > MAX_COST ? `; over --max-cost ${MAX_COST}, would ask` : '';
+  const guard = (tokens * pricePerM) / 1e6 > MAX_COST ? `; over --max-cost ${MAX_COST}, would ask` : '';
   logPlan(`dry run: ${traced} request${traced === 1 ? '' : 's'}, ${sent.length} of ${totalUnits} ${unitName} to send, ${tracedQuestions} questions, ${tracedChars} chars, ~${tokens} input tokens${price}; nothing sent${assumed.length ? ` (${assumed.join(' and ')} questions assumed no)` : ''}${guard}`);
 } else if ((process.stderr.isTTY || opt.verbose) && !opt.quiet) {
   // #143: dedup off by default until real-run stats say auto should be it; meanwhile a run that would have paid
@@ -2526,9 +2495,9 @@ if (dry) {
   if (opt.dedup === 'never' && dedupEstimate?.pays) {
     console.error(`sys1grep: ${dedupEstimate.units} units fold to at most ${dedupEstimate.templates} templates; --dedup=auto would save ~${dedupEstimate.requests} requests (~${kify(dedupEstimate.saved)} tokens)`);
   }
-  // The API's own usage.cost when reported (OpenRouter does); else an estimate at Jev's list price, only for TypeSafe itself.
-  const perToken = usedCost > 0 && usedTokens > 0 ? usedCost / usedTokens : customUrl ? 0 : 0.042 / 1e6;
-  const cost = usedCost > 0 ? `, $${usedCost.toFixed(6)}` : perToken ? `, ~$${(usedTokens * perToken).toFixed(6)}` : '';
+  // The API's own usage.cost when reported (OpenRouter does); else an estimate at pricePerM (see the block after `model`), tagged for another URL.
+  const perToken = usedCost > 0 && usedTokens > 0 ? usedCost / usedTokens : pricePerM / 1e6;
+  const cost = usedCost > 0 ? `, $${usedCost.toFixed(6)}` : usedTokens > 0 ? `, ~$${(usedTokens * perToken).toFixed(6)}${priceTag}` : '';
   // --dedup's savings: what the folded units would have cost as requests of their own (estimated, #92's fit), less
   // what its questions did cost (reported). A net figure: on prose, which barely folds, it can come out negative.
   let folded = '';
@@ -2539,7 +2508,7 @@ if (dry) {
       return t + estimateTokens(1, Buffer.byteLength(body), cjkBytesOf(body));
     }, 0) - dedupTokens;
     const share = saved + usedTokens > 0 ? `, ${Math.round((100 * saved) / (saved + usedTokens))}%` : '';
-    folded = ` (${members.length} folded by --dedup, ~${saved} input tokens${perToken ? ` / ~$${(saved * perToken).toFixed(6)}` : ''} saved${share})`;
+    folded = ` (${members.length} folded by --dedup, ~${saved} input tokens / ~$${(saved * perToken).toFixed(6)} saved${share})`;
   }
   const n = (k, w) => `${k} ${w}${k === 1 ? '' : 's'}`;
   console.error(`${matched} of ${totalUnits} ${unitName} matched; ${requestCount ? `${sent.length} sent to Jev${folded} in ${n(requestCount, 'request')}, ${n(usedTokens, 'input token')}${cost}` : 'nothing sent'}`);
