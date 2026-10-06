@@ -49,6 +49,7 @@
     "dedup-eval": "node tests/dedup-eval.mjs",
     "cause-eval": "node tests/cause-eval.mjs",
     "skill-eval": "bash tests/skill-eval/run.sh",
-    "release": "sh scripts/release.sh"
+    "release": "sh scripts/release.sh",
+    "smoke": "node --no-warnings tests/smoke.mts"
   }
 }
