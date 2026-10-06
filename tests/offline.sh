@@ -1707,16 +1707,30 @@ printf '%s\n' 'def main():' '  helper()' 'def helper():' '  raise X' >"$tmp/m.py
 $E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$tmp/m.py" >"$tmp/serve4.url" 2>/dev/null &
 serve=$!
 i=0; while [ ! -s "$tmp/serve4.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (multi-step) did not start"; sleep 0.05; done
-eq "$(HOME="$tmp" node serve-page.mjs "$(cat "$tmp/serve4.url")")" "card children: .title #f #sd
+eq "$(HOME="$tmp" node serve-page.mjs "$(cat "$tmp/serve4.url")")" "card children: #title #f #sd
 form children: #startgrp .row #steps .row .row #m #ex #d
 start group: fieldset > .glabel #fields #add
-end group: fieldset > .glabel #ends #addend .row
+end group: fieldset > .glabel #ends #addend #hg-edges
 no <header>: ok
 no logo in the toolbar: ok
 --hops is type=text (styled like the other inputs): ok
 Details/Settings checkboxes keep their native size: ok
 dark .err override comes after its base rule: ok
 main.two's one-column breakpoint tracks the card width (880px): ok
+title row: .icon h1 #gear
+Settings is a <dialog> holding the settings form, not a bottom collapsible: ok
+the dialog has an accessible name (aria-labelledby its heading): ok
+the url field is the dialog's initial focus, not the close button: ok
+hint-step: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-edges: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-rank: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-summarize: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hints hidden by default (source): ok
+hover reveal is scoped to the icon, not the whole row: ok
+a shown hint never blocks clicks (pointer-events: none): ok
+keyboard-focus of the icon and tap both reveal: ok
+no stray rule overrides a hint's display beyond those three: ok
+hint-step explains the walk: starts-with-Finds=true lines=4
 first start row: 3 children (select, input, delete)
 steps hidden: -e '/def main/'
 x=e:/def main/ hops=0.. reverse=0 -> 1 lines
@@ -1756,8 +1770,16 @@ who calls it (--reverse): steps shown: -e '/^ *def helper/' --step-to -e '/^ *de
 raise or exit (two ends): steps shown: -e '/^ *def main/' --step-to -e '/raise /' -e '/sys\\.exit/' -> ok
 before delete: 1 start row(s)
 after delete: 1 start row(s), value \"\"
-opened: url \"\" SYS1GREP_URL in the environment wins over this; model \"\" not set: the default; key \"\" not saved, not set: the default; opts \"\"
-saved; the next search uses it: url \"\" SYS1GREP_URL in the environment wins over this; model \"m7\" in effect; key \"\" saved; type to replace, in effect; opts \"-n\\n--level\\nstrict\"" "--serve: the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs), the settings panel"
+gear opens the dialog: open=true, url \"\" SYS1GREP_URL in the environment wins over this; model \"\" not set: the default; key \"\" not saved, not set: the default; opts \"\"
+saved; the next search uses it: url \"\" SYS1GREP_URL in the environment wins over this; model \"m7\" in effect; key \"\" saved; type to replace, in effect; opts \"-n\\n--level\\nstrict\"
+the x closes the dialog and returns focus to the gear: open=false, focused=true, body scroll restored=true
+reopening clears the previous save message: sst=\"\", body scroll locked=true
+a backdrop click closes the dialog: open=false
+hints start closed: step:false/closed edges:false/closed rank:false/closed summarize:false/closed
+tapping the rank \"?\" opens only it: step:false/closed edges:false/closed rank:true/open summarize:false/closed
+Esc closes it: step:false/closed edges:false/closed rank:false/closed summarize:false/closed
+tapping a second \"?\" closes the first: step:false/closed edges:true/open rank:false/closed summarize:false/closed
+a tap elsewhere closes it: step:false/closed edges:false/closed rank:false/closed summarize:false/closed" "--serve: the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs), the settings dialog, and the hint tooltips"
 eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '{"model":"m7","key":"k7","opts":["-n","--level","strict"]}' "--serve settings: what the panel saved"
 # #206: the settings test wrote under the temp HOME, never the real one; the entry points that can drive --serve refuse the real HOME
 [ "$HS" != "$REALHOME/.config/sys1grep/settings.json" ] || fail "--serve settings: the test wrote the real settings.json"
@@ -1769,6 +1791,16 @@ eq "$(env HOME="$tmp" node -e "import('./home-guard.mjs').then(m => console.log(
 # the check that ends every run sees a settings.json appear or change (a stand-in for the real home, never the real one)
 eq "$(REALHOME="$tmp/rh"; mkdir -p "$REALHOME/.config/sys1grep"; a=$(realsettings); printf '{}' >"$REALHOME/.config/sys1grep/settings.json"; b=$(realsettings); [ "$a" = absent ] && [ "$b" != absent ] && echo seen)" "seen" "the real-settings check sees a file appear"
 rm -f "$HS"
+kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
+# two --serve (npm run serve adds one): the last one's port is used and neither reaches the child
+PORT=$(node -e "const s = require('net').createServer().listen(0, '127.0.0.1', () => { console.log(s.address().port); s.close(); })")
+$E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve --serve=$PORT "$F" >"$tmp/serve5.url" 2>/dev/null &
+serve=$!
+i=0; while [ ! -s "$tmp/serve5.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve --serve=PORT did not start"; sleep 0.05; done
+U=$(cat "$tmp/serve5.url"); BASE=${U%%\?*}; K=${U##*k=}
+case $U in http://127.0.0.1:$PORT/*) ;; *) fail "--serve --serve=PORT: the port: $U" ;; esac
+eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=" | node -pe "JSON.parse(require('fs').readFileSync(0)).text")" "cat
+cat dog" "--serve --serve=PORT: searches still run"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 code 2 "--serve refuses -e" -- $J --serve -e cat "$F"
 code 2 "--serve refuses --format" -- $J --serve --format=html "$F"

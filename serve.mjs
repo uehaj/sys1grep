@@ -202,9 +202,9 @@ const fromQuery = (sp, init) => { // null when a value is out of range
 };
 
 export function serve(argv) {
-  const at = argv.findIndex(a => /^--serve(=|$)/.test(a)), port = argv[at].slice(8);
+  const isServe = a => /^--serve(=|$)/.test(a), port = argv.filter(isServe).at(-1).slice(8); // the last one's port: npm run serve adds a bare --serve
   if (port && !(/^\d+$/.test(port) && Number(port) < 65536)) throw new Error(`--serve=${port}: not a port number`);
-  const rest = argv.filter((_, i) => i !== at), dd = rest.indexOf('--');
+  const rest = argv.filter(a => !isServe(a)), dd = rest.indexOf('--');
   const before = dd < 0 ? rest : rest.slice(0, dd), after = dd < 0 ? [] : rest.slice(dd);
   // the key stays in this process (never in the page or the command shown); the summary instruction is a control, not a launch option
   const [noKey, key] = lift(before, 'sys1-api-key'), [launch, prompt] = lift(noKey, 'summarize-prompt');
@@ -296,8 +296,10 @@ body { margin: 0; background: var(--page); color: var(--fg); font: 14px/1.5 aria
 .card { background: var(--bg); border-radius: 16px; box-shadow: var(--shadow); margin: 24px auto; padding: 20px 24px; width: min(880px, calc(100% - 32px)); }
 .title { display: flex; align-items: center; gap: 12px; margin: 0 0 10px; }
 .title .icon { display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; background: var(--accent); border-radius: 10px; flex: none; }
-.title h1 { font-size: 24px; margin: 0; font-weight: 800; }
+.title h1 { font-size: 24px; margin: 0; font-weight: 800; flex: 1; }
 .title .accent { color: var(--accent); }
+.gear { margin-left: auto; border: none; background: none; color: var(--muted); padding: 6px; border-radius: 8px; display: inline-flex; flex: none; }
+.gear:hover, .gear:focus-visible { background: var(--input-bg); color: var(--fg); }
 .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
 .row input[type=text] { flex: 1; min-width: 100px; padding: 10px 16px; font-size: 15px; border: 1px solid var(--border); border-radius: 14px; background: var(--input-bg); color: var(--fg); }
 select, button, input { font: inherit; color: var(--fg); }
@@ -310,7 +312,21 @@ fieldset.group { border: 1px solid var(--border); border-radius: 12px; padding: 
 .del { border: none; background: none; color: var(--muted); padding: 4px; border-radius: 8px; display: inline-flex; }
 .del:hover { background: var(--input-bg); color: var(--fg); }
 .err { color: #d93025; white-space: pre-wrap; } .note { color: var(--muted); }
-.withhint { display: flex; flex-direction: column; gap: 2px; } .hint { font-size: 11px; color: var(--muted); }
+.withhint { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.hintctl { position: relative; display: inline-flex; }
+.qbtn { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); background: var(--input-bg); color: var(--muted); font-size: 10px; line-height: 1; padding: 0; display: inline-flex; align-items: center; justify-content: center; cursor: help; }
+.qbtn:hover, .qbtn:focus-visible { color: var(--fg); border-color: var(--accent); }
+.hint { position: absolute; z-index: 30; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 6px; width: max-content; max-width: min(360px, calc(100vw - 32px)); padding: 8px 10px; background: var(--code); color: var(--code-fg); font-size: 11px; line-height: 1.5; white-space: pre-line; text-align: left; border-radius: 8px; box-shadow: var(--shadow); display: none; pointer-events: none; }
+@media (hover: hover) { .hintctl:hover .hint { display: block; } }
+.qbtn:focus-visible + .hint, .hintgroup.open .hint { display: block; }
+@media (max-width: 1200px) { .hint { position: fixed; left: 16px; right: 16px; bottom: 16px; top: auto; transform: none; max-width: none; width: auto; } }
+.dlgbody { padding: 20px 24px; }
+dialog#sd { background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 0; }
+dialog#sd::backdrop { background: rgba(0, 0, 0, .45); }
+.dlghead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 10px; }
+.dlghead h2 { font-size: 16px; margin: 0; }
+.dlgx { border: none; background: none; color: var(--muted); font-size: 20px; line-height: 1; padding: 4px 8px; border-radius: 8px; }
+.dlgx:hover, .dlgx:focus-visible { background: var(--input-bg); color: var(--fg); }
 #cmd { flex: 1; margin: 0; padding: 10px 14px; background: var(--code); color: var(--code-fg); border-radius: 10px; font: 12px/1.5 ui-monospace, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 details { margin: 6px 0; background: var(--input-bg); border-radius: 10px; } summary { cursor: pointer; color: var(--muted); padding: 8px 12px; }
 summary.dot::after { content: " \\25CF"; color: var(--link); }
@@ -324,16 +340,19 @@ iframe { width: 100%; border: 0; min-height: 80px; } pre.out { white-space: pre-
 #right { border-left: 1px solid var(--rule); padding-left: 16px; }
 </style></head><body>
 <div class="card" id="card">
-<div class="title"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#fff" stroke-width="2.2"/><line x1="15.3" y1="15.3" x2="20.5" y2="20.5" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg></span><h1>sys<span class="accent">1grep</span></h1></div>
+<div class="title" id="title"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#fff" stroke-width="2.2"/><line x1="15.3" y1="15.3" x2="20.5" y2="20.5" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg></span><h1>sys<span class="accent">1grep</span></h1><button type="button" class="gear" id="gear" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
 <form id="f" autocomplete="off" onsubmit="return false">
 <fieldset class="group" id="startgrp"><legend class="glabel">start</legend><div id="fields"></div><button type="button" id="add" title="add a start" aria-label="add a start">+ start</button></fieldset>
-<div class="row"><div class="withhint"><label title="chain a start meaning to one or more end meanings, following the call/reference graph between them (--step-to)"><input type="checkbox" id="step" aria-describedby="hint-step"> multi-step</label><small class="hint" id="hint-step">chains a start meaning to matches reachable from it, instead of searching them directly</small></div></div>
+<div class="row"><div class="withhint hintgroup" id="hg-step"><label title="chain a start meaning to one or more end meanings, following the call/reference graph between them (--step-to)"><input type="checkbox" id="step" aria-describedby="hint-step"> multi-step</label><span class="hintctl"><button type="button" class="qbtn" id="q-step" aria-expanded="false" aria-controls="hint-step" aria-label="more about multi-step">?</button><small class="hint" id="hint-step" role="tooltip">Finds the start functions, then walks calls from them to the functions that match the end.
+A call is found by name: \`name(\` in a function's body (comments and strings left out) links to every function called \`name\`. Same-named functions all link; calls not written as \`name(\` (a function passed as a value, a call through a variable) are missed.
+Default: from a function to the functions it calls. --reverse: to the functions that call it.
+--hops limits how many calls away an end may be. For exact relations, start --serve with --edges=FILE.</small></span></div></div>
 <fieldset class="group" id="steps" hidden><legend class="glabel">end (--step-to)</legend><div id="ends"></div><button type="button" id="addend" title="add an end" aria-label="add an end">+ end</button>
-<div class="row edges"><div class="withhint"><span class="note">edges</span><small class="hint" id="hint-edges">--hops limits how many hops away an end may be; --reverse searches backwards along the graph</small></div><label title="how many hops the end may be from the start, e.g. 1..2">--hops <input type="text" name="hops" size="6" aria-describedby="hint-edges"></label><label><input type="checkbox" name="reverse" aria-describedby="hint-edges"> --reverse</label></div></fieldset>
+<div class="row edges hintgroup" id="hg-edges"><span class="note">edges</span><span class="hintctl"><button type="button" class="qbtn" id="q-edges" aria-expanded="false" aria-controls="hint-edges" aria-label="more about edges">?</button><small class="hint" id="hint-edges" role="tooltip">--hops limits how many hops away an end may be; --reverse searches backwards along the graph</small></span><label title="how many hops the end may be from the start, e.g. 1..2">--hops <input type="text" name="hops" size="6" aria-describedby="hint-edges"></label><label><input type="checkbox" name="reverse" aria-describedby="hint-edges"> --reverse</label></div></fieldset>
 <div class="row">
 <button type="submit" id="go">Search</button><button type="button" id="est" title="run with --dry-run: shows the request size and estimated cost, no results">Estimate cost</button><button type="button" id="stop" disabled>Stop</button>
-<div class="withhint"><label title="order matches by Jev's relevance score, or by plain substring match; off keeps file order">rank <select name="rank" aria-describedby="hint-rank"><option value="">off</option><option value="jev">jev</option><option value="match">match</option></select></label><small class="hint" id="hint-rank">off keeps file order</small></div>
-<div class="withhint"><label title="have a small model read the matches and answer in a sentence or two"><input type="checkbox" name="summarize" aria-describedby="hint-summarize"> summarize</label><small class="hint" id="hint-summarize">answers in a sentence or two after the search</small></div>
+<div class="withhint hintgroup" id="hg-rank"><label title="order matches by Jev's relevance score, or by plain substring match; off keeps file order">rank <select name="rank" aria-describedby="hint-rank"><option value="">off</option><option value="jev">jev</option><option value="match">match</option></select></label><span class="hintctl"><button type="button" class="qbtn" id="q-rank" aria-expanded="false" aria-controls="hint-rank" aria-label="more about rank">?</button><small class="hint" id="hint-rank" role="tooltip">off keeps file order</small></span></div>
+<div class="withhint hintgroup" id="hg-summarize"><label title="have a small model read the matches and answer in a sentence or two"><input type="checkbox" name="summarize" aria-describedby="hint-summarize"> summarize</label><span class="hintctl"><button type="button" class="qbtn" id="q-summarize" aria-expanded="false" aria-controls="hint-summarize" aria-label="more about summarize">?</button><small class="hint" id="hint-summarize" role="tooltip">answers in a sentence or two after the search</small></span></div>
 <input type="text" name="summarize-prompt" placeholder="summary instruction" style="display:none;flex:1;min-width:160px">
 </div>
 <div class="row"><pre id="cmd"></pre><button type="button" id="copy">Copy</button></div>
@@ -350,15 +369,15 @@ iframe { width: 100%; border: 0; min-height: 80px; } pre.out { white-space: pre-
 <label>--include <input name="include"></label><label>--exclude <input name="exclude"></label>
 <label>--changed-within <input name="changed-within" placeholder="2h, 7d, a date"></label><label class="chk"><input type="checkbox" name="g"> -g git log</label>
 </div></details></form>
-<details id="sd"><summary>Settings</summary><form id="sf" autocomplete="off" onsubmit="return false"><div class="grid">
-<label>url <input name="set-url" placeholder="https://api.typesafe.ai/v1/systemone"><small class="note" id="src-url"></small></label>
+<dialog id="sd" aria-labelledby="sdh"><div class="dlgbody"><div class="dlghead"><h2 id="sdh">Settings</h2><button type="button" class="dlgx" id="sdx" aria-label="Close" title="Close">&times;</button></div><form id="sf" autocomplete="off" onsubmit="return false"><div class="grid">
+<label>url <input name="set-url" placeholder="https://api.typesafe.ai/v1/systemone" autofocus><small class="note" id="src-url"></small></label>
 <label>model <input name="set-model" placeholder="jev-latest"><small class="note" id="src-model"></small></label>
 <label>key <input type="password" name="set-key" autocomplete="new-password"><small class="note" id="src-key"></small><span class="chk"><input type="checkbox" name="clear-key"> remove</span></label>
 <label>opts, one argument per line <textarea name="set-opts" rows="3"></textarea><small class="note" id="src-opts"></small></label>
 <label>summarizer <input name="set-summarizer" placeholder="claude"><small class="note" id="src-summarizer"></small></label>
 <label>summarizerModel <input name="set-summarizerModel"><small class="note" id="src-summarizerModel"></small></label>
 <label>summarizerKey <input type="password" name="set-summarizerKey" autocomplete="new-password"><small class="note" id="src-summarizerKey"></small><span class="chk"><input type="checkbox" name="clear-summarizerKey"> remove</span></label>
-</div><div class="row"><button type="button" id="save">Save to ~/.config/sys1grep/settings.json</button><span class="note" id="sst"></span></div></form></details>
+</div><div class="row"><button type="button" id="save">Save to ~/.config/sys1grep/settings.json</button><span class="note" id="sst"></span></div></form></div></dialog>
 </div>
 <script>
 const CONTROLS = ${json(CONTROLS)}, INIT = ${json(init)}, LAUNCH = ${json(launch)}, AFTER = ${json(after)}, TOKEN = ${json(token)}, EXAMPLES = ${json(EXAMPLES)};
@@ -478,7 +497,7 @@ f.addEventListener('input', show); f.addEventListener('change', show);
 setControls(INIT);
 addField().children[1].focus(); addField('e', '', ends);
 // the settings panel: read when opened, saved on the button; a key field stays empty (a key never comes back from the server)
-const sf = document.getElementById('sf'), sd = document.getElementById('sd'), sst = document.getElementById('sst');
+const sf = document.getElementById('sf'), sd = document.getElementById('sd'), sst = document.getElementById('sst'), gear = document.getElementById('gear');
 const SFIELDS = ['url', 'model', 'key', 'opts', 'summarizer', 'summarizerModel', 'summarizerKey'], SKEYS = ['key', 'summarizerKey'];
 const SAID = { cmd: () => 'the command line wins over this', env: n => n + ' in the environment wins over this', settings: () => 'in effect', '.env': () => 'in effect: ~/.config/sys1grep/.env', default: () => 'not set: the default' };
 const fillSettings = view => {
@@ -495,7 +514,17 @@ const settingsReq = async (method, body) => {
   if (!r.ok) throw new Error(j.error);
   return j;
 };
-sd.ontoggle = () => { if (sd.open) settingsReq('GET').then(fillSettings, e => { sst.textContent = e.message; }); };
+let bodyOverflow;
+gear.onclick = () => {
+  sst.textContent = '';
+  settingsReq('GET').then(fillSettings, e => { sst.textContent = e.message; });
+  bodyOverflow = document.body.style.overflow;
+  document.body.style.overflow = 'hidden';
+  sd.showModal();
+};
+document.getElementById('sdx').onclick = () => sd.close();
+sd.onclick = e => { if (e.target === sd) sd.close(); };
+sd.onclose = () => { document.body.style.overflow = bodyOverflow; gear.focus(); };
 document.getElementById('save').onclick = () => {
   const p = {};
   for (const k of SFIELDS) {
@@ -505,4 +534,12 @@ document.getElementById('save').onclick = () => {
   }
   return settingsReq('POST', JSON.stringify(p)).then(view => { fillSettings(view); sst.textContent = 'saved; the next search uses it'; }, e => { sst.textContent = 'not saved: ' + e.message; });
 };
+// hint tooltips: hover (mouse only) and keyboard focus of the "?" are pure CSS; tap toggles .open on the icon's
+// group (a tap elsewhere or Esc closes every open one), so a touch screen reaches them without a pointer that hovers.
+const HINTS = ['step', 'edges', 'rank', 'summarize'];
+const hintEls = HINTS.map(n => ({ b: document.getElementById('q-' + n), g: document.getElementById('hg-' + n) }));
+const closeHints = () => { for (const { b, g } of hintEls) { b.setAttribute('aria-expanded', 'false'); g.classList.remove('open'); } };
+for (const { b, g } of hintEls) b.onclick = e => { e?.stopPropagation?.(); const was = g.classList.contains('open'); closeHints(); if (!was) { b.setAttribute('aria-expanded', 'true'); g.classList.add('open'); } };
+document.addEventListener('click', closeHints);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeHints(); });
 </script></body></html>`;
