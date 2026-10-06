@@ -289,45 +289,56 @@ const page = ({ init, launch, after, token }) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark"><title>sys1grep</title>
 <style>
-:root { --page: #eef2f7; --bg: #fff; --fg: #1f2430; --muted: #6b7280; --rule: #e3e8ef; --accent: #2563eb; --accent-ink: #fff; --link: #2563eb; --input-bg: #f3f5f8; --pill-bg: #e3f6e9; --pill-fg: #1f8a4c; --code: #1e2433; --code-fg: #d7dde7; --shadow: 0 1px 2px rgba(16,24,40,.04), 0 8px 24px rgba(16,24,40,.08); }
-@media (prefers-color-scheme: dark) { :root { --page: #12141a; --bg: #1b1e26; --fg: #e7e9ee; --muted: #9aa3b2; --rule: #2b303b; --accent: #5b8df6; --accent-ink: #0b1020; --link: #5b8df6; --input-bg: #20242e; --pill-bg: #163826; --pill-fg: #7be0a0; --code: #11141b; --code-fg: #c9d1e0; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35); } }
+:root { --page: #eef2f7; --bg: #fff; --fg: #1f2430; --muted: #5f6b7a; --rule: #e3e8ef; --border: #7b8392; --accent: #2563eb; --accent-ink: #fff; --link: #2563eb; --input-bg: #f3f5f8; --pill-bg: #e3f6e9; --pill-fg: #17703d; --code: #1e2433; --code-fg: #d7dde7; --shadow: 0 1px 2px rgba(16,24,40,.04), 0 8px 24px rgba(16,24,40,.08); }
+@media (prefers-color-scheme: dark) { :root { --page: #12141a; --bg: #1b1e26; --fg: #e7e9ee; --muted: #9aa3b2; --rule: #2b303b; --border: #707a8a; --accent: #5b8df6; --accent-ink: #0b1020; --link: #5b8df6; --input-bg: #20242e; --pill-bg: #163826; --pill-fg: #7be0a0; --code: #11141b; --code-fg: #c9d1e0; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35); } }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--page); color: var(--fg); font: 14px/1.5 arial, "Hiragino Sans", "Noto Sans CJK JP", sans-serif; }
-header { background: var(--bg); border-radius: 16px; box-shadow: var(--shadow); margin: 24px auto; padding: 20px 24px; max-width: 880px; }
-.in, main { max-width: 1200px; margin: 0 auto; }
-.logo { font-size: 22px; font-weight: 800; color: var(--accent); margin-right: 12px; }
+.card { background: var(--bg); border-radius: 16px; box-shadow: var(--shadow); margin: 24px auto; padding: 20px 24px; width: min(880px, calc(100% - 32px)); }
+.title { display: flex; align-items: center; gap: 12px; margin: 0 0 10px; }
+.title .icon { display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; background: var(--accent); border-radius: 10px; flex: none; }
+.title h1 { font-size: 24px; margin: 0; font-weight: 800; }
+.title .accent { color: var(--accent); }
 .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
-.row input[type=text] { flex: 1; min-width: 200px; padding: 10px 16px; font-size: 15px; border: 1px solid transparent; border-radius: 14px; background: var(--input-bg); color: var(--fg); }
+.row input[type=text] { flex: 1; min-width: 100px; padding: 10px 16px; font-size: 15px; border: 1px solid var(--border); border-radius: 14px; background: var(--input-bg); color: var(--fg); }
 select, button, input { font: inherit; color: var(--fg); }
-button, select { background: var(--bg); border: 1px solid var(--rule); border-radius: 10px; padding: 6px 12px; cursor: pointer; }
+button, select { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 6px 12px; cursor: pointer; }
 #go { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
 #est, #stop, #copy, #save { background: var(--input-bg); }
+fieldset.group { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px 12px; margin: 10px 0; min-width: 0; }
+.group legend.glabel { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 6px; padding: 0 4px; }
+.row.edges { border-top: 1px solid var(--rule); margin-top: 10px; padding-top: 10px; }
+.del { border: none; background: none; color: var(--muted); padding: 4px; border-radius: 8px; display: inline-flex; }
+.del:hover { background: var(--input-bg); color: var(--fg); }
+.err { color: #d93025; white-space: pre-wrap; } .note { color: var(--muted); }
+.withhint { display: flex; flex-direction: column; gap: 2px; } .hint { font-size: 11px; color: var(--muted); }
 #cmd { flex: 1; margin: 0; padding: 10px 14px; background: var(--code); color: var(--code-fg); border-radius: 10px; font: 12px/1.5 ui-monospace, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 details { margin: 6px 0; background: var(--input-bg); border-radius: 10px; } summary { cursor: pointer; color: var(--muted); padding: 8px 12px; }
 summary.dot::after { content: " \\25CF"; color: var(--link); }
 .grid { display: grid; gap: 12px 20px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); padding: 4px 12px 12px; }
 .grid label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); } .grid label.chk { flex-direction: row; align-items: center; gap: 6px; }
-main { padding: 0 16px 48px; display: grid; gap: 16px; grid-template-columns: 1fr; } main.two { grid-template-columns: 3fr 2fr; }
-@media (max-width: 800px) { main.two { grid-template-columns: 1fr; } }
+.grid input:not([type=checkbox]), .grid select, .grid textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); width: 100%; font: inherit; }
+main { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin: 12px 0 4px; display: grid; gap: 16px; grid-template-columns: 1fr; } main.two { grid-template-columns: 3fr 2fr; }
+@media (max-width: 880px) { main.two { grid-template-columns: 1fr; } }
 iframe { width: 100%; border: 0; min-height: 80px; } pre.out { white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.5 ui-monospace, Menlo, monospace; }
-.c32 { color: #188038; } .c35 { color: #a142f4; } .c36 { color: #129eaf; } .c31 { color: #d93025; } .c33 { color: #b06000; } .c01_31 { color: #d93025; font-weight: 700; } .c01_33 { color: #b06000; font-weight: 700; background: #fff3b055; }\n@media (prefers-color-scheme: dark) { .c32 { color: #81c995; } .c35 { color: #d7aefb; } .c36 { color: #78d9ec; } .c31, .c01_31 { color: #f28b82; } .c33, .c01_33 { color: #fdd663; } }\nbutton:disabled { opacity: .45; cursor: default; } #ex button { border-radius: 999px; background: var(--pill-bg); color: var(--pill-fg); border: none; } #ex .grp { border-left: 1px solid var(--rule); padding-left: 8px; }
-.err { color: #d93025; white-space: pre-wrap; } .note { color: var(--muted); }
+.c32 { color: #188038; } .c35 { color: #a142f4; } .c36 { color: #0c7a88; } .c31 { color: #d93025; } .c33 { color: #b06000; } .c01_31 { color: #d93025; font-weight: 700; } .c01_33 { color: #b06000; font-weight: 700; background: #fff3b055; }\n@media (prefers-color-scheme: dark) { .c32 { color: #81c995; } .c35 { color: #d7aefb; } .c36 { color: #78d9ec; } .c31, .c01_31 { color: #f28b82; } .c33, .c01_33 { color: #fdd663; } .err { color: #f28b82; } }\nbutton:disabled { opacity: .45; cursor: default; } #ex button { border-radius: 999px; background: var(--pill-bg); color: var(--pill-fg); border: none; } #ex .label, #ex .grp { flex-basis: 100%; font-weight: 700; color: var(--muted); margin-top: 4px; }
 #right { border-left: 1px solid var(--rule); padding-left: 16px; }
 </style></head><body>
-<header><div class="in"><form id="f" autocomplete="off" onsubmit="return false">
-<div id="fields"></div>
-<div class="row"><span class="note">start</span><button type="button" id="add" title="add a start" aria-label="add a start">+ start</button></div>
-<div class="row"><label><input type="checkbox" id="step"> multi-step</label></div>
-<div id="steps" hidden><div class="row"><span class="note">end (--step-to)</span><button type="button" id="addend" title="add an end" aria-label="add an end">+ end</button></div>
-<div id="ends"></div>
-<div class="row"><span class="note">edges</span><label>--hops <input name="hops" size="6"></label><label><input type="checkbox" name="reverse"> --reverse</label></div></div>
-<div class="row"><span class="logo">sys1grep</span>
-<label>rank <select name="rank"><option value="">off</option><option value="jev">jev</option><option value="match">match</option></select></label>
-<label><input type="checkbox" name="summarize"> summarize</label>
+<div class="card" id="card">
+<div class="title"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#fff" stroke-width="2.2"/><line x1="15.3" y1="15.3" x2="20.5" y2="20.5" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg></span><h1>sys<span class="accent">1grep</span></h1></div>
+<form id="f" autocomplete="off" onsubmit="return false">
+<fieldset class="group" id="startgrp"><legend class="glabel">start</legend><div id="fields"></div><button type="button" id="add" title="add a start" aria-label="add a start">+ start</button></fieldset>
+<div class="row"><div class="withhint"><label title="chain a start meaning to one or more end meanings, following the call/reference graph between them (--step-to)"><input type="checkbox" id="step" aria-describedby="hint-step"> multi-step</label><small class="hint" id="hint-step">chains a start meaning to matches reachable from it, instead of searching them directly</small></div></div>
+<fieldset class="group" id="steps" hidden><legend class="glabel">end (--step-to)</legend><div id="ends"></div><button type="button" id="addend" title="add an end" aria-label="add an end">+ end</button>
+<div class="row edges"><div class="withhint"><span class="note">edges</span><small class="hint" id="hint-edges">--hops limits how many hops away an end may be; --reverse searches backwards along the graph</small></div><label title="how many hops the end may be from the start, e.g. 1..2">--hops <input type="text" name="hops" size="6" aria-describedby="hint-edges"></label><label><input type="checkbox" name="reverse" aria-describedby="hint-edges"> --reverse</label></div></fieldset>
+<div class="row">
+<button type="submit" id="go">Search</button><button type="button" id="est" title="run with --dry-run: shows the request size and estimated cost, no results">Estimate cost</button><button type="button" id="stop" disabled>Stop</button>
+<div class="withhint"><label title="order matches by Jev's relevance score, or by plain substring match; off keeps file order">rank <select name="rank" aria-describedby="hint-rank"><option value="">off</option><option value="jev">jev</option><option value="match">match</option></select></label><small class="hint" id="hint-rank">off keeps file order</small></div>
+<div class="withhint"><label title="have a small model read the matches and answer in a sentence or two"><input type="checkbox" name="summarize" aria-describedby="hint-summarize"> summarize</label><small class="hint" id="hint-summarize">answers in a sentence or two after the search</small></div>
 <input type="text" name="summarize-prompt" placeholder="summary instruction" style="display:none;flex:1;min-width:160px">
-<button type="submit" id="go">Search</button><button type="button" id="est">Estimate cost</button><button type="button" id="stop" disabled>Stop</button></div>
-<div class="row" id="ex"><span class="note">examples</span></div>
+</div>
 <div class="row"><pre id="cmd"></pre><button type="button" id="copy">Copy</button></div>
+<main id="m"><div id="left"></div><div id="right" hidden></div></main>
+<div class="row" id="ex"><span class="note label">examples</span></div>
 <details id="d"><summary id="ds">Details</summary><div class="grid">
 <label>level <select name="level"><option>loose</option><option>normal</option><option>strict</option></select></label>
 <label>-t <input name="t" size="5" inputmode="decimal"></label><label>-T <input name="T" size="5" inputmode="decimal"></label>
@@ -348,8 +359,7 @@ iframe { width: 100%; border: 0; min-height: 80px; } pre.out { white-space: pre-
 <label>summarizerModel <input name="set-summarizerModel"><small class="note" id="src-summarizerModel"></small></label>
 <label>summarizerKey <input type="password" name="set-summarizerKey" autocomplete="new-password"><small class="note" id="src-summarizerKey"></small><span class="chk"><input type="checkbox" name="clear-summarizerKey"> remove</span></label>
 </div><div class="row"><button type="button" id="save">Save to ~/.config/sys1grep/settings.json</button><span class="note" id="sst"></span></div></form></details>
-</div></header>
-<main id="m"><div id="left"></div><div id="right" hidden></div></main>
+</div>
 <script>
 const CONTROLS = ${json(CONTROLS)}, INIT = ${json(init)}, LAUNCH = ${json(launch)}, AFTER = ${json(after)}, TOKEN = ${json(token)}, EXAMPLES = ${json(EXAMPLES)};
 const toArgv = ${toArgv};
@@ -360,12 +370,19 @@ const step = document.getElementById('step'), steps = document.getElementById('s
 const ALL = [...CONTROLS, { k: 'summarize', bool: true }, { k: 'rank' }, { k: 'summarize-prompt' }];
 const setControls = v => { for (const c of ALL) { const el = f.elements[c.k], x = v[c.k] ?? INIT[c.k]; if (c.bool) el.checked = !!x; else el.value = x; } };
 const LABELS = { e: '-e meaning', a: '-a and', v: '-v and not', Q: '-Q question' };
+// A close icon, not text, so the button's accessible name comes from aria-label alone, in every browser.
+const DEL_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>';
 const addField = (k = 'e', t = '', into = fields) => {
-  const r = document.createElement('div'); r.className = 'row'; r.innerHTML = '<select>' + Object.entries(LABELS).map(([k, l]) => '<option value="' + k + '">' + l + '</option>').join('') + '</select><input type="text" placeholder="meaning">';
-  r.firstChild.value = k; r.lastChild.value = t;
+  const r = document.createElement('div'); r.className = 'row';
+  r.innerHTML = '<select>' + Object.entries(LABELS).map(([k, l]) => '<option value="' + k + '">' + l + '</option>').join('') + '</select><input type="text" placeholder="meaning"><button type="button"></button>';
+  r.firstChild.value = k; r.children[1].value = t;
   r.firstChild.onchange = show;
-  r.lastChild.oninput = show; r.lastChild.onkeydown = e => { if (e.key === 'Enter') go(); };
-  if (into.children.length) { const x = document.createElement('button'); x.type = 'button'; x.textContent = '\\u00d7'; x.onclick = () => { r.remove(); show(); }; r.append(x); }
+  r.children[1].oninput = show; r.children[1].onkeydown = e => { if (e.key === 'Enter') go(); };
+  const x = r.children[2];
+  x.className = 'del'; x.innerHTML = DEL_ICON; x.ariaLabel = 'remove'; x.title = 'remove';
+  // every row gets this button; on the one row left in a group it clears the row instead of removing it, so a
+  // group (start, or end while multi-step is on) is never left without a row to fill back in.
+  x.onclick = () => { if (into.children.length > 1) r.remove(); else r.children[1].value = ''; show(); };
   into.append(r); show(); return r;
 };
 const terms = box => [...box.children].map(r => r.firstChild.value + ':' + r.children[1].value.trim()).filter(x => x.length > 2);
@@ -376,6 +393,11 @@ const read = () => {
 };
 const show = () => {
   const p = read(), multi = p.x.some(x => x[0] === 'S');
+  // a numbered, distinct accessible name per row ("remove start condition 2"), renumbered on every change so a
+  // deletion in the middle doesn't leave a stale number on the rows after it.
+  for (const [box, label] of [[fields, 'start'], [ends, 'end']]) {
+    [...box.children].forEach((r, i) => { const d = r.children[2]; if (d) d.title = d.ariaLabel = 'remove ' + label + ' condition ' + (i + 1); });
+  }
   steps.hidden = !multi;
   f.elements.rank.disabled = f.elements.summarize.disabled = multi;
   f.elements['summarize-prompt'].style.display = p.summarize && !multi ? '' : 'none';
@@ -454,7 +476,7 @@ for (const ex of EXAMPLES) {
 document.getElementById('copy').onclick = e => navigator.clipboard.writeText(cmd.textContent).then(() => { e.target.textContent = 'Copied'; setTimeout(() => { e.target.textContent = 'Copy'; }, 1200); });
 f.addEventListener('input', show); f.addEventListener('change', show);
 setControls(INIT);
-addField().lastChild.focus(); addField('e', '', ends);
+addField().children[1].focus(); addField('e', '', ends);
 // the settings panel: read when opened, saved on the button; a key field stays empty (a key never comes back from the server)
 const sf = document.getElementById('sf'), sd = document.getElementById('sd'), sst = document.getElementById('sst');
 const SFIELDS = ['url', 'model', 'key', 'opts', 'summarizer', 'summarizerModel', 'summarizerKey'], SKEYS = ['key', 'summarizerKey'];
