@@ -15,6 +15,11 @@
 
 Run `npm run test:offline` after every change to `sys1grep.mjs`; run `npm test` before a push.
 
+- Never start `--serve`, or run a script that drives it (`tests/serve-page.mjs`, a browser or screenshot check), with
+  the real `HOME`: the settings panel's Save writes `~/.config/sys1grep/settings.json`, and a test run once left its
+  dummy model and key there (#206). Use `HOME=$(mktemp -d)` for the server and the script alike. `serve-page.mjs`
+  refuses the real `HOME`; `offline.sh` fails if the real `settings.json` appears or changes during a run (it looks at
+  the file's existence, size and mtime, never its content). Never print a real settings file or `.env`.
 - The fake scores a line 0.9 when it contains the meaning verbatim, `N` when the line also carries `@N`, else 0.05.
   It understands the judging question (`Does line L000 match the meaning: "…"?`) and the auto-scope question
   (`Does the meaning "…" restrict its matches to …?`: 0.9 when the meaning carries `@s:KEY` for that question's
