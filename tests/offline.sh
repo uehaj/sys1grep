@@ -11,10 +11,15 @@ if [ -z "$OFFLINE_DETACHED" ] && (: </dev/tty) 2>/dev/null; then
 fi
 cd "$(dirname "$0")"
 tmp=$(mktemp -d)
+# #206: a run must leave the real ~/.config/sys1grep/settings.json alone (a --serve settings test once left its dummy
+# model and key there). Only its existence, size and mtime are looked at, never its content; checked as the run ends.
+REALHOME=$(node -p "require('os').userInfo().homedir")
+realsettings() { node -p "try { const s = require('fs').statSync(process.argv[1]); s.mtimeMs + ' ' + s.size } catch { 'absent' }" "$REALHOME/.config/sys1grep/settings.json"; }
+settings_before=$(realsettings)
 node fake-jev.mjs >"$tmp/port" &
 fake=$!
 serve= # a --serve child, if one of the checks below starts one; killed on exit so a failing check never orphans it
-trap 'kill $fake $serve 2>/dev/null; wait $fake $serve 2>/dev/null || true; rm -rf "$tmp"' EXIT
+trap 'kill $fake $serve 2>/dev/null || true; wait $fake $serve 2>/dev/null || true; rm -rf "$tmp"; [ "$(realsettings)" = "$settings_before" ] || { echo "FAIL: the real settings.json changed during the run (#206)" >&2; exit 1; }' EXIT
 trap 'rm -rf "$tmp"; exit 130' INT TERM # dash runs the EXIT trap on exit, not on a signal (the TERM the wrapper above forwards on ^C or a closed terminal); a second TERM can cut that trap short, so $tmp goes here too
 i=0; while [ ! -s "$tmp/port" ]; do i=$((i + 1)); [ $i -lt 200 ] || { echo "FAIL: fake-jev did not start" >&2; exit 1; }; sleep 0.05; done
 base="http://127.0.0.1:$(cat "$tmp/port")"
@@ -1702,7 +1707,7 @@ printf '%s\n' 'def main():' '  helper()' 'def helper():' '  raise X' >"$tmp/m.py
 $E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$tmp/m.py" >"$tmp/serve4.url" 2>/dev/null &
 serve=$!
 i=0; while [ ! -s "$tmp/serve4.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (multi-step) did not start"; sleep 0.05; done
-eq "$(node serve-page.mjs "$(cat "$tmp/serve4.url")")" "card children: #title #f #sd
+eq "$(HOME="$tmp" node serve-page.mjs "$(cat "$tmp/serve4.url")")" "card children: #title #f #sd
 form children: #startgrp .row #steps .row .row #m #ex #d
 start group: fieldset > .glabel #fields #add
 end group: fieldset > .glabel #ends #addend #hg-edges
@@ -1776,6 +1781,15 @@ Esc closes it: step:false/closed edges:false/closed rank:false/closed summarize:
 tapping a second \"?\" closes the first: step:false/closed edges:true/open rank:false/closed summarize:false/closed
 a tap elsewhere closes it: step:false/closed edges:false/closed rank:false/closed summarize:false/closed" "--serve: the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs), the settings dialog, and the hint tooltips"
 eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '{"model":"m7","key":"k7","opts":["-n","--level","strict"]}' "--serve settings: what the panel saved"
+# #206: the settings test wrote under the temp HOME, never the real one; the entry points that can drive --serve refuse the real HOME
+[ "$HS" != "$REALHOME/.config/sys1grep/settings.json" ] || fail "--serve settings: the test wrote the real settings.json"
+code 2 "serve-page.mjs refuses the real HOME" -- env HOME="$REALHOME" node serve-page.mjs http://127.0.0.1:1/
+code 2 "serve-page.mjs refuses the real HOME spelled with a trailing slash" -- env HOME="$REALHOME/" node serve-page.mjs http://127.0.0.1:1/
+code 1 "serve-page.mjs goes on with a temporary HOME (nothing listens there)" -- env HOME="$tmp" node serve-page.mjs http://127.0.0.1:1/
+eq "$(env HOME="$REALHOME" node -e "import('./home-guard.mjs').then(m => console.log(m.isRealHome()))")" "true" "home-guard: the real HOME is the real home"
+eq "$(env HOME="$tmp" node -e "import('./home-guard.mjs').then(m => console.log(m.isRealHome()))")" "false" "home-guard: a temporary HOME is not"
+# the check that ends every run sees a settings.json appear or change (a stand-in for the real home, never the real one)
+eq "$(REALHOME="$tmp/rh"; mkdir -p "$REALHOME/.config/sys1grep"; a=$(realsettings); printf '{}' >"$REALHOME/.config/sys1grep/settings.json"; b=$(realsettings); [ "$a" = absent ] && [ "$b" != absent ] && echo seen)" "seen" "the real-settings check sees a file appear"
 rm -f "$HS"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 # two --serve (npm run serve adds one): the last one's port is used and neither reaches the child

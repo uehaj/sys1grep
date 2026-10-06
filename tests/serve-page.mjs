@@ -1,6 +1,9 @@
 // node serve-page.mjs URL: runs the --serve page's script against a small DOM made from the page's own tags, drives the
 // multi-step toggle and the example buttons, and prints what the page shows and what the server answered, one line per step.
 import vm from 'node:vm';
+import { refuseRealHome } from './home-guard.mjs';
+
+refuseRealHome('serve-page.mjs'); // its Save button writes the settings of the --serve it is pointed at
 
 const U = process.argv[2], html = await (await fetch(U)).text();
 const text = el => (el.children.length ? el.children.map(text).join('') : String(el.text));
