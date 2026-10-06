@@ -6,6 +6,7 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 ## [Unreleased]
 
 ### Added
+- `--serve`: the first field is a question (`-Q`), `--suggest=Q:TEXT` / `--suggest=e:TEXT` (repeatable) puts your own suggested-question buttons first in the examples, and the options in Details have "?" hints.
 - `~/.config/sys1grep/settings.json` holds the settings as JSON, one optional field per variable: `url`, `key`,
   `model`, `opts` (an array, one argument each), `summarizer`, `summarizerModel`, `summarizerKey`. The command line
   wins, then the environment, then settings.json, then `~/.config/sys1grep/.env`, then the defaults. An environment

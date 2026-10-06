@@ -345,7 +345,8 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
                program with the options given here plus what the controls changed; the targets and -j, --chunk, -M,
                --max-cost, -y, --edges, --template and the API settings stay as given. The meanings come from the page,
                so -e -a -v -Q --step-to and what the page replaces (-l -c -q -o -z -i --format --color --dry-run) are
-               refused. Needs -y (or a higher --max-cost) to search over the cost guard. One Jev request per search
+               refused. Needs -y (or a higher --max-cost) to search over the cost guard. One Jev request per search.
+               --suggest=Q:TEXT or --suggest=e:TEXT (repeat; a bare TEXT is a question) sets suggested-question buttons
   --template=NAME  the document --rank or --summarize --format=html writes (default: SYS1GREP_TEMPLATE, else default):
                ~/.config/sys1grep/templates/NAME.html, else the bundled one (default, print, search, terminal); a
                value with / or ending in .html is a file. Placeholders: {{title}} {{query}} {{count}}, and
@@ -605,7 +606,8 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                ここで指定したオプションにコントロールの変更を足してこのプログラムを実行する。対象と -j・--chunk・-M・
                --max-cost・-y・--edges・--template・API 設定は指定のまま。意味はページから来るので -e -a -v -Q --step-to と、
                ページが置き換えるもの (-l -c -q -o -z -i --format --color --dry-run) は受け付けない。費用の確認を通すには
-               -y (か高めの --max-cost) が要る。検索ごとに Jev へ 1 リクエスト
+               -y (か高めの --max-cost) が要る。検索ごとに Jev へ 1 リクエスト。
+               --suggest=Q:TEXT か --suggest=e:TEXT (繰り返せる。TEXT だけなら質問) でおすすめ質問のボタンを指定する
   --template=NAME  --rank か --summarize の --format=html が書く文書 (既定は SYS1GREP_TEMPLATE、無ければ default)。
                ~/.config/sys1grep/templates/NAME.html、無ければ同梱のもの (default, print, search, terminal)。/ を含むか
                .html で終わる値はファイル。置き換える文字列は {{title}} {{query}} {{count}} と、<!--result--> と

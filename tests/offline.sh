@@ -1668,13 +1668,14 @@ rm -f "$HS"
 eq "$(curl -s "${BASE}results?k=$K&x=e:cat&x=S:&x=e:owl&rank=jev&dedup=always" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); j.error || 'ok'")" "ok" "--serve: --step-to drops rank and dedup"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 # launch values the page must carry: -g unchecked, a summary instruction, the key kept out of the page
-$E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve -n --dedup=always --summarize=cat --summarize-prompt=hello --sys1-api-key=SECRETKEY123 "$F" >"$tmp/serve2.url" 2>/dev/null &
+$E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve -n --dedup=always --summarize=cat --summarize-prompt=hello --suggest 'Q:why is it slow' --suggest=e:disk\ full --suggest=plain --sys1-api-key=SECRETKEY123 "$F" >"$tmp/serve2.url" 2>/dev/null &
 serve=$!
 i=0; while [ ! -s "$tmp/serve2.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (launch options) did not start"; sleep 0.05; done
 U=$(cat "$tmp/serve2.url"); BASE=${U%%\?*} K=${U#*k=}
 eq "$(curl -s "$U" | grep -c SECRETKEY123 || true)" "0" "--serve: the key is not in the page"
 eq "$(curl -s -H "x-sys1grep-token: $K" "${BASE}settings" | field 'j.key')" '[false,"cmd"]' "--serve settings: a launch --sys1-api-key wins, by source only"
 eq "$(curl -s "$U" | grep -c -- '--summarize-prompt' || true)" "1" "--serve: the launch summary instruction is a control's value"
+eq "$(curl -s "$U" | grep -c 'SUGGEST = \[{"h":"why is it slow","x":\["Q:why is it slow"\],"q":"Q"},{"h":"disk full","x":\["e:disk full"\],"q":"e"},{"h":"plain","x":\["Q:plain"\],"q":"Q"}\]')" "1" "--serve: --suggest, both forms, a bare text is a question"
 eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=&summarize=0" | node -pe "JSON.parse(require('fs').readFileSync(0)).error || 'ok'")" "ok" "--serve: results with a launch --summarize-prompt"
 eq "$(curl -s "${BASE}results?k=$K&x=e:cat&x=S:&x=e:owl&rank=" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); (j.error || 'ok').replace(/.*cannot be combined.*/, 'combined')")" "ok" "--serve: --step-to with a launch --dedup"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
@@ -1727,22 +1728,22 @@ keyboard-focus of the icon and tap both reveal: ok
 no stray rule overrides a hint's display beyond those three: ok
 hint-step explains the walk: starts-with-Finds=true lines=4
 first start row: 3 children (select, input, delete)
-steps hidden: -e '/def main/'
-x=e:/def main/ hops=0.. reverse=0 -> 1 lines
-off, start+: steps hidden: -e '/def main/' -a /helper/
-x=e:/def main/|a:/helper/ hops=0.. reverse=0 -> 1 lines
-on, starts kept: steps shown: -e '/def main/' -a /helper/ --step-to
-on, 2 starts + 2 ends: steps shown: -e '/def main/' -a /helper/ --step-to -e '/raise /' -e '/sys\\.exit/'
-x=e:/def main/|a:/helper/|S:|e:/raise /|e:/sys\\.exit/ hops=0.. reverse=0 -> 2 lines
+steps hidden: -Q '/def main/'
+x=Q:/def main/ hops=0.. reverse=0 -> 1 lines
+off, start+: steps hidden: -Q '/def main/' -a /helper/
+x=Q:/def main/|a:/helper/ hops=0.. reverse=0 -> 1 lines
+on, starts kept: steps shown: -Q '/def main/' -a /helper/ --step-to
+on, 2 starts + 2 ends: steps shown: -Q '/def main/' -a /helper/ --step-to -e '/raise /' -e '/sys\\.exit/'
+x=Q:/def main/|a:/helper/|S:|e:/raise /|e:/sys\\.exit/ hops=0.. reverse=0 -> 1 lines
 delete names: remove start condition 1 | remove start condition 2 | remove end condition 1 | remove end condition 2 | remove end condition 3
-steps shown: -e '/def main/' --step-to
-steps shown: -e '/def main/' --step-to -e '/raise /' --hops=1..2
-x=e:/def main/|S:|e:/raise / hops=1..2 reverse=0 -> 2 lines
-addend + reverse: steps shown: -e '/def main/' --step-to -e '/raise /' -e '/sys\\.exit/' --hops=1..2 --reverse
-x=e:/def main/|S:|e:/raise /|e:/sys\\.exit/ hops=1..2 reverse=1 -> 1 lines
-steps hidden: -e '/def main/'
-x=e:/def main/ hops=1..2 reverse=0 -> 1 lines
-steps shown: -e '/def main/' --step-to -e '/raise /' --hops=1..2
+steps shown: -Q '/def main/' --step-to
+steps shown: -Q '/def main/' --step-to -e '/raise /' --hops=1..2
+x=Q:/def main/|S:|e:/raise / hops=1..2 reverse=0 -> 1 lines
+addend + reverse: steps shown: -Q '/def main/' --step-to -e '/raise /' -e '/sys\\.exit/' --hops=1..2 --reverse
+x=Q:/def main/|S:|e:/raise /|e:/sys\\.exit/ hops=1..2 reverse=1 -> 1 lines
+steps hidden: -Q '/def main/'
+x=Q:/def main/ hops=1..2 reverse=0 -> 1 lines
+steps shown: -Q '/def main/' --step-to -e '/raise /' --hops=1..2
 on true, 2 ends, steps shown: -e '/^ *def main/' --step-to -e '/raise /' -e '/sys\\.exit/'
 on true, 1 ends, steps shown: -e '/^ *def helper/' --step-to -e '/^ *def main/' --reverse
 x=e:/^ *def helper/|S:|e:/^ *def main/ hops=0.. reverse=1 -> 2 lines
