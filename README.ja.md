@@ -299,7 +299,7 @@ SYS1GREP_URL=http://localhost:8000/v1/systemone sys1grep -e ...
 ```
 
 sys1grep が出す価格（`--dry-run`、大量送信の警告、`--max-cost` の質問、集計行）は、エンドポイントが返した費用（`usage.cost`）か、
-返さなければ `~` 付きの推定です。推定の 100 万入力トークンあたりの価格は、ローカルの URL なら 0 円（`localhost`、`127.0.0.1`、`[::1]`。
+返さなければ `~` 付きの推定です。推定の 100 万入力トークンあたりの価格は、ローカルの URL なら 0（無料。`localhost`、`127.0.0.1`、`[::1]`。
 書いたとおりのホスト名で判定し、DNS は引かず、`SYS1GREP_URL` か `--sys1-url` で自分で指定した URL のときだけ）、下の表のモデルなら
 そのモデルの価格（`jev-latest` 0.042、`clef` 0.24、`clef-flash` 0.09、USD）、それ以外のモデルは Jev と同じ 0.042 です。
 別の URL のときは、誰の価格かを添えます（`at TypeSafe's list price`、`at clef's list price`、`(local URL, free)`）。
