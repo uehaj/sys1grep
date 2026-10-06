@@ -17,7 +17,20 @@ class El {
   get firstChild() { return this.children[0]; }
   get lastChild() { return this.children.at(-1); }
   addEventListener(t, fn) { (this.ls[t] ??= []).push(fn); }
-  focus() {}
+  focus() { document.activeElement = this; }
+  setAttribute(k, v) { (this.attrMap ??= {})[k] = String(v); }
+  getAttribute(k) { return this.attrMap?.[k]; }
+  get classList() {
+    const self = this, names = () => self.className.split(/\s+/).filter(Boolean);
+    return {
+      add: c => { if (!names().includes(c)) self.className = [...names(), c].join(' '); },
+      remove: c => { self.className = names().filter(x => x !== c).join(' '); },
+      contains: c => names().includes(c),
+    };
+  }
+  // <dialog>: a no-op model good enough for the page's own onclose/backdrop-click logic to run against.
+  showModal() { this.open = true; }
+  close() { this.open = false; this.onclose?.(); }
   get textContent() { return this.text; }
   set textContent(t) { this.children = []; this.text = t; }
   set innerHTML(h) { this.children = []; for (const [, t, a] of h.matchAll(/<(select|input|button)(\s[^>]*)?>/g)) this.append(new El(t, a ?? '')); }
@@ -65,9 +78,25 @@ byId.f.elements = byId.sf.elements = elements;
   // source-level pin (playwright isn't a repo dependency, so a live-measured width isn't "easy" here); the actual
   // pane widths were measured in a real headless-Chromium render for the PR report.
   console.log(`main.two's one-column breakpoint tracks the card width (880px): ${/@media \(max-width: 880px\) \{ main\.two/.test(html) ? 'ok' : 'FAIL'}`);
+  console.log(`title row: ${seq(byId.title.children).join(' ')}`);
+  const insideSd = (() => { for (let p = byId.sf.parent; p; p = p.parent) if (p === byId.sd) return true; return false; })();
+  console.log(`Settings is a <dialog> holding the settings form, not a bottom collapsible: ${byId.sd.tagName === 'dialog' && insideSd && !/<summary>Settings<\/summary>/.test(html) ? 'ok' : 'FAIL'}`);
+  for (const n of ['step', 'edges', 'rank', 'summarize']) {
+    const hasRole = new RegExp(`id="hint-${n}" role="tooltip"`).test(html), linked = new RegExp(`aria-describedby="hint-${n}"`).test(html);
+    console.log(`hint-${n}: role=tooltip ${hasRole ? 'ok' : 'FAIL'}, linked by aria-describedby ${linked ? 'ok' : 'FAIL'}`);
+  }
+  console.log(`hints hidden by default (source): ${/\.hint \{[^}]*display: none; \}/.test(html) ? 'ok' : 'FAIL'}`);
+  console.log(`hover reveal is mouse-only: ${/@media \(hover: hover\) \{ \.hintgroup:hover \.hint \{ display: block; \} \}/.test(html) ? 'ok' : 'FAIL'}`);
+  console.log(`keyboard-focus of the icon and tap both reveal: ${/\.qbtn:focus-visible \+ \.hint, \.hintgroup\.open \.hint \{ display: block; \}/.test(html) ? 'ok' : 'FAIL'}`);
+  const hintStepText = /<small class="hint" id="hint-step" role="tooltip">([\s\S]*?)<\/small>/.exec(html)?.[1] ?? '';
+  console.log(`hint-step explains the walk: starts-with-Finds=${hintStepText.startsWith('Finds the start functions')} lines=${hintStepText.split('\n').length}`);
 }
 const sent = [];
-const document = { getElementById: id => byId[id] ?? null, createElement: t => new El(t) };
+const document = {
+  getElementById: id => byId[id] ?? null, createElement: t => new El(t), activeElement: null, ls: {},
+  addEventListener(t, fn) { (this.ls[t] ??= []).push(fn); },
+  _fire(t, e) { for (const fn of this.ls[t] ?? []) fn(e); },
+};
 const page = fetch, ctx = vm.createContext({
   document, setTimeout, URLSearchParams, AbortController, console, navigator: {},
   // a browser adds Origin to a POST; Node's fetch does not
@@ -175,14 +204,34 @@ console.log(`before delete: ${byId.fields.children.length} start row(s)`);
 byId.fields.children[0].children[2].onclick();
 console.log(`after delete: ${byId.fields.children.length} start row(s), value "${byId.fields.children[0].children[1].value}"`);
 
-// the settings panel: opening it reads the settings, Save writes them and shows the new state, a key never comes back
+// the settings panel: the gear opens it as a modal dialog (reads the settings), Save writes them and shows the new
+// state, a key never comes back; the close button closes the dialog and returns focus to the gear.
 const settings = () => `url "${elements['set-url'].value}" ${byId['src-url'].textContent}; model "${elements['set-model'].value}" ${byId['src-model'].textContent}; key "${elements['set-key'].value}" ${elements['set-key'].placeholder}, ${byId['src-key'].textContent}; opts ${JSON.stringify(elements['set-opts'].value)}`;
-byId.sd.open = true;
-byId.sd.ontoggle();
+byId.gear.onclick();
 while (!byId['src-url'].textContent) await new Promise(r => setTimeout(r, 20));
-console.log(`opened: ${settings()}`);
+console.log(`gear opens the dialog: open=${byId.sd.open}, ${settings()}`);
 Object.assign(elements['set-model'], { value: 'm7' });
 Object.assign(elements['set-key'], { value: 'k7' });
 Object.assign(elements['set-opts'], { value: '-n\n --level \nstrict\n' });
 await byId.save.onclick();
 console.log(`${byId.sst.textContent}: ${settings()}`);
+byId.sdx.onclick();
+console.log(`the x closes the dialog and returns focus to the gear: open=${byId.sd.open}, focused=${document.activeElement === byId.gear}`);
+byId.gear.onclick();
+byId.sd.onclick({ target: byId.sd }); // a click that lands on the dialog itself (the backdrop), not its content
+console.log(`a backdrop click closes the dialog: open=${byId.sd.open}`);
+
+// hint tooltips: the hover/keyboard-focus reveal is pure CSS (pinned at source level above); only the tap toggle and
+// its own-group Esc-close are JS, so those are what this drives.
+const hintNames = ['step', 'edges', 'rank', 'summarize'];
+const hintState = () => hintNames.map(n => `${n}:${byId['q-' + n].getAttribute('aria-expanded')}/${byId['hg-' + n].classList.contains('open') ? 'open' : 'closed'}`).join(' ');
+console.log(`hints start closed: ${hintState()}`);
+byId['q-rank'].onclick();
+console.log(`tapping the rank "?" opens only it: ${hintState()}`);
+document._fire('keydown', { key: 'Escape' });
+console.log(`Esc closes it: ${hintState()}`);
+byId['q-step'].onclick();
+byId['q-edges'].onclick();
+console.log(`tapping a second "?" closes the first: ${hintState()}`);
+document._fire('click', {});
+console.log(`a tap elsewhere closes it: ${hintState()}`);
