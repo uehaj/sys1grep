@@ -186,7 +186,7 @@ to the narrowest:
   now: a hint says when `--dedup=auto` would pay.
 - **Check before paying.** `--dry-run` sends nothing and prints the settings the search would run with, the
   files, how many lines each would send and every request with its questions. Its last line estimates the input
-  tokens and, for TypeSafe itself, the price (`~3178 input tokens, ~$0.000133`; within about 10%). `-i` shows the
+  tokens and the price at Jev's list price (`~3178 input tokens, ~$0.000133`; within about 10%; another URL adds `at TypeSafe's list price`). `-i` shows the
   same totals on the terminal and sends only after `y`.
   Before the bulk of requests, every target is sized (`--max-filesize`, default 10M); one over it is skipped
   outright, like `rg`'s own `--max-filesize`, named on stderr (`-y` does not affect it). A `.gz` is sized

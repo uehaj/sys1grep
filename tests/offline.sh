@@ -184,6 +184,8 @@ eq "$(stat count)" "1" "--verbose sends"
 eq "$($J --verbose -e cat "$F" 2>&1 >/dev/null | grep -c '^sys1grep: request 1 \[judge\]')" "1" "--verbose on stderr"
 # The summary line says what its numbers are (#91); its total counts every line read, also those a regex left out (#79)
 eq "$($J --verbose -e cat "$F" 2>&1 >/dev/null | tail -1)" "2 of 8 lines matched; 7 sent to Jev in 1 request, 1 input token, ~\$0.000000 at TypeSafe's list price" "summary line"
+printf 'cat @nousage\ndog\n' >"$tmp/nu.txt"
+eq "$($J --verbose -c -e cat "$tmp/nu.txt" 2>&1 >/dev/null | tail -1)" "1 of 2 lines matched; 2 sent to Jev in 1 request, 0 input tokens" "summary line: an endpoint that reports no usage shows no price"
 eq "$($J --verbose -e /cat/ "$F" 2>&1 >/dev/null | tail -1)" "2 of 8 lines matched; nothing sent" "summary line, regex only"
 # stderr whose reader quit: what cannot be said is dropped (as console.error drops it) and the exit status stands
 ( $J --verbose -e /cat/ "$F" 2>&1 >/dev/null && r=0 || r=$?; echo $r >"$tmp/rc" ) | true; eq "$(cat "$tmp/rc")" "0" "--verbose with stderr closed"

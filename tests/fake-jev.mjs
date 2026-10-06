@@ -7,6 +7,7 @@
 // A rank question ("Is result R000 relevant to: …?", #118) scores N when the result carries "@rN", else 0.5.
 // "@err" in any line fails the request with a 400 and a long body holding an escape sequence. Each request takes 30ms, so -j shows up;
 // "@slow" in any line makes it 400ms, so the spinner (drawn after 300ms) shows up.
+// "@nousage" in any line answers without a usage field, like an endpoint that does not report one.
 // GET returns {"count", "asked", "qmax", "max", "auth", "model"}: judging requests and questions so far, the most questions in one request, most requests in flight at once, the last
 // authorization header and model; GET /reset also zeroes them. Prints the port it listens on.
 //
@@ -64,6 +65,7 @@ const server = createServer(async (req, res) => {
     answers[k] = { noul: m && line.includes(m[2]) ? Number(line.match(/@([\d.]+)/)?.[1] ?? 0.9) : 0.05 };
   }
   res.setHeader('content-type', 'application/json');
-  res.end(JSON.stringify({ answers, usage: { input_tokens: 1 } }));
+  const noUsage = Object.values(state).some(l => String(l).includes('@nousage')); // an endpoint that reports no usage
+  res.end(JSON.stringify(noUsage ? { answers } : { answers, usage: { input_tokens: 1 } }));
 });
 server.listen(0, '127.0.0.1', () => console.log(server.address().port));
