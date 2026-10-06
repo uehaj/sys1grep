@@ -19,7 +19,7 @@ settings_before=$(realsettings)
 node fake-jev.mjs >"$tmp/port" &
 fake=$!
 serve= # a --serve child, if one of the checks below starts one; killed on exit so a failing check never orphans it
-trap 'kill $fake $serve 2>/dev/null; wait $fake $serve 2>/dev/null || true; rm -rf "$tmp"; [ "$(realsettings)" = "$settings_before" ] || { echo "FAIL: the real settings.json changed during the run (#206)" >&2; exit 1; }' EXIT
+trap 'kill $fake $serve 2>/dev/null || true; wait $fake $serve 2>/dev/null || true; rm -rf "$tmp"; [ "$(realsettings)" = "$settings_before" ] || { echo "FAIL: the real settings.json changed during the run (#206)" >&2; exit 1; }' EXIT
 trap 'rm -rf "$tmp"; exit 130' INT TERM # dash runs the EXIT trap on exit, not on a signal (the TERM the wrapper above forwards on ^C or a closed terminal); a second TERM can cut that trap short, so $tmp goes here too
 i=0; while [ ! -s "$tmp/port" ]; do i=$((i + 1)); [ $i -lt 200 ] || { echo "FAIL: fake-jev did not start" >&2; exit 1; }; sleep 0.05; done
 base="http://127.0.0.1:$(cat "$tmp/port")"
