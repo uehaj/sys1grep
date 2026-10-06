@@ -273,19 +273,21 @@ SYS1GREP_URL=http://localhost:8000/v1/systemone sys1grep -e ...
 集計行には、エンドポイントが返した費用（`usage.cost`）を出します。TypeSafe 本体の場合は定価での推定を `~` 付きで出します。
 
 **ローカルの判定モデル。** 同じ `POST /v1/systemone` を話すモデルは、キーもネットワークも無しで Jev の代わりに使えます。
-[Jeff](https://github.com/firelex/jeff)（`jeff-serve`、0.8B）では手で試しました。
-`--sys1-url=http://127.0.0.1:8765/v1/systemone --sys1-model=jeff-latest` で動きます。1 度に 1 リクエストしか
-受けず、2 つ目には `529 "The model is busy"` を返すので、`-j 1` にしてください（既定の `-j 8` は再試行が尽きます）。
-397 行のソースで「環境変数を読んでいる」を探すと、正解 10 行はすべて拾いましたが 34 行が当たりました
-（ゼロショット、Jev の既定しきい値で適合率は約 29%）。`-t` を上げ、`npm run judge` で確かめてください。
-[strands-decider](https://github.com/strands-labs/strands-decider)（`strands-decider serve`、2B、M4 の `mps`）も試しました。
-`SYS1GREP_URL=http://127.0.0.1:8000/v1/systemone` だけで、キーなしでそのまま動きます（30 行が 2.7 秒）。2 つのリクエストが
-同時に届くとサーバーが落ちる（exit 134、Metal のアサーション）ので、こちらも `-j 1` にしてください。`npm run judge`
-（51 行、10 ケース、`-j 1`）では、既定のしきい値で適合率 0.64、再現率 0.94、F1 0.76、`-t 0.6 -T 0.45` で F1 0.81 でした。
-別の日の Jev の実行は F1 0.96 です。偽陽性が増え、Jev のしきい値は引き継げません。sys1grep ではまだ試していないもの:
-Cloudflare の Clef。1 リクエストの質問数は、どのバックエンドでも 64 までです。
-`--max-cost` は URL によらず Jev の定価で見積もるので、ローカルのモデルでは、有料のバックエンドなら
-いくらかかるかの上限であって、実際に払う額ではありません。
+ただし、これまでに試した 2 つは、どちらも Jev より精度が低いので、`-t` を上げ、`npm run judge` で調整し、偽陽性が増えることを前提にしてください。
+どちらも 1 度に 1 リクエストしか受けないので、`-j 1` にしてください。
+
+- [Jeff](https://github.com/firelex/jeff)（`jeff-serve`、0.8B、ベース v1.2、ゼロショット、MLX）:
+  `--sys1-url=http://127.0.0.1:8765/v1/systemone --sys1-model=jeff-latest` で動きます。2 つ目のリクエストにはすぐ
+  `529 "The model is busy"` を返し、既定の `-j 8` は再試行が尽きます。`npm run judge`（51 行、10 ケース、`-j 1`）では、
+  既定のしきい値で適合率 0.68、再現率 0.61、F1 0.64、`-t 0.75 -T 0.85` で F1 0.77 でした。別の日の Jev の実行は F1 0.96 で、
+  置き換えにはなりません。v1.2 はコミュニティプレビューで、アダプタは版をまたいで引き継げません。
+- [strands-decider](https://github.com/strands-labs/strands-decider)（`strands-decider serve`、2B、M4 の `mps`）:
+  `SYS1GREP_URL=http://127.0.0.1:8000/v1/systemone` だけで、キーなしでそのまま動きます（30 行が 2.7 秒）。2 つのリクエストが
+  同時に届くとサーバーが落ちます（exit 134、Metal のアサーション）。同じ `npm run judge` の組で、既定のしきい値で適合率 0.64、
+  再現率 0.94、F1 0.76、`-t 0.6 -T 0.45` で F1 0.81 でした。
+- sys1grep ではまだ試していないもの: Cloudflare の Clef。
+
+1 リクエストの質問数は、どのバックエンドでも 64 までです。
 
 ソースから使うなら `git clone https://github.com/uehaj/sys1grep.git && cd sys1grep && npm install -g .`、
 またはそのまま `node sys1grep.mjs ...` で動きます。
