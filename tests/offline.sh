@@ -7,7 +7,7 @@ unset FORCE_COLOR # node would color the numbers it prints (the fake's port, the
 # The cost guard asks on /dev/tty, which </dev/null does not close, so a check run from a terminal waits for a person (#177).
 # Run the whole suite in a new session, which has no controlling terminal; the parent waits and passes on the exit code and ^C.
 if [ -z "$OFFLINE_DETACHED" ] && (: </dev/tty) 2>/dev/null; then
-  OFFLINE_DETACHED=1 exec perl -MPOSIX -e '$p = fork; defined $p or die "fork: $!"; if ($p) { $SIG{INT} = $SIG{TERM} = sub { kill "TERM", -$p }; while (waitpid($p, 0) < 0) { last unless $!{EINTR} } exit($? ? ($? >> 8 || 1) : 0) } POSIX::setsid() > 0 or die "setsid: $!"; exec @ARGV or die "exec: $!"' sh "$0" "$@"
+  OFFLINE_DETACHED=1 exec perl -MPOSIX -e '$p = fork; defined $p or die "fork: $!"; if ($p) { $SIG{INT} = $SIG{TERM} = $SIG{HUP} = sub { kill "TERM", -$p }; while (waitpid($p, 0) < 0) { last unless $!{EINTR} } exit($? ? ($? >> 8 || 1) : 0) } POSIX::setsid() > 0 or die "setsid: $!"; exec @ARGV or die "exec: $!"' sh "$0" "$@"
 fi
 cd "$(dirname "$0")"
 tmp=$(mktemp -d)
@@ -15,7 +15,7 @@ node fake-jev.mjs >"$tmp/port" &
 fake=$!
 serve= # a --serve child, if one of the checks below starts one; killed on exit so a failing check never orphans it
 trap 'kill $fake $serve 2>/dev/null; wait $fake $serve 2>/dev/null || true; rm -rf "$tmp"' EXIT
-trap 'exit 130' INT TERM # dash runs the EXIT trap on exit, not on a signal (the TERM the wrapper above forwards on ^C)
+trap 'rm -rf "$tmp"; exit 130' INT TERM # dash runs the EXIT trap on exit, not on a signal (the TERM the wrapper above forwards on ^C or a closed terminal); a second TERM can cut that trap short, so $tmp goes here too
 i=0; while [ ! -s "$tmp/port" ]; do i=$((i + 1)); [ $i -lt 200 ] || { echo "FAIL: fake-jev did not start" >&2; exit 1; }; sleep 0.05; done
 base="http://127.0.0.1:$(cat "$tmp/port")"
 # No key from the environment, and a HOME and cwd without .env, so nothing real is read or sent
