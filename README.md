@@ -186,7 +186,7 @@ to the narrowest:
   now: a hint says when `--dedup=auto` would pay.
 - **Check before paying.** `--dry-run` sends nothing and prints the settings the search would run with, the
   files, how many lines each would send and every request with its questions. Its last line estimates the input
-  tokens and, for TypeSafe itself, the price (`~3178 input tokens, ~$0.000133`; within about 10%). `-i` shows the
+  tokens and the price at Jev's list price (`~3178 input tokens, ~$0.000133`; within about 10%; another URL adds `at TypeSafe's list price`). `-i` shows the
   same totals on the terminal and sends only after `y`.
   Before the bulk of requests, every target is sized (`--max-filesize`, default 10M); one over it is skipped
   outright, like `rg`'s own `--max-filesize`, named on stderr (`-y` does not affect it). A `.gz` is sized
@@ -207,14 +207,14 @@ $ sys1grep --dry-run -r --include='*.log' --changed-within=today -e '/ERROR|FATA
 ```
 
 `--verbose` (or `--dry-run`) also shows *where* a setting that was not typed on the command line came from
-(`SYS1GREP_OPTS`, an environment variable, `~/.config/sys1grep/.env`, or a preset's default), so a result that
+(`SYS1GREP_OPTS`, an environment variable, `~/.config/sys1grep/settings.json` or `.env`, or a preset's default), so a result that
 surprises you can be traced back to its source. The key's value never appears, only which option or variable
 supplied it:
 
 ```sh
 $ SYS1GREP_OPTS='--level strict' sys1grep --verbose -e "the API key is read from a file" .
 sys1grep: endpoint api.typesafe.ai/v1/systemone (default), model jev-latest (default)
-sys1grep: key: SYS1GREP_API_KEY (~/.config/sys1grep/.env)
+sys1grep: key: key (~/.config/sys1grep/settings.json)
 sys1grep: SYS1GREP_OPTS: --level strict
 sys1grep: options: --level strict (SYS1GREP_OPTS) = -t 0.7 -T 0.3, --chunk 30, -j 8, scope on, -M 2000, --max-filesize 10M, --max-cost 1
 sys1grep: file ./a.py: 120 lines, 120 to send
@@ -244,10 +244,27 @@ Then give it an API key from the [TypeSafe console](https://console.typesafe.ai/
 
 ```sh
 export SYS1GREP_API_KEY=your-key                       # environment variable
-echo 'SYS1GREP_API_KEY=your-key' > ~/.config/sys1grep/.env    # per user (mkdir -p first)
+# per user: ~/.config/sys1grep/settings.json (mkdir -p first; keep it at 0600)
+(umask 077; echo '{"key": "your-key"}' > ~/.config/sys1grep/settings.json)
 ```
 
-Variables already in the environment win; otherwise `~/.config/sys1grep/.env` fills them in. A `.env` in the current
+Variables already in the environment win; otherwise `~/.config/sys1grep/settings.json` fills them in, one field per
+variable:
+
+| field | variable |
+|---|---|
+| `url` | `SYS1GREP_URL` |
+| `key` | `SYS1GREP_API_KEY` (and `TYPESAFE_API_KEY`) |
+| `model` | `SYS1GREP_MODEL` |
+| `opts` | `SYS1GREP_OPTS`, as an array: `["--level", "strict", "-n"]` |
+| `summarizer` | `SYS1GREP_SUMMARIZER` |
+| `summarizerModel` | `SYS1GREP_SUMMARIZER_MODEL` |
+| `summarizerKey` | `SYS1GREP_SUMMARIZER_API_KEY` |
+
+Every field is optional. A value of the wrong type is an error, as is a file that is not JSON. A field the file does
+not know only warns (on stderr, naming the field) and is ignored, so an older sys1grep keeps working once a newer one
+adds a field. A file that holds a key and that others can read gets a warning. `~/.config/sys1grep/.env` (`NAME=value`
+lines) still works, below settings.json: a value in settings.json wins over the same variable there. A `.env` in the current
 directory is never read: it may belong to a repository you just cloned, and could send your key elsewhere through
 `SYS1GREP_URL`. For per-project settings, load a file yourself: `node --env-file=.env "$(command -v sys1grep)" ...`.
 `TYPESAFE_API_KEY` is accepted too when `SYS1GREP_API_KEY` is not set.
@@ -263,15 +280,18 @@ sys1grep -e "payment failed" app.log                  # strict, 8 at once, line 
 sys1grep --level loose --no-n -e "payment failed" app.log
 ```
 
+The same defaults can live in settings.json as `"opts": ["--level", "strict", "-j", "8", "-n"]`, one argument per
+element (so a value may hold spaces). `SYS1GREP_OPTS`, when set, replaces them rather than adding to them.
+
 A script calling sys1grep would pick these up too (grep dropped `GREP_OPTIONS` for that reason). Call it as
-`SYS1GREP_OPTS= sys1grep ...` in scripts.
+`SYS1GREP_OPTS= sys1grep ...` in scripts: the empty variable drops settings.json's `opts` as well.
 
 ### Other endpoints
 
 The API is configured by exactly three settings: `SYS1GREP_API_KEY` (or `TYPESAFE_API_KEY`), `SYS1GREP_URL` and `SYS1GREP_MODEL`.
 Any endpoint that speaks TypeSafe's `POST /v1/systemone` works. The key is sent to `SYS1GREP_URL` as is, so set the
 two together. On the command line, `--sys1-model=ID`, `--sys1-url=URL` and `--sys1-api-key=KEY` override
-the three. A key given this way shows up in `ps` and shell history, so prefer `~/.config/sys1grep/.env` for it.
+the three. A key given this way shows up in `ps` and shell history, so prefer `~/.config/sys1grep/settings.json` for it.
 
 ```sh
 # OpenRouter
@@ -282,8 +302,9 @@ SYS1GREP_URL=https://ai-gateway.vercel.sh/typesafe/v1/systemone SYS1GREP_MODEL=t
 SYS1GREP_URL=http://localhost:8000/v1/systemone sys1grep -e ...
 ```
 
-The summary line shows the cost the endpoint reports (`usage.cost`), or for TypeSafe itself an estimate at list
-price marked `~`.
+Every price sys1grep shows (`--dry-run`, the large-send warning, the `--max-cost` question, the summary line) is the cost
+the endpoint reports (`usage.cost`), or else an estimate at TypeSafe's list price marked `~`; with another URL the
+estimate says `at TypeSafe's list price`, so a local model shows what a paid one would cost, not what you pay.
 
 From source: `git clone https://github.com/uehaj/sys1grep.git && cd sys1grep && npm install -g .`,
 or run it in place with `node sys1grep.mjs ...`.
@@ -295,6 +316,8 @@ support tickets in English and Japanese, source code, SQL and small talk. Where 
 otherwise show up in the output below, this section instead uses [`tests/corpus.en.txt`](tests/corpus.en.txt),
 the same 51 lines with the Japanese ones translated to English — the cross-language behaviour itself is
 shown once, in [Search across languages](#search-across-languages) above.
+
+For examples organised by job (on-call, triage, release notes, ...) and run on real data, see [docs/use-cases.md](docs/use-cases.md).
 
 ### Find lines by a concept, in any language
 
@@ -788,17 +811,24 @@ and narrow without rerunning the command:
 
 ```
 $ sys1grep --serve -r src/
-http://127.0.0.1:51234/
+http://127.0.0.1:51234/?k=3f9e...
 $ sys1grep --serve=8080 -y --level=strict -r src/     # a fixed port; the options given here are the page's first values
 ```
 
-The page has the meaning fields (`+` adds one; each takes `-e`, `-a`, `-v`, `-Q` or `--step-to:`), `rank`, `summarize`, a
+The printed URL carries a token made fresh at launch (`?k=...`). Every route needs it, the page itself included: without
+it (in the query, or in a header for the page's own requests) the server answers 404 to everything, so another local
+account or process cannot read the page, its token, or a search's results merely by knowing the port.
+
+The page has the meaning fields (`+` adds one; each takes `-e`, `-a`, `-v` or `-Q`), `rank`, `summarize`, a **multi-step**
+switch (on, it shows the end fields, `--step-to` and one or more meanings, and the edges, `--hops` and `--reverse`; off, they
+leave the command and the search and keep their values), example buttons (searches from this README and
+[docs/use-cases.md](docs/use-cases.md), then multi-step walks; one fills the fields and the controls it needs, puts the rest back to their launch values, and waits for Search), a
 **Details** fold with the other options (`--level`, `-t`/`-T`, `-C`, `--auto-scope`, `-n`, `-p`, `--dedup`, `--unit`,
-`--include`, `--exclude`, `--changed-within`, `-g`, and `--hops` / `--reverse` while a `--step-to:` field exists), and above
+`--include`, `--exclude`, `--changed-within`, `-g`), and above
 the results the **command line** for the controls as they are now, with a Copy button; pasted in a terminal it runs the
 same search. An option at its launch value is left out of what the controls add. `rank` off shows the matches in file order
 as text, on shows the ranked cards; `summarize` adds a right column (it runs the search once more, so it costs one more
-request). Estimate cost is `--dry-run`.
+request). Estimate cost is `--dry-run`. While a search runs, Search and Estimate are disabled and **Stop** ends it (the child process is killed). The matches are colored as `--color=always` colors them (file names, line numbers, regex matches), the cards mark them with `<mark>`.
 
 Each search runs sys1grep itself (the options given at launch, then the controls'), so everything the command line does
 the page does, and only that. The server listens on `127.0.0.1` only, answers only to that host name, and the page never
@@ -806,6 +836,16 @@ sees the API key. The targets, `-j`, `--chunk`, `-M`, `--max-filesize`, `--max-c
 API settings and `--summarize`'s TOOL are fixed at launch: the page can narrow what was given but not widen it. A search
 over the cost guard fails on the page, as it does without a terminal; launch with `-y` to let it through.
 The meanings come from the page, so `-e -a -v -Q --step-to` and `-l -c -q -o -z -i --format --color --dry-run` are refused at launch.
+
+**Settings** edits `~/.config/sys1grep/settings.json` (see [Install](#install)): `url`, `model`, the key, `opts` (one argument
+per line) and the summarizer's three. Save writes the file, and the next search uses it, as does every later `sys1grep`
+run. Next to each field the page says where the value a search uses comes from, and says so when an environment variable or a
+launch option wins over the file, since then saving does not change the search. A key comes back only as saved / not
+saved; type a new one to replace it, or tick remove. A `--sys1-api-key` inside `opts`, and a `url`'s userinfo, come back
+masked as `***`, the same way `--verbose` masks them; `opts` refuses a target, a flag the page itself refuses at launch,
+or `--sys1-url` / `--sys1-api-key` (their own fields), and `url` and a URL summarizer must be `http(s)`. The save is a
+`POST` with the page's token and this request's own Host as its required `Origin`, and the file is written whole (0600,
+its directory 0700 when created) and renamed into place, so a reader never sees half of it.
 
 ### Best first (`--rank`)
 
@@ -826,17 +866,76 @@ tickets/a.txt-13-We will check it.
 ```
 
 - `--rank` is `--rank=jev`: after the search, Jev is asked of each result, lines and context together, whether it
-  is relevant to the meanings that are not negated. One more question per result, `--chunk` results to a request;
+  is relevant to the meanings that are not negated. One more question per result, `--chunk` results (at most 64) to a request;
   `--dry-run` / `-i` show an upper bound, since which results there are is known only after the search.
 - `--rank=match` sorts by each result's highest match probability, with no request. It is the answer to a yes/no
   question on one line, so clear matches sit close together, and the context is not read.
 - `-p` puts the score on the header (`1. [0.96] tickets/b.txt`). `-l` lists the files by their best result.
 - `--format=markdown` writes a `## 1. tickets/b.txt` heading and a fenced block per result; `--format=html` one
   self-contained HTML document from a template (below), light and dark, with a relevance bar per result. The lines
-  are as they print, escaped and uncolored.
+  are as they print, escaped; what matched is in `<mark>` (the regex matches, else the matching sentences, else the whole
+  matching line; context lines are not marked; `--color=never` turns it off).
 - `--summarize` gets the results in ranked order; with `--dedup` a representative is one result.
 - It needs a meaning (a regex, `!` or `-v` alone ranks nothing), and cannot be combined with `-c`, `-o` or `-q`.
   `--no-rank` turns off an earlier one, from `SYS1GREP_OPTS` say.
+
+### Finding the cause of a failed command
+
+A failed job's last error usually names a symptom (`214 accounts out of balance ... day-close aborted`), and the
+other `ERROR` / `WARN` lines are retries that recovered. The cause is often one plain `INFO` or `DEBUG` line far
+above. Asking for the symptom, or `-Q "why did the job fail"`, finds that noise: on the 30,000-line log of #156 it
+returned only recovered `ERROR` lines. Ask by kind of cause instead, and rank the results:
+
+```sh
+$ sys1grep -n --dedup --level strict --rank \
+    -e "a component, writer, job or feature was paused, disabled, skipped or put on hold" \
+    -e "a configuration, endpoint, region, credential or data source was changed or switched" \
+    -e "an input, file or table was empty, missing, or had fewer records or columns than expected" \
+    -e "a fallback or default value was used instead of the real one" \
+    job.log
+```
+
+Measured on 24 generated logs of failed jobs, six per kind of cause, 10,008 lines each, with these four meanings
+(`npm run cause-eval`, rows in `tests/cause-results.tsv`; an earlier version of the script wrote its 24 rows, and
+the `top 2 jev` column is filled only in the two rerun rows). Each search returned 366 to 464 results. The
+`--rank=match` column is not a separate run: it is recomputed from the `-p` columns of the `--rank` run, since
+`--rank=match` scores a result by the highest of them. That recomputation was checked against a real `--rank=match`
+run only on config-5, where the cause was not a result. A cause "not matched" may have been judged below `strict` or
+folded by `--dedup` into a like line; the rows do not tell the two apart.
+
+| cause | cause is result 1, `--rank` | cause is result 1, `--rank=match` | otherwise |
+|---|---|---|---|
+| a configuration, endpoint or credential switched | 5 of 6 | 5 of 6 | 1 not matched |
+| an input empty or short | 2 of 6 | 2 of 6 | 2 at results 62 (`match`: 343-371) and 81 (`match`: 191-219); 2 not matched |
+| a default used instead of the real value | 6 of 6 | 5 of 6 | `match`: 2-9 (one result above it, seven tied with it at 0.90) |
+| a line that never came (a start with no finish) | 0 of 6 | 0 of 6 | the start line never a result |
+
+A log cost about $0.088 (2.1M input tokens, 643 to 646 requests) and 16 to 17 s. `--rank` (`jev`) adds one question
+per result, about 3% more input tokens than `--rank=match` (one log run both ways; not recorded in the TSV). It put
+the cause higher than `--rank=match` on three logs and lower on none.
+
+When the top results look unrelated (rotations, refreshes, the final error itself), the cause is likely one of these:
+
+- **A line that states only a value**: `stock snapshot downloaded: 1204 bytes`, `input directory ... holds 2 files`,
+  `resolved db-primary.internal to 10.0.4.22 (replica-2)`. Nothing in the line says it is wrong, so no hypothesis
+  holds, nor did a meaning written from the final error
+  (`-e "the job connected to a read-only replica instead of the primary database"`). Search for the thing the error
+  names instead (`-e '/snapshot|replica/'`) and read the numbers.
+- **A line that never came**: a worker that claimed a shard and never finished it, a step or a migration that started
+  and never ended. On all six such logs the start line was not among the results. The top result was a routine line,
+  the final error, or once the previous run's `alias products switched to products-20260927`, whose 09-28
+  counterpart never came. A meaning for it
+  (`-e "a worker, step or upload started but never reported that it finished"`) put the final error first, not the
+  start, and `--dedup` can fold one start into a like one, since only the missing finish tells them apart. Compare
+  starts with finishes by eye or with grep.
+- **The score will not tell you**: where the cause was result 1 it scored 0.93 to 0.97 under `--rank`; on two logs
+  where it never matched, the top result scored 0.88 and 0.91.
+
+The follow-ups behind the first two points (key lines judged alone in a 31-line window, the meanings written from
+the error or for a missing finish) are in the description of PR #192; `tests` holds no way to rerun them.
+
+Every searched line goes to Jev (TypeSafe, or whatever `SYS1GREP_URL` names), and with `--summarize` the matching
+lines go to its TOOL's provider as well. Build logs and job logs often hold tokens, passwords and customer data.
 
 ### HTML templates (`--template`)
 
@@ -965,7 +1064,8 @@ usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION [-a MEANING] [-v MEANING]... 
   -C NUM       print NUM lines of context before and after (-A NUM -B NUM)
   -c           print only a count of matching lines per file (like grep -c)
   -q, --quiet  print nothing, stop at the first match; exit 0 on a match, even after an error (like grep -q)
-  --chunk=LINES lines per request (default 30)
+  --chunk=LINES lines per request (default 30; a request also carries at most 64 questions, so fewer lines
+               with 3 or more meanings)
                Lines in one request are each other's context, so a small chunk changes verdicts
                on ambiguous lines, not just speed
   -j N         concurrent requests (default 8)
@@ -1036,7 +1136,7 @@ A leading `!` on a meaning negates just that meaning (quote it, `!` is history e
 
 ## How it works
 
-1. Non-blank lines are cut into chunks of 30 lines (with a character cap).
+1. Non-blank lines are cut into chunks of 30 lines (with a character cap, and at most 64 questions a request).
 2. Each chunk goes into `state` as an object `{"L000": "line 1", "L001": "line 2", ...}`,
    and one `noul` (yes/no probability) question per line × meaning goes into the same request.
 3. Up to 8 requests run concurrently. Output is printed in file order.
@@ -1075,7 +1175,7 @@ The result is written to `tests/report.md`. Latest: precision 0.94, recall 0.98.
 - Every searched line is sent to api.typesafe.ai. Do not run it over files you would not upload there.
 - Blank lines are not sent; they count as probability 0 for every meaning, so `-v X` prints them and `-e X` never does.
 - Lines are truncated to 2,000 characters before sending.
-- The maximum number of questions per request is undocumented; 420 worked.
+- The maximum number of questions per request is undocumented; 420 worked. sys1grep itself sends at most 64 a request (Clef's cap); only a single unit asked more than 64 meanings goes out whole.
 - 429 / 529 are retried up to 6 times with exponential backoff.
 - Accuracy is best in English. Japanese works but is noisier.
 

@@ -147,7 +147,7 @@ NJ="node ../sys1grep.mjs"
 [ "$($NOKEY $NJ -n -e '/ERROR/' -a '/timeout/' fixture.txt 2>/dev/null | cut -d: -f1 | tr '\n' ' ')" = "6 " ]           # AND
 [ "$($NOKEY $NJ -n -e '/ERROR/' -v '/timeout/' fixture.txt 2>/dev/null | cut -d: -f1 | tr '\n' ' ')" = "4 13 28 " ]     # AND NOT
 # a regex with no closing / is still a meaning: with no key this errors on "SYS1GREP_API_KEY is not set", a real regex term wouldn't
-$NOKEY $NJ -e '/etc 以下のファイルを変更している' fixture.txt 2>&1 >/dev/null | grep -qx 'sys1grep: SYS1GREP_API_KEY is not set. Export it or put it in ~/.config/sys1grep/.env'
+$NOKEY $NJ -e '/etc 以下のファイルを変更している' fixture.txt 2>&1 >/dev/null | grep -qx 'sys1grep: SYS1GREP_API_KEY is not set. Export it or put it in ~/.config/sys1grep/settings.json as "key"'
 # an invalid pattern exits 2, one line, like grep
 if $NOKEY $NJ -e '/(/' fixture.txt >/dev/null 2>&1; then exit 1; elif [ $? -ne 2 ]; then exit 1; fi
 [ "$($NOKEY $NJ -e '/(/' fixture.txt 2>&1 | wc -l | tr -d ' ')" = "1" ]

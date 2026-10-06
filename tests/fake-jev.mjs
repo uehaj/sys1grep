@@ -7,7 +7,8 @@
 // A rank question ("Is result R000 relevant to: …?", #118) scores N when the result carries "@rN", else 0.5.
 // "@err" in any line fails the request with a 400 and a long body holding an escape sequence. Each request takes 30ms, so -j shows up;
 // "@slow" in any line makes it 400ms, so the spinner (drawn after 300ms) shows up.
-// GET returns {"count", "asked", "max", "auth", "model"}: judging requests and questions so far, most requests in flight at once, the last
+// "@nousage" in any line answers without a usage field, like an endpoint that does not report one.
+// GET returns {"count", "asked", "qmax", "max", "auth", "model"}: judging requests and questions so far, the most questions in one request, most requests in flight at once, the last
 // authorization header and model; GET /reset also zeroes them. Prints the port it listens on.
 //
 // POST .../chat/completions is a second, unrelated stand-in: an OpenAI-compatible server for --summarize=ollama /
@@ -17,11 +18,11 @@
 // upper-cased, so a test can tell the request was received right without hard-coding an answer.
 import { createServer } from 'node:http';
 
-let count = 0, asked = 0, inFlight = 0, max = 0, auth = null, model = null, chat = null;
+let count = 0, asked = 0, qmax = 0, inFlight = 0, max = 0, auth = null, model = null, chat = null;
 const server = createServer(async (req, res) => {
   if (req.method === 'GET') {
-    res.end(JSON.stringify({ count, asked, max, auth, model, chat }));
-    if (req.url === '/reset') count = asked = max = 0, auth = model = chat = null;
+    res.end(JSON.stringify({ count, asked, qmax, max, auth, model, chat }));
+    if (req.url === '/reset') count = asked = qmax = max = 0, auth = model = chat = null;
     return;
   }
   if (req.url.endsWith('/chat/completions')) {
@@ -41,6 +42,7 @@ const server = createServer(async (req, res) => {
   const { state, questions, model: sentModel } = JSON.parse(body);
   count++;
   asked += Object.keys(questions).length;
+  qmax = Math.max(qmax, Object.keys(questions).length);
   max = Math.max(max, ++inFlight);
   auth = req.headers.authorization ?? null, model = sentModel;
   await new Promise(r => setTimeout(r, Object.values(state).some(l => String(l).includes('@slow')) ? 400 : 30));
@@ -63,6 +65,7 @@ const server = createServer(async (req, res) => {
     answers[k] = { noul: m && line.includes(m[2]) ? Number(line.match(/@([\d.]+)/)?.[1] ?? 0.9) : 0.05 };
   }
   res.setHeader('content-type', 'application/json');
-  res.end(JSON.stringify({ answers, usage: { input_tokens: 1 } }));
+  const noUsage = Object.values(state).some(l => String(l).includes('@nousage')); // an endpoint that reports no usage
+  res.end(JSON.stringify(noUsage ? { answers } : { answers, usage: { input_tokens: 1 } }));
 });
 server.listen(0, '127.0.0.1', () => console.log(server.address().port));

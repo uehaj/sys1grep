@@ -8,7 +8,8 @@ cd "$(dirname "$0")"
 tmp=$(mktemp -d)
 node fake-jev.mjs >"$tmp/port" &
 fake=$!
-trap 'kill $fake 2>/dev/null; wait $fake 2>/dev/null || true; rm -rf "$tmp"' EXIT
+serve= # a --serve child, if one of the checks below starts one; killed on exit so a failing check never orphans it
+trap 'kill $fake $serve 2>/dev/null; wait $fake $serve 2>/dev/null || true; rm -rf "$tmp"' EXIT
 i=0; while [ ! -s "$tmp/port" ]; do i=$((i + 1)); [ $i -lt 200 ] || { echo "FAIL: fake-jev did not start" >&2; exit 1; }; sleep 0.05; done
 base="http://127.0.0.1:$(cat "$tmp/port")"
 # No key from the environment, and a HOME and cwd without .env, so nothing real is read or sent
@@ -25,6 +26,10 @@ eq() { [ "$1" = "$2" ] || fail "$3: got '$1', want '$2'"; n=$((n + 1)); [ -z "$O
 code() { want=$1 what=$2; shift 3; set +e; "$@" >/dev/null 2>&1; got=$?; set -e; eq "$got" "$want" "$what (exit)"; }
 # notty COMMAND...: COMMAND in a new session, which has no controlling terminal (</dev/null alone still leaves /dev/tty)
 notty() { perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' "$@"; }
+
+# #199 round 3: package.json's "files" must list every ./NAME.mjs a shipped .mjs imports, or npm pack ships a
+# module that 404s (ERR_MODULE_NOT_FOUND) at runtime instead of failing a test (options.mjs was missed this way).
+code 0 "package.json's \"files\" lists every locally-imported .mjs" -- node check-files.mjs
 
 F="$tmp/a.txt"
 printf '%s\n' 'cat' 'dog' '' 'cat dog' 'bird @0.4' 'fish @0.6' 'the line answers: owl' 'owl' >"$F"
@@ -156,6 +161,17 @@ eq "$($J -o -n -A 1 -e '/cat/' "$F" | tr '\n' '|')" "1:cat|4:cat|" "-o: no conte
 reset; $J -e cat "$F" >/dev/null; eq "$(stat count)" "1" "default chunk: one request"
 reset; $J --chunk 2 -e cat "$F" >/dev/null; eq "$(stat count)" "4" "--chunk 2: 4 requests"
 reset; $J --chunk 1 -e cat "$F" >/dev/null; eq "$(stat count)" "7" "--chunk 1: 7 requests"
+# #174: a request carries at most 64 questions (Clef's schema cap), whatever the backend: 40 lines x 3 meanings are 21 + 19 lines, not 30 + 10
+yes 'cat dog bird' | head -40 >"$tmp/q3.txt"
+reset; $J -c -e cat -e dog -e bird "$tmp/q3.txt" >/dev/null; eq "$(stat count)" "2" "3 meanings x 40 lines: 2 requests"; eq "$(stat qmax)" "63" "3 meanings x 40 lines: 63 questions at most in a request"
+reset; $J -c -e cat "$tmp/q3.txt" >/dev/null; eq "$(stat qmax)" "30" "1 meaning: --chunk's 30 lines still decide"
+yes cat | head -200 >"$tmp/c200.txt"; reset; $J --no-auto-scope --chunk 100 -c -e cat "$tmp/c200.txt" >/dev/null; eq "$(stat qmax)" "64" "--chunk 100 on 200 lines: 64 questions at most in a request"
+reset; $J --no-auto-scope --chunk 100 --rank=jev -e cat "$tmp/c200.txt" >/dev/null; eq "$(stat qmax)" "64" "--rank=jev with --chunk 100: 64 questions at most in a request"
+m65=; for i in $(seq 1 65); do m65="$m65 -e m$i"; done; printf 'm1\nm2\n' >"$tmp/two.txt"
+reset; $J --no-auto-scope -c $m65 "$tmp/two.txt" >/dev/null; eq "$(stat count) $(stat qmax)" "2 65" "a unit asked 65 meanings goes out whole, one to a request"
+# auto-scope's candidates (a repo with 20 authors has 72) are cut the same way
+a="$tmp/authors"; mkdir "$a"; (cd "$a" && git init -q && for i in $(seq 1 20); do echo "line $i" >>a.py; git add a.py; GIT_AUTHOR_NAME=u$i GIT_AUTHOR_EMAIL=u$i@x.org GIT_COMMITTER_NAME=u$i GIT_COMMITTER_EMAIL=u$i@x.org git -c commit.gpgsign=false commit -qm c$i --no-verify; done)
+reset; $J -r -c -e cat "$a" >/dev/null 2>&1 || true; eq "$(stat qmax)" "64" "auto-scope with 20 authors: 64 questions at most in a request"
 reset; $J --chunk 1 -e cat -e dog -Q owl "$F" >/dev/null; eq "$(stat count)" "7" "meanings share a request"
 code 2 "--chunk 0" -- $J --chunk 0 -e cat "$F"
 
@@ -166,18 +182,20 @@ echo "$out" | grep -q "^sys1grep: file $F: 8 lines, 7 to send" || fail "--dry-ru
 echo "$out" | grep -q '4× Does line Lnnn match the meaning: "cat"?' || fail "--dry-run groups questions"
 code 0 "--dry-run, no match" -- $J --dry-run -e nothing "$F"
 reset; eq "$($J --dry-run -q -v cat "$F" | tail -1 | cut -d, -f1)" "sys1grep: dry run: 1 request" "--dry-run ignores -q"
-$J --dry-run -e cat "$F" | tail -1 | grep -Eq ' chars, ~[0-9]+ input tokens; nothing sent$' || fail "--dry-run estimates tokens, no price for SYS1GREP_URL"
+$J --dry-run -e cat "$F" | tail -1 | grep -Eq " chars, ~[0-9]+ input tokens, ~\\\$0\\.[0-9]{6} at TypeSafe's list price; nothing sent\$" || fail "--dry-run estimates tokens and the price, at TypeSafe's list price, for SYS1GREP_URL"
 $E SYS1GREP_API_KEY=unused node ../sys1grep.mjs --dry-run -e cat "$F" | tail -1 | grep -Eq ' chars, ~[0-9]+ input tokens, ~\$0\.[0-9]{6}; nothing sent$' || fail "--dry-run estimates the price for TypeSafe"
 reset; eq "$($J --verbose -n -e cat "$F" 2>/dev/null | nums)" "1 4 " "--verbose keeps stdout"
 eq "$(stat count)" "1" "--verbose sends"
 eq "$($J --verbose -e cat "$F" 2>&1 >/dev/null | grep -c '^sys1grep: request 1 \[judge\]')" "1" "--verbose on stderr"
 # The summary line says what its numbers are (#91); its total counts every line read, also those a regex left out (#79)
-eq "$($J --verbose -e cat "$F" 2>&1 >/dev/null | tail -1)" "2 of 8 lines matched; 7 sent to Jev in 1 request, 1 input token" "summary line"
+eq "$($J --verbose -e cat "$F" 2>&1 >/dev/null | tail -1)" "2 of 8 lines matched; 7 sent to Jev in 1 request, 1 input token, ~\$0.000000 at TypeSafe's list price" "summary line"
+printf 'cat @nousage\ndog\n' >"$tmp/nu.txt"
+eq "$($J --verbose -c -e cat "$tmp/nu.txt" 2>&1 >/dev/null | tail -1)" "1 of 2 lines matched; 2 sent to Jev in 1 request, 0 input tokens" "summary line: an endpoint that reports no usage shows no price"
 eq "$($J --verbose -e /cat/ "$F" 2>&1 >/dev/null | tail -1)" "2 of 8 lines matched; nothing sent" "summary line, regex only"
 # stderr whose reader quit: what cannot be said is dropped (as console.error drops it) and the exit status stands
 ( $J --verbose -e /cat/ "$F" 2>&1 >/dev/null && r=0 || r=$?; echo $r >"$tmp/rc" ) | true; eq "$(cat "$tmp/rc")" "0" "--verbose with stderr closed"
-eq "$($J --verbose -e /dog/ -a cat "$F" 2>&1 >/dev/null | tail -1)" "1 of 8 lines matched; 2 sent to Jev in 1 request, 1 input token" "summary line counts the lines a regex left out"
-$J --verbose --dedup -e cat "$F" 2>&1 >/dev/null | tail -1 | grep -Eq '^2 of 8 lines matched; [0-9]+ sent to Jev \([0-9]+ folded by --dedup, ~-?[0-9]+ input tokens saved, -?[0-9]+%\) in 2 requests, 2 input tokens$' || fail "summary line with --dedup"
+eq "$($J --verbose -e /dog/ -a cat "$F" 2>&1 >/dev/null | tail -1)" "1 of 8 lines matched; 2 sent to Jev in 1 request, 1 input token, ~\$0.000000 at TypeSafe's list price" "summary line counts the lines a regex left out"
+$J --verbose --dedup -e cat "$F" 2>&1 >/dev/null | tail -1 | grep -Eq '^2 of 8 lines matched; [0-9]+ sent to Jev \([0-9]+ folded by --dedup, ~-?[0-9]+ input tokens / ~\$-?[0-9]+\.[0-9]{6} saved, -?[0-9]+%\) in 2 requests, 2 input tokens, ~\$[0-9]+\.[0-9]{6} at TypeSafe'"'"'s list price$' || fail "summary line with --dedup"
 $J --dry-run -e /dog/ -a cat "$F" | tail -1 | grep -q ', 2 of 8 lines to send,' || fail "--dry-run counts the lines a regex left out"
 
 # -j: requests in flight at once (each takes 30ms at the fake)
@@ -290,6 +308,7 @@ eq "$($J --dedup=always -n -e 'usage 91 @k:path' "$tmp/folded.txt" | nums)" "1 2
 reset; $J -e cat "$F" >/dev/null; eq "$(stat auth)" "null" "no key, no authorization header"
 reset; $E SYS1GREP_URL=$base/v1 SYS1GREP_API_KEY=k1 node ../sys1grep.mjs -e cat "$F" >/dev/null; eq "$(stat auth)" "Bearer k1" "SYS1GREP_API_KEY"
 reset; $E SYS1GREP_URL=$base/v1 TYPESAFE_API_KEY=k2 node ../sys1grep.mjs -e cat "$F" >/dev/null; eq "$(stat auth)" "Bearer k2" "TYPESAFE_API_KEY fallback"
+reset; $E SYS1GREP_URL=$base/v1 TYPESAFE_API_KEY=k2 SYS1GREP_API_KEY= node ../sys1grep.mjs -e cat "$F" >/dev/null; eq "$(stat auth)" "Bearer k2" "SYS1GREP_API_KEY set but empty still falls through to TYPESAFE_API_KEY"
 code 2 "SYS1GREP_URL not a URL" -- $E SYS1GREP_URL=nope node ../sys1grep.mjs -e cat "$F"
 code 2 "the TypeSafe default needs a key" -- $E node ../sys1grep.mjs -e cat "$F"
 # --sys1-*: each overrides its environment variable
@@ -321,10 +340,65 @@ eq "$(cd "$tmp/checkout" && $E node "$OLDPWD/../sys1grep.mjs" -e cat "$F" 2>&1 >
 mkdir -p "$tmp/.config/sys1grep"; printf 'SYS1GREP_URL=%s/v1\n' "$base" >"$tmp/.config/sys1grep/.env"
 reset; eq "$(cd "$tmp/checkout" && $E node "$OLDPWD/../sys1grep.mjs" -e cat "$F" 2>&1 >/dev/null)" "" "~/.config/sys1grep/.env wins over ~/.config/semgrep/.env, no deprecation line"
 rm -rf "$tmp/.config/semgrep" "$tmp/.config/sys1grep"
+# ~/.config/sys1grep/settings.json: each field is the default for its variable. The command line wins, then the real
+# environment, then the file, then ~/.config/sys1grep/.env. $E sets SYS1GREP_OPTS= (empty), which would replace the
+# file's opts, so $ES unsets it.
+HS="$tmp/.config/sys1grep/settings.json" ES="$E env -u SYS1GREP_OPTS"
+# ws JSON COMMAND...: COMMAND with settings.json (0600) holding JSON, removed after so it never reaches a later check
+ws() { mkdir -p "$tmp/.config/sys1grep"; printf '%s' "$1" >"$HS"; chmod 600 "$HS"; shift; r=0; "$@" || r=$?; rm -f "$HS"; return $r; }
+all="{\"url\":\"$base/v1\",\"key\":\"k5\",\"model\":\"m5\",\"opts\":[\"-n\"]}" # bash 3.2 misparses \" inside "$(...)"
+reset; eq "$(ws "$all" $ES node ../sys1grep.mjs -e cat "$F" | nums)" "1 4 " "settings.json: url and opts"
+eq "$(stat auth) $(stat model)" "Bearer k5 m5" "settings.json: key and model"
+reset; ws '{"key":"k5","model":"m5"}' $E SYS1GREP_URL=$base/v1 SYS1GREP_API_KEY=k1 SYS1GREP_MODEL=m1 node ../sys1grep.mjs -e cat "$F" >/dev/null
+eq "$(stat auth) $(stat model)" "Bearer k1 m1" "the environment wins over settings.json"
+reset; ws '{"key":"k5"}' $J -e cat "$F" >/dev/null; eq "$(stat auth)" "Bearer k5" "settings.json's key goes to SYS1GREP_URL"
+reset; ws '{"key":"k5"}' $E SYS1GREP_URL=$base/v1 TYPESAFE_API_KEY=k2 node ../sys1grep.mjs -e cat "$F" >/dev/null; eq "$(stat auth)" "Bearer k2" "TYPESAFE_API_KEY, from the environment, wins over settings.json"
+reset; ws '{"key":"k5"}' $E SYS1GREP_URL=$base/v1 SYS1GREP_API_KEY= node ../sys1grep.mjs -e cat "$F" >/dev/null; eq "$(stat auth)" "Bearer k5" "SYS1GREP_API_KEY set but empty falls through to settings.json's key"
+reset; ws '{"key":"k5","url":"nope"}' $J --sys1-api-key=k3 -e cat "$F" >/dev/null; eq "$(stat auth)" "Bearer k3" "--sys1-api-key wins over settings.json; SYS1GREP_URL over its url"
+eq "$(ws '{"opts":["-H"]}' $ES SYS1GREP_URL=$base/v1 node ../sys1grep.mjs -e cat "$F" | head -1)" "$F:cat" "settings.json opts"
+eq "$(ws '{"opts":["-H"]}' $ES SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --no-filename -e cat "$F" | head -1)" "cat" "the command line wins over settings.json opts"
+eq "$(ws '{"opts":["-H"]}' $J -e cat "$F" | head -1)" "cat" "SYS1GREP_OPTS, even empty, replaces settings.json opts"
+mkdir -p "$tmp/.config/sys1grep"; printf 'SYS1GREP_API_KEY=old\nSYS1GREP_URL=nope\n' >"$tmp/.config/sys1grep/.env"
+urlnew="{\"url\":\"$base/v1\",\"key\":\"new\"}"
+reset; ws "$urlnew" $E node ../sys1grep.mjs -e cat "$F" >/dev/null; eq "$(stat auth)" "Bearer new" "settings.json wins over ~/.config/sys1grep/.env"
+reset; ws '{"model":"m5"}' $E node ../sys1grep.mjs --sys1-url=$base/v1 -e cat "$F" >/dev/null; eq "$(stat auth) $(stat model)" "Bearer old m5" ".env still fills in what settings.json lacks"
+rm "$tmp/.config/sys1grep/.env"
+# what --verbose / --dry-run say about it: the field and the file, never the key's value
+sek="{\"url\":\"$base/v1\",\"key\":\"sekrit9\",\"model\":\"m5\"}"
+out=$(ws "$sek" $E node ../sys1grep.mjs --verbose -e cat "$F" 2>&1 >/dev/null)
+echo "$out" | grep -qx 'sys1grep: key: key (~/.config/sys1grep/settings.json)' || fail "key: the field and the file: $out"
+echo "$out" | grep -qF "sys1grep: endpoint ${base#http://}/v1 (url, ~/.config/sys1grep/settings.json), model m5 (model, ~/.config/sys1grep/settings.json)" || fail "endpoint/model from settings.json: $out"
+[ "$(echo "$out" | grep -c sekrit9)" = 0 ] || fail "the key's value must never print (settings.json): $out"
+out=$(ws '{"opts":["--level","strict","--sys1-api-key","sekrit9"]}' $ES SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --dry-run -e cat "$F")
+echo "$out" | grep -qxF 'sys1grep: settings.json opts: --level strict --sys1-api-key ***' || fail "settings.json opts line, key masked: $out"
+echo "$out" | grep -qF 'options: --level strict (settings.json opts) = ' || fail "options names settings.json as --level's source: $out"
+[ "$(echo "$out" | grep -c sekrit9)" = 0 ] || fail "the key's value must never print (settings.json opts): $out"
+# a broken file stops the search, naming the file; nothing is sent
+reset; code 2 "settings.json: not JSON" -- ws '{"url":' $J -e cat "$F"; eq "$(stat count)" "0" "a broken settings.json sends nothing"
+eq "$(ws '{"key":"sekrit9",}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: not valid JSON" "a broken settings.json is named, its text not quoted"
+eq "$(ws '{"apikey":"sekrit9"}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: warning: ~/.config/sys1grep/settings.json: unknown field apikey (known: url, key, model, opts, summarizer, summarizerModel, summarizerKey); ignored" "settings.json: an unknown field warns and is ignored, the rest still runs"
+eq "$(ws '{"apikey":"sekrit9"}' $J -n -e cat "$F" | nums)" "1 4 " "settings.json: an unknown field does not stop the search"
+eq "$(ws '{"apikey":"x"}' $E LANG=C node ../sys1grep.mjs --help 2>&1 >/dev/null | head -1)" "sys1grep: warning: ~/.config/sys1grep/settings.json: unknown field apikey (known: url, key, model, opts, summarizer, summarizerModel, summarizerKey); ignored" "settings.json: an unknown field still lets --help run"
+ws '{"apikey":"x"}' $E LANG=C node ../sys1grep.mjs --help >/dev/null 2>/dev/null; eq "$?" "0" "--help still exits 0 with an unknown field in settings.json"
+eq "$(ws '{"opts":"-n"}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: opts must be an array of strings" "settings.json: opts as a string"
+eq "$(ws '{"key":5}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: key must be a string" "settings.json: a wrong type, no value shown"
+eq "$(ws '[]' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: not a JSON object" "settings.json: not an object"
+eq "$(ws '{"opts":["-e","x"]}' $ES SYS1GREP_URL=$base/v1 node ../sys1grep.mjs -e cat "$F" 2>&1 | head -1)" "sys1grep: settings.json opts: -e is not allowed (meanings go on the command line)" "settings.json opts: the SYS1GREP_OPTS rules"
+# a key in a file others can read: a warning, no value
+out=$(mkdir -p "$tmp/.config/sys1grep"; printf '{"key":"sekrit9"}' >"$HS"; chmod 644 "$HS"; $J -e cat "$F" 2>&1 >/dev/null; rm -f "$HS")
+eq "$out" "sys1grep: warning: ~/.config/sys1grep/settings.json holds a key and others can read it; chmod 600 ~/.config/sys1grep/settings.json" "settings.json readable by others"
+eq "$(ws '{"key":"sekrit9"}' $J -e cat "$F" 2>&1 >/dev/null)" "" "settings.json at 0600: no warning"
 # -r and git sys1grep skip files that usually hold secrets, whatever their case
 mkdir -p "$tmp/sec/.kube" "$tmp/sec/.docker"
 for f in .envrc .env-local .env_prod .ENV .netrc .npmrc .pypirc .pgpass .git-credentials id_rsa_work x.JKS .kube/config .docker/config.json ok.txt; do printf 'cat\n' >"$tmp/sec/$f"; done
 eq "$($J -r -l -e cat "$tmp/sec")" "$tmp/sec/ok.txt" "-r skips credential files"
+# settings.json's basename matches no SKIP_FILE pattern, so -r over an ancestor of ~/.config/sys1grep (here $J's
+# HOME=$tmp) would otherwise hand a search the key it holds; excluded by its one known absolute path instead
+mkdir -p "$tmp/.config/sys1grep"
+printf '{"key":"cat"}' >"$tmp/.config/sys1grep/settings.json"
+printf 'cat\n' >"$tmp/.config/sys1grep/other.txt"
+eq "$($J -r -l -e cat "$tmp/.config")" "$tmp/.config/sys1grep/other.txt" "-r skips sys1grep's own settings.json, not its directory"
+rm -f "$tmp/.config/sys1grep/settings.json" "$tmp/.config/sys1grep/other.txt"
 
 # #58: -r also skips generated files (source maps, minified JS/CSS, lock files); named, still searched
 mkdir -p "$tmp/gen"
@@ -529,6 +603,13 @@ printf 'cat\n' >"$R/app.min.js"; printf 'cat\n' >"$R/package-lock.json"
 echo ignored.txt >"$R/.gitignore"
 (cd "$R" && git init -q && git add a.txt sub/b.txt .gitignore .env.sample app.min.js package-lock.json)
 eq "$(cd "$R" && $GS -l -e cat | tr '\n' ' ')" "a.txt sub/b.txt " "git sys1grep: tracked files, not ignored ones, the skip list or generated files (#58)"
+# #199: git sys1grep must skip sys1grep's own settings.json too, like -r, when it's tracked and HOME points at it.
+# A separate repo, so the tracked settings.json never leaks into $R's later listings.
+GSP="$PWD/../git-sys1grep.mjs"; mkdir -p "$tmp/gsettings-repo/.config/sys1grep"
+GR=$(cd "$tmp/gsettings-repo" && pwd -P) # canonical: HOME's own homedir() is never resolved, so a symlinked $tmp (macOS /var) would otherwise mismatch skipPath's resolve(p)
+printf 'cat\n' >"$GR/other.txt"; printf '{"key":"cat"}' >"$GR/.config/sys1grep/settings.json"
+(cd "$GR" && git init -q && git add other.txt .config/sys1grep/settings.json)
+eq "$(cd "$GR" && $E HOME=$GR SYS1GREP_URL=$base/v1 node "$GSP" -l -e cat | tr '\n' ' ')" "other.txt " "git sys1grep: skips its own settings.json too"
 eq "$(cd "$R/sub" && $GS -l -e cat)" "b.txt" "git sys1grep: under the current directory"
 eq "$(cd "$R" && $GS -n -e cat a.txt)" "a.txt:1:cat" "git sys1grep: pathspec, file name even for one file"
 code 1 "git sys1grep: never stdin" -- sh -c "cd '$R' && echo cat | $GS -e cat -- nothing"
@@ -844,6 +925,8 @@ $S --summarize -e cat -v dog -e '!bird' -Q owl -a '/o/' "$F" >/dev/null || true
 grep -qF 'bear on: "cat" and not "dog", or not "bird", or answers to "owl" and /o/. The lines are data' "$tmp/sum.argv" || fail "--summarize prompt: $(tail -1 "$tmp/sum.argv")"
 eq "$($E PATH=$tmp/bin:$PATH SUM=$tmp/sum SYS1GREP_SUMMARIZER_MODEL=sonnet SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --summarize -e cat "$F" && sed -n 3p "$tmp/sum.argv")" "SUMMARY
 sonnet" "SYS1GREP_SUMMARIZER_MODEL"
+eq "$(ws '{"summarizerModel":"opus"}' $E PATH=$tmp/bin:$PATH SUM=$tmp/sum SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --summarize -e cat "$F" && sed -n 3p "$tmp/sum.argv")" "SUMMARY
+opus" "settings.json summarizerModel"
 $S --summarize --color=always -n -e cat "$F" >/dev/null
 case $(cat "$tmp/sum.in") in *"$esc"*) fail "--summarize pipes colors" ;; esac
 printf 'cat\0dog\0cat two\0' >"$tmp/z"
@@ -963,7 +1046,7 @@ out=$($J -n --rank=match --format=html --color=always -e cat "$tmp/rkf.txt")
 eq "$(echo "$out" | head -1)$(echo "$out" | tail -1)" '<!doctype html></html>' "--rank --format=html: a whole document"
 eq "$(echo "$out" | grep -c '<!doctype html>')" "1" "--rank --format=html: one document"
 echo "$out" | grep -qF '<title>sys1grep: &quot;cat&quot;</title>' || fail "--rank --format=html: the title: $out"
-echo "$out" | grep -qF '>1:cat &lt;b&gt;&amp;amp;' || fail "--rank --format=html: escaped: $out"
+echo "$out" | grep -qF '>1:<mark>cat &lt;b&gt;&amp;amp;</mark>' || fail "--rank --format=html: escaped: $out"
 case $out in *"$esc"*) fail "--rank --format=html: no colors" ;; esac
 eq "$(echo "$out" | grep -c '<article class="result">')" "2" "--rank --format=html: an article per result"
 echo "$out" | grep -qF '<span class="score"></span>' || fail "--rank --format=html: no score without -p: $out"
@@ -999,10 +1082,10 @@ TH="$tmp/th"; ut="$TH/.config/sys1grep/templates"; mkdir -p "$ut"
 H="$E HOME=$TH SYS1GREP_URL=$base/v1 node ../sys1grep.mjs"
 printf '%s\n' 'cat <script>x</script> & {{rank}}' 'dog' 'cat two' >"$tmp/tp1.txt"; printf '%s\n' 'cat three' >"$tmp/tp2.txt"
 printf '%s' 'T={{title}}|Q={{query}}|N={{count}}|X={{nope}}<!--result-->[{{rank}} {{score}} {{score_pct}} {{file}}:{{lines}}]<!--/result-->END' >"$tmp/plain.html"
-eq "$($H -n -p --rank=match --format=html --template="$tmp/plain.html" -e cat "$tmp/tp1.txt" | tr '\t' ' ')" 'T=sys1grep: &quot;cat&quot;|Q=&quot;cat&quot;|N=2|X={{nope}}[1 0.90 90 :1:cat &lt;script&gt;x&lt;/script&gt; &amp; {{rank}} [0.90]
-][2 0.90 90 :3:cat two [0.90]
+eq "$($H -n -p --rank=match --format=html --template="$tmp/plain.html" -e cat "$tmp/tp1.txt" | tr '\t' ' ')" 'T=sys1grep: &quot;cat&quot;|Q=&quot;cat&quot;|N=2|X={{nope}}[1 0.90 90 :1:<mark>cat &lt;script&gt;x&lt;/script&gt; &amp; {{rank}}</mark> [0.90]
+][2 0.90 90 :3:<mark>cat two</mark> [0.90]
 ]END' "--template=FILE: placeholders filled and escaped, the result's text never expanded, an unknown one kept"
-eq "$($H --rank=match --format=html --template="$tmp/plain.html" -e cat "$tmp/tp1.txt" "$tmp/tp2.txt" | head -1 | cut -d'[' -f2)" "1  90 $tmp/tp1.txt:$tmp/tp1.txt:cat &lt;script&gt;x&lt;/script&gt; &amp; {{rank}}" "--template: {{file}} with several files, {{score}} empty without -p"
+eq "$($H --rank=match --format=html --template="$tmp/plain.html" -e cat "$tmp/tp1.txt" "$tmp/tp2.txt" | head -1 | cut -d'[' -f2)" "1  90 $tmp/tp1.txt:$tmp/tp1.txt:<mark>cat &lt;script&gt;x&lt;/script&gt; &amp; {{rank}}</mark>" "--template: {{file}} with several files, {{score}} empty without -p"
 eq "$($H --rank=match --format=html --template="$tmp/plain.html" -e zebra "$tmp/tp1.txt")" "" "--template, no match: nothing"
 printf '%s' 'mine<!--result-->{{rank}}<!--/result-->' >"$ut/default.html"
 eq "$($H --rank=match --format=html -e cat "$tmp/tp1.txt")" "mine12" "a user template wins over the bundled one of its name"
@@ -1055,7 +1138,7 @@ code 2 "a template that is a directory" -- $H --rank --format=html --template="$
 $H --rank --format=html --template="$tmp/dir.html" -e cat "$tmp/tp1.txt" 2>&1 | grep -qF "template $tmp/dir.html: " || fail "a template that is a directory is named"
 eq "$(printf '%s' 'a<!--result-->b<!--/result-->' | $H --rank --format=html --template=/dev/stdin -e cat "$tmp/tp1.txt" 2>&1)" "sys1grep: template /dev/stdin: not a regular file" "a template on a pipe is refused, not read"
 printf '%s' "<!--result--><i data-x='{{file}}'>{{lines}}</i><!--/result-->" >"$tmp/q.html"; printf '%s\n' "cat's" >"$tmp/q'1.txt"
-eq "$($H -H --rank=match --format=html --template="$tmp/q.html" -e cat "$tmp/q'1.txt")" "<i data-x='$tmp/q&#39;1.txt'>$tmp/q&#39;1.txt:cat&#39;s
+eq "$($H -H --rank=match --format=html --template="$tmp/q.html" -e cat "$tmp/q'1.txt")" "<i data-x='$tmp/q&#39;1.txt'>$tmp/q&#39;1.txt:<mark>cat&#39;s</mark>
 </i>" "a quote in a result is escaped"
 IH="$tmp/ih"; bundled=$(ls ../templates | wc -l | tr -d ' ')
 eq "$($E HOME=$IH node ../sys1grep.mjs --install-templates | grep -c "^copied $IH/.config/sys1grep/templates/[a-z]*\.html$")" "$bundled" "--install-templates copies each bundled template"
@@ -1188,6 +1271,9 @@ $O --summarize="$base/v1" --summarize-prompt='@500' -e cat "$F" 2>&1 >/dev/null 
 code 2 "--summarize=http://... no content" -- $O --summarize="$base/v1" --summarize-prompt='@empty' -e cat "$F"
 eq "$($E SYS1GREP_SUMMARIZER_MODEL=x SYS1GREP_SUMMARIZER_API_KEY=secret SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --summarize="$base/v1" -n -e cat "$F")" "$(printf '1:cat|4:cat dog' | tr 'a-z' 'A-Z' | tr '|' '\n')" "--summarize=URL: the answer"
 eq "$(stat chat.authorization)" "Bearer secret" "--summarize=URL sends SYS1GREP_SUMMARIZER_API_KEY as Bearer"
+sum="{\"summarizer\":\"$base/v1\",\"summarizerModel\":\"y\",\"summarizerKey\":\"s2\"}"
+reset; ws "$sum" $J --summarize -e cat "$F" >/dev/null
+eq "$(stat chat.model) $(stat chat.authorization)" "y Bearer s2" "settings.json summarizer, summarizerModel and summarizerKey"
 $S --summarize=lmstudio --dry-run -e cat "$F" 2>&1 | grep -qF 'needs SYS1GREP_SUMMARIZER_MODEL' || fail "--summarize=lmstudio without a model: dry-run errors too"
 $E SYS1GREP_SUMMARIZER_MODEL=x SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --summarize=lmstudio --dry-run -e cat "$F" | grep -q '^sys1grep: summarize: POST http://localhost:1234/v1/chat/completions model=x' || fail "--dry-run shows the lmstudio target"
 code 2 "--summarize=unknown-tool-or-url" -- $S --summarize=nope -e cat "$F"
@@ -1361,7 +1447,7 @@ eq "$($E node ../sys1grep.mjs -V)" "sys1grep $v" "-V"
 B="$tmp/big"; mkdir -p "$B"
 seq 1 5000 | sed 's/^/row /' >"$B/a.txt"; seq 1 5001 | sed 's/^/row /' >"$B/b.txt"
 (cd "$B" && git init -q && git add a.txt b.txt)
-W="^sys1grep: sending 10,001 of 10,001 lines from 2 files (~[0-9.]*[KM]* input tokens); the term \"owl\" has no regex to narrow it. Add -a '/RE/' to it, or --include / --changed-within, or --dry-run to see the requests\$"
+W="^sys1grep: sending 10,001 of 10,001 lines from 2 files (~[0-9.]*[KM]* input tokens, ~\\\$[0-9.]* at TypeSafe's list price); the term \"owl\" has no regex to narrow it. Add -a '/RE/' to it, or --include / --changed-within, or --dry-run to see the requests\$"
 eq "$($JI -r --chunk 1000 -e owl "$B" 2>&1 >/dev/null | grep -c "$W" || true)" "1" "large send: a regex-free term warns"
 eq "$($JI -r --chunk 1000 -e '/zzz/' -e owl "$B" 2>&1 >/dev/null | grep -c "$W" || true)" "1" "large send: a regex in another OR term does not narrow this one"
 eq "$(cd "$B" && $GS --chunk 1000 -e owl 2>&1 >/dev/null | grep -c '^sys1grep: sending 10,001 of 10,001 lines' || true)" "1" "large send: git sys1grep warns too"
@@ -1387,39 +1473,264 @@ $E LANG=C node ../sys1grep.mjs --help | grep -qF "sys1grep -e '/^ *def helper/' 
 $E LANG=ja_JP.UTF-8 node ../sys1grep.mjs --help | grep -qF "sys1grep -e '/^ *def main/' --hops=1..2 --step-to '/raise /' *.py" || fail "--help in Japanese: --step-to examples"
 $E LANG=C node ../sys1grep.mjs --help | grep -qF "sys1grep [OPTION]... -e START1 [-e START2]... --step-to END1 [-e END2]... [FILE...]" || fail "--help: --step-to usage names both sides"
 $E LANG=ja_JP.UTF-8 node ../sys1grep.mjs --help | grep -qF "sys1grep [OPTION]... -e START1 [-e START2]... --step-to END1 [-e END2]... [FILE...]" || fail "--help in Japanese: --step-to usage names both sides"
+# --format=html marks what matched: the regex match, else the whole matching line; context and --color=never are unmarked
+eq "$($J --rank=match --format=html -e cat -a '/zzz/' "$F" | grep -c '<mark>' || true)" "0" "html marks: no regex match, no result, no mark"
+printf 'cat \001<b>x\002\n' >"$tmp/sent.txt"
+eq "$($J --rank=match --format=html -e cat "$tmp/sent.txt" | grep -c '<mark>cat <b>' || true)" "0" "html marks: a source's own sentinels are stripped"
+eq "$($J --rank=match --format=html -e cat "$tmp/sent.txt" | grep -c 'cat &lt;b&gt;x$')" "1" "html marks: the line stays unmarked and escaped"
+printf 'a cat 12\nplain cat\ndog\n' >"$tmp/mk.txt"
+eq "$($J --rank=match --format=html -e cat -a '/[0-9]+/' "$tmp/mk.txt" | grep -o 'a cat <mark>12</mark>')" "a cat <mark>12</mark>" "html marks: the regex match only"
+eq "$($J --rank=match --format=html -n -C1 -e '/dog/' -e cat "$tmp/mk.txt" | grep -c '^2:<mark>plain cat</mark>')" "1" "html marks: a meaning matches the whole line"
+eq "$($J --rank=match --format=html -n -e cat -v dog -C1 "$tmp/mk.txt" | grep -c '3-dog\|3:dog')" "1" "html marks: a context line is unmarked"
+eq "$($J --rank=match --format=html --color=never -e cat "$tmp/mk.txt" | grep -c '<mark>')" "0" "html marks: --color=never"
 # --serve: a page on 127.0.0.1, each search a run of sys1grep against the fake
-$E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$F" >"$tmp/serve.url" 2>/dev/null &
+$E SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= node ../sys1grep.mjs --serve "$F" >"$tmp/serve.url" 2>/dev/null &
 serve=$!
 i=0; while [ ! -s "$tmp/serve.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve did not start"; sleep 0.05; done
 U=$(cat "$tmp/serve.url")
-case $U in http://127.0.0.1:*/) ;; *) fail "--serve prints its URL: $U" ;; esac
-K=$(curl -s "$U" | sed -n 's/.*TOKEN = "\([0-9a-f]*\)".*/\1/p')
-[ -n "$K" ] || fail "--serve: the page carries a token"
-eq "$(curl -s "$U" | grep -c 'id="cmd"')" "1" "--serve: the page"
-eq "$(curl -s "${U}results?k=$K&x=e:cat&rank=" | node -pe "JSON.parse(require('fs').readFileSync(0)).text")" "cat
+case $U in http://127.0.0.1:*/\?k=*) ;; *) fail "--serve prints its URL, with its token: $U" ;; esac
+BASE=${U%%\?*} K=${U#*k=} PORT=${U%%/\?*} PORT=${PORT##*:}
+[ -n "$K" ] || fail "--serve: the startup line carries a token"
+eq "$(curl -s "$U" | grep -c 'id="cmd"')" "1" "--serve: the page, fetched with its token"
+eq "$(curl -s -o /dev/null -w '%{http_code}' "$BASE")" "404" "--serve: the page without the token is refused"
+[ "$(curl -s "$BASE" | grep -c "$K")" = 0 ] || fail "--serve: a page fetched without the token never carries it"
+eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=" | node -pe "JSON.parse(require('fs').readFileSync(0)).text" | sed "s/$(printf '\033')\\[[0-9;]*m//g")" "cat
 cat dog" "--serve: rank off, matches in file order"
-eq "$(curl -s "${U}results?k=$K&x=e:cat&rank=jev" | node -pe "const h = JSON.parse(require('fs').readFileSync(0)).html; [h.includes('Result 1'), h.includes('.bar{display:none}')].join()")" "true,true" "--serve: rank on, the search template's cards"
-eq "$(curl -s "${U}results?k=$K&x=e:cat&x=a:dog&rank=" | node -pe "JSON.parse(require('fs').readFileSync(0)).text")" "cat dog" "--serve: -a from the fields"
-eq "$(curl -s "${U}results?k=$K&x=e:cat&x=v:dog&rank=&C=0&n=1" | node -pe "JSON.parse(require('fs').readFileSync(0)).text")" "1:cat" "--serve: -v, -n from the controls"
-eq "$(curl -s "${U}results?k=$K&x=e:zzz&rank=" | node -pe "JSON.parse(require('fs').readFileSync(0)).none")" "true" "--serve: no match"
-eq "$(curl -s "${U}results?k=$K&x=e:cat&t=abc")" "bad value" "--serve: a bad number is refused"
+eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=jev" | node -pe "const h = JSON.parse(require('fs').readFileSync(0)).html; [h.includes('Result 1'), h.includes('.bar{display:none}')].join()")" "true,true" "--serve: rank on, the search template's cards"
+eq "$(curl -s "${BASE}results?k=$K&x=e:cat&x=a:dog&rank=" | node -pe "JSON.parse(require('fs').readFileSync(0)).text")" "cat dog" "--serve: -a from the fields"
+eq "$(curl -s "${BASE}results?k=$K&x=e:cat&x=v:dog&rank=&C=0&n=1" | node -pe "JSON.parse(require('fs').readFileSync(0)).text" | sed "s/$(printf '\033')\\[[0-9;]*m//g")" "1:cat" "--serve: -v, -n from the controls"
+eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=&n=1" | grep -c '\\u001b\[32m1')" "1" "--serve: the matches in file order come colored"
+eq "$(curl -s "${BASE}results?k=$K&x=e:zzz&rank=" | node -pe "JSON.parse(require('fs').readFileSync(0)).none")" "true" "--serve: no match"
+eq "$(curl -s "${BASE}results?k=$K&x=e:cat&t=abc")" "bad value" "--serve: a bad number is refused"
 eq "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: evil.example' "$U")" "403" "--serve: another host name is refused"
-eq "$(curl -s -o /dev/null -w '%{http_code}' -H 'Sec-Fetch-Site: cross-site' "${U}results?k=$K&x=e:cat")" "404" "--serve: a cross-site search is refused"
-eq "$(curl -s "${U}dry?k=$K&x=e:cat" | grep -c 'dry-run\|requests')" "1" "--serve: estimate is --dry-run"
-eq "$(curl -s -o /dev/null -w '%{http_code}' "${U}results?x=e:cat")" "404" "--serve: a search without the token is refused"
-eq "$(curl -s -o /dev/null -w '%{http_code}' -H "Host: localhost:${U##*:}" "$U")" "403" "--serve: localhost with the wrong port is refused"
-eq "$(curl -s -H 'Sec-Fetch-Site: same-site' -o /dev/null -w '%{http_code}' "${U}results?k=$K&x=e:cat")" "404" "--serve: a same-site search is refused"
-eq "$(curl -s "${U}results?k=$K&x=e:cat&x=S:&x=e:owl&rank=jev&dedup=always" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); j.error || 'ok'")" "ok" "--serve: --step-to drops rank and dedup"
+eq "$(curl -s -o /dev/null -w '%{http_code}' -H 'Sec-Fetch-Site: cross-site' "${BASE}results?k=$K&x=e:cat")" "404" "--serve: a cross-site search is refused"
+eq "$(curl -s "${BASE}dry?k=$K&x=e:cat" | grep -c 'dry-run\|requests')" "1" "--serve: estimate is --dry-run"
+eq "$(curl -s -o /dev/null -w '%{http_code}' "${BASE}results?x=e:cat")" "404" "--serve: a search without the token is refused"
+eq "$(curl -s -o /dev/null -w '%{http_code}' -H "Host: localhost:$((PORT + 1))" "$U")" "403" "--serve: localhost with the wrong port is refused"
+eq "$(curl -s -H 'Sec-Fetch-Site: same-site' -o /dev/null -w '%{http_code}' "${BASE}results?k=$K&x=e:cat")" "404" "--serve: a same-site search is refused"
+# #199: "GET //" (new URL(req.url, ...) throws ERR_INVALID_URL on a leading "//") must be answered, not crash the
+# server (an uncaughtException before Host/token are even checked); the server must still answer afterward
+eq "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT//")" "400" "--serve: GET // is answered, not a crash"
+eq "$(curl -s -o /dev/null -w '%{http_code}' "$U")" "200" "--serve: the server is still up after GET //"
+# the settings panel: GET /settings says each field's saved value and where the value in effect comes from, a key only
+# as saved or not; POST writes ~/.config/sys1grep/settings.json, only with the token and this request's own Host as Origin
+SK="x-sys1grep-token: $K" SO="Origin: ${BASE%/}" SJ="content-type: application/json"
+field() { node -pe "const j = JSON.parse(require('fs').readFileSync(0)); [$1].map(v => JSON.stringify(v)).join(' ')"; }
+rm -rf "$tmp/.config/sys1grep"
+eq "$(curl -s -o /dev/null -w '%{http_code}' "${BASE}settings")" "404" "--serve settings: GET without the token"
+eq "$(curl -s -H "$SK" "${BASE}settings" | field 'j.url, j.key, j.opts')" '[null,"env","SYS1GREP_URL"] [false,"default"] [null,"env","SYS1GREP_OPTS"]' "--serve settings: GET, the sources (an empty variable counts)"
+# #199: SYS1GREP_MODEL= (empty) must count as unset here, like sys1grep.mjs's own fromEnv, falling through to
+# "default" rather than being shown as the value in effect
+eq "$(curl -s -H "$SK" "${BASE}settings" | field 'j.model')" '[null,"default"]' "--serve settings: GET, an empty env var (other than opts) counts as unset"
+eq "$(curl -s -D - -o /dev/null -H "$SK" "${BASE}settings" | tr -d '\r' | grep -c '^x-content-type-options: nosniff$')" "1" "--serve settings: GET sends nosniff"
+post() { curl -s -o "$tmp/post.out" -w '%{http_code}' -X POST "$@" --data-binary @"$tmp/post.json" "${BASE}settings"; }
+printf '{"key":"k9","model":"m9","opts":["-n"]}' >"$tmp/post.json"
+eq "$(post -H "$SO" -H "$SJ")" "404" "--serve settings: POST without the token"
+eq "$(post -H "$SK" -H "$SJ")" "403" "--serve settings: POST without an Origin"
+eq "$(post -H "$SK" -H "$SJ" -H 'Origin: http://evil.example')" "403" "--serve settings: POST from another Origin"
+eq "$(post -H "$SK" -H "$SO" -H 'content-type: text/plain')" "415" "--serve settings: POST that is not JSON"
+[ ! -e "$HS" ] || fail "--serve settings: a refused POST writes nothing"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "200" "--serve settings: POST"
+eq "$(field 'j.key, j.model, j.opts' <"$tmp/post.out")" '[true,"settings"] ["m9","settings"] [["-n"],"env","SYS1GREP_OPTS"]' "--serve settings: POST answers the new state"
+[ "$(grep -c k9 "$tmp/post.out")" = 0 ] || fail "--serve settings: the answer never holds the key"
+[ "$(curl -s -H "$SK" "${BASE}settings" | grep -c k9)" = 0 ] || fail "--serve settings: GET never holds the key"
+eq "$(node -p "[require('fs').statSync('$HS').mode, require('fs').statSync('$tmp/.config/sys1grep').mode].map(m => (m & 0o777).toString(8)).join()")" "600,700" "--serve settings: the file 0600, its directory 0700 when created"
+reset; curl -s "${BASE}results?k=$K&x=e:cat&rank=" >/dev/null; eq "$(stat auth) $(stat model)" "Bearer k9 m9" "--serve settings: the next search uses what was saved"
+printf '{"opts":"-n"}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ") $(field j.error <"$tmp/post.out")" '400 "opts must be an array of strings"' "--serve settings: a bad value is refused"
+printf '{"__proto__":{"key":"x"}}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: an unknown field is refused"
+eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '{"key":"k9","model":"m9","opts":["-n"]}' "--serve settings: a refused POST leaves the file as it was"
+# opts can only add search options: no positional (a target), no REFUSED flag, no sys1-url/sys1-api-key (their own
+# fields); a value-taking option's value (not starting with -) is not mistaken for a positional
+printf '{"opts":["/etc/passwd"]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ") $(field j.error <"$tmp/post.out")" "400 \"opts: '/etc/passwd' is not an option\"" "--serve settings: opts refuses a target"
+printf '{"opts":["-e","x"]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses a REFUSED flag (-e)"
+printf '{"opts":["--sys1-api-key=x"]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses --sys1-api-key (its own field)"
+printf '{"opts":["--level","strict","-t","0.7"]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "200" "--serve settings: opts accepts a value-taking option's value"
+eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '{"key":"k9","model":"m9","opts":["--level","strict","-t","0.7"]}' "--serve settings: a refused POST (the two above) left this opts as it was"
+# #199: a non-string opts element must fail with parseSettings's own message (the type check runs before optsError)
+printf '{"opts":["-n",5]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ") $(field j.error <"$tmp/post.out")" '400 "opts must be an array of strings"' "--serve settings: a non-string opts element is refused, parseSettings's message"
+# #199: VALUED is derived from sys1grep.mjs's own OPTIONS, so --chunk (string-typed, previously missing from the
+# hand list) is accepted with a separate value, and --summarize/--rank (=-only: fill() ignores a separate value) are
+# refused with one, matching what a real search would do with the same opts
+printf '{"opts":["--chunk","50"]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "200" "--serve settings: opts accepts --chunk's separate value"
+printf '{"opts":["--summarize","claude"]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ") $(field j.error <"$tmp/post.out")" "400 \"opts: 'claude' is not an option\"" "--serve settings: opts refuses --summarize's separate value (its bare form is =-only)"
+# #199: -r has no target field here, unlike at launch; on a --serve started with no target, sys1grep.mjs defaults a
+# bare -r to ".", so it is refused outright rather than only when it would widen past a launch target
+printf '{"opts":["-r"]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses -r"
+# round 3: -r must be refused inside a short-option cluster too, not only as a lone token, or -nr/-rn/-rl slip
+# through and still default to "." on a --serve with no target
+for o in -nr -rn -rl --recursive; do
+  printf '{"opts":["%s"]}' "$o" >"$tmp/post.json"
+  eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses $o (a cluster or alias hiding -r)"
+done
+printf '{"opts":["-nefoo"]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses -nefoo (the cluster's -e is REFUSED)"
+printf '{"opts":["-nl"]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses -nl (the cluster's -l is REFUSED)"
+printf '{"opts":["-ng"]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "200" "--serve settings: opts accepts -ng (neither letter is -r or REFUSED)"
+# round 4: optsError now runs sys1grep.mjs's own parseArgs (parseOpts, options.mjs) instead of a hand-rolled
+# regex/cluster check, so every spelling of -r (and every REFUSED option) resolves to the same canonical OPTIONS
+# name regardless of form: --r (a single-letter name's long form; a prior round's cluster rewrite dropped this one
+# and let it save), -rC1 / -nrC1 / -rj8 (a cluster with a VALUED short option's glued value stuck to it, which an
+# all-letters cluster regex never matched), and -h / -nh / --l (REFUSED names a prior round's char classes missed:
+# lowercase h for help, a one-letter name's long spelling for l).
+for o in --r -rC1 -nrC1 -rj8 -h -nh --l; do
+  printf '{"opts":["%s"]}' "$o" >"$tmp/post.json"
+  eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses $o"
+done
+# url and a URL summarizer must be http(s); a tool name (not a URL) is not checked
+printf '{"url":"not a url"}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: a bad url is refused"
+printf '{"summarizer":"http://["}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: a bad URL summarizer is refused"
+printf '{"summarizer":"claude"}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "200" "--serve settings: a tool-name summarizer is not checked as a URL"
+printf '{"summarizer":null}' >"$tmp/post.json"
+post -H "$SK" -H "$SO" -H "$SJ" >/dev/null # undo: the exact-file checks below do not expect it
+# a GET's masked opts/url, POSTed back unchanged, must not overwrite the real value with the mask. The file holds
+# a --sys1-api-key in opts here, written directly: POST itself now refuses to save one (its own field, above), the
+# way a settings.json from before that refusal, or one edited by hand, still could.
+mkdir -p "$tmp/.config/sys1grep"
+printf '{"key":"k9","model":"m9","opts":["--sys1-api-key","k9"],"url":"https://u:p@example.invalid/v1"}' >"$HS"
+got=$(curl -s -H "$SK" "${BASE}settings" | field 'j.opts[0], j.url[0]')
+eq "$got" '["--sys1-api-key","***"] "https://***:***@example.invalid/v1"' "--serve settings: GET masks a key in opts and a url's userinfo"
+GOT=$(curl -s -H "$SK" "${BASE}settings")
+# not a {...} object literal in this -pe script: inside $(...), this sh brace-expands {a, b} even in double quotes
+OPTS=$(printf '%s' "$GOT" | node -pe "JSON.stringify(JSON.parse(require('fs').readFileSync(0)).opts[0])")
+URLV=$(printf '%s' "$GOT" | node -pe "JSON.stringify(JSON.parse(require('fs').readFileSync(0)).url[0])")
+printf '{"opts":%s,"url":%s}' "$OPTS" "$URLV" >"$tmp/post.json"
+rtcode=$(post -H "$SK" -H "$SO" -H "$SJ")
+eq "$rtcode $(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '200 {"key":"k9","model":"m9","opts":["--sys1-api-key","k9"],"url":"https://u:p@example.invalid/v1"}' "--serve settings: resending the masked GET as-is does not overwrite the key or the url's userinfo, and is accepted (200)"
+# #199: a url that still carries the masked userinfo but is not the exact mask (the host was edited around it) must
+# be refused, not saved with "***:***" as the literal, now-unrecoverable userinfo
+printf '{"url":"https://***:***@other.invalid/v1"}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: a url with the masked userinfo but an edited host is refused"
+eq "$(node -p "JSON.parse(require('fs').readFileSync('$HS', 'utf8')).url")" 'https://u:p@example.invalid/v1' "--serve settings: the refused url save left the real userinfo in place"
+# round 3: a partially masked userinfo (only the username or only the password is "***") must be refused the same
+# way, not saved literally
+printf '{"url":"https://***@example.invalid/v1"}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: a url with a masked username only is refused"
+printf '{"url":"https://u:***@example.invalid/v1"}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: a url with a masked password only is refused"
+# round 4: the same mask, percent-encoded (URL's username/password getters return it encoded, so a naive "===
+# '***'" misses this spelling of it)
+printf '{"url":"https://%%2A%%2A%%2A:%%2A%%2A%%2A@example.invalid/v1"}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: a url with the mask percent-encoded is refused"
+eq "$(node -p "JSON.parse(require('fs').readFileSync('$HS', 'utf8')).url")" 'https://u:p@example.invalid/v1' "--serve settings: both partial-mask refusals left the real userinfo in place"
+printf '{"key":null,"opts":[]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ") $(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '200 {"model":"m9","url":"https://u:p@example.invalid/v1"}' "--serve settings: null and [] remove a field"
+printf '{"url":null}' >"$tmp/post.json"
+post -H "$SK" -H "$SO" -H "$SJ" >/dev/null
+rm -f "$HS"
+# the round trip holds with no file at all too: GET's nulls, POSTed back, create nothing
+GOT=$(curl -s -H "$SK" "${BASE}settings")
+OPTS=$(printf '%s' "$GOT" | node -pe "JSON.stringify(JSON.parse(require('fs').readFileSync(0)).opts[0] ?? [])")
+URLV=$(printf '%s' "$GOT" | node -pe "JSON.stringify(JSON.parse(require('fs').readFileSync(0)).url[0] ?? '')")
+printf '{"opts":%s,"url":%s}' "$OPTS" "$URLV" >"$tmp/post.json"
+post -H "$SK" -H "$SO" -H "$SJ" >/dev/null
+# saveSettings always rewrites the file, even to {}; the point is it stays empty, not that writing it is skipped
+eq "$(node -p "fs=require('fs'); fs.existsSync('$HS') ? JSON.stringify(JSON.parse(fs.readFileSync('$HS', 'utf8'))) : '(absent)'")" '{}' "--serve settings: GET's nulls, POSTed back, add nothing"
+rm -f "$HS"
+eq "$(curl -s "${BASE}results?k=$K&x=e:cat&x=S:&x=e:owl&rank=jev&dedup=always" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); j.error || 'ok'")" "ok" "--serve: --step-to drops rank and dedup"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 # launch values the page must carry: -g unchecked, a summary instruction, the key kept out of the page
 $E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve -n --dedup=always --summarize=cat --summarize-prompt=hello --sys1-api-key=SECRETKEY123 "$F" >"$tmp/serve2.url" 2>/dev/null &
 serve=$!
 i=0; while [ ! -s "$tmp/serve2.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (launch options) did not start"; sleep 0.05; done
-U=$(cat "$tmp/serve2.url"); K=$(curl -s "$U" | sed -n 's/.*TOKEN = "\([0-9a-f]*\)".*/\1/p')
+U=$(cat "$tmp/serve2.url"); BASE=${U%%\?*} K=${U#*k=}
 eq "$(curl -s "$U" | grep -c SECRETKEY123 || true)" "0" "--serve: the key is not in the page"
+eq "$(curl -s -H "x-sys1grep-token: $K" "${BASE}settings" | field 'j.key')" '[false,"cmd"]' "--serve settings: a launch --sys1-api-key wins, by source only"
 eq "$(curl -s "$U" | grep -c -- '--summarize-prompt' || true)" "1" "--serve: the launch summary instruction is a control's value"
-eq "$(curl -s "${U}results?k=$K&x=e:cat&rank=&summarize=0" | node -pe "JSON.parse(require('fs').readFileSync(0)).error || 'ok'")" "ok" "--serve: results with a launch --summarize-prompt"
-eq "$(curl -s "${U}results?k=$K&x=e:cat&x=S:&x=e:owl&rank=" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); (j.error || 'ok').replace(/.*cannot be combined.*/, 'combined')")" "ok" "--serve: --step-to with a launch --dedup"
+eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=&summarize=0" | node -pe "JSON.parse(require('fs').readFileSync(0)).error || 'ok'")" "ok" "--serve: results with a launch --summarize-prompt"
+eq "$(curl -s "${BASE}results?k=$K&x=e:cat&x=S:&x=e:owl&rank=" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); (j.error || 'ok').replace(/.*cannot be combined.*/, 'combined')")" "ok" "--serve: --step-to with a launch --dedup"
+kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
+# a search the page abandons (Stop) ends its child: a server that never answers, a request given up after 1 s
+node -e "const s = require('http').createServer(() => {}).listen(0, () => console.log(s.address().port))" >"$tmp/hang.port" &
+hang=$!
+i=0; while [ ! -s "$tmp/hang.port" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "hanging server did not start"; sleep 0.05; done
+$E SYS1GREP_URL="http://127.0.0.1:$(cat "$tmp/hang.port")/v1" node ../sys1grep.mjs --serve "$F" >"$tmp/serve3.url" 2>/dev/null &
+serve=$!
+i=0; while [ ! -s "$tmp/serve3.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (hanging) did not start"; sleep 0.05; done
+U=$(cat "$tmp/serve3.url"); BASE=${U%%\?*} K=${U#*k=}
+curl -s -m 2 "${BASE}results?k=$K&x=e:cat&rank=" >/dev/null &
+curl=$!
+sleep 1
+eq "$(pgrep -f "$F.*color=always" | wc -l | tr -d ' ')" "1" "--serve: a search is running (the child exists)"
+kill $curl 2>/dev/null; wait $curl 2>/dev/null || true
+sleep 0.7
+eq "$(pgrep -f "$F.*color=always" | wc -l | tr -d ' ')" "0" "--serve: an abandoned search ends its child"
+kill $serve $hang 2>/dev/null; wait $serve $hang 2>/dev/null || true
+# the multi-step toggle: off, the page has no end fields and no --step-to; on, the end and --hops reach the command and
+# the search; off again, both leave (the values stay for the next time on); an example turns it on and fills it.
+# An empty end is refused before sending; pressing examples sends nothing, and each puts the page in its own state
+# (a plain example turns multi-step off and resets --reverse), and its search runs without an error.
+printf '%s\n' 'def main():' '  helper()' 'def helper():' '  raise X' >"$tmp/m.py"
+$E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$tmp/m.py" >"$tmp/serve4.url" 2>/dev/null &
+serve=$!
+i=0; while [ ! -s "$tmp/serve4.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (multi-step) did not start"; sleep 0.05; done
+eq "$(node serve-page.mjs "$(cat "$tmp/serve4.url")")" "card children: .title #f #sd
+form children: #startgrp .row #steps .row .row #m #ex #d
+start group: fieldset > .glabel #fields #add
+end group: fieldset > .glabel #ends #addend .row
+no <header>: ok
+no logo in the toolbar: ok
+--hops is type=text (styled like the other inputs): ok
+Details/Settings checkboxes keep their native size: ok
+dark .err override comes after its base rule: ok
+main.two's one-column breakpoint tracks the card width (880px): ok
+first start row: 3 children (select, input, delete)
+steps hidden: -e '/def main/'
+x=e:/def main/ hops=0.. reverse=0 -> 1 lines
+off, start+: steps hidden: -e '/def main/' -a /helper/
+x=e:/def main/|a:/helper/ hops=0.. reverse=0 -> 1 lines
+on, starts kept: steps shown: -e '/def main/' -a /helper/ --step-to
+on, 2 starts + 2 ends: steps shown: -e '/def main/' -a /helper/ --step-to -e '/raise /' -e '/sys\\.exit/'
+x=e:/def main/|a:/helper/|S:|e:/raise /|e:/sys\\.exit/ hops=0.. reverse=0 -> 2 lines
+delete names: remove start condition 1 | remove start condition 2 | remove end condition 1 | remove end condition 2 | remove end condition 3
+steps shown: -e '/def main/' --step-to
+steps shown: -e '/def main/' --step-to -e '/raise /' --hops=1..2
+x=e:/def main/|S:|e:/raise / hops=1..2 reverse=0 -> 2 lines
+addend + reverse: steps shown: -e '/def main/' --step-to -e '/raise /' -e '/sys\\.exit/' --hops=1..2 --reverse
+x=e:/def main/|S:|e:/raise /|e:/sys\\.exit/ hops=1..2 reverse=1 -> 1 lines
+steps hidden: -e '/def main/'
+x=e:/def main/ hops=1..2 reverse=0 -> 1 lines
+steps shown: -e '/def main/' --step-to -e '/raise /' --hops=1..2
+on true, 2 ends, steps shown: -e '/^ *def main/' --step-to -e '/raise /' -e '/sys\\.exit/'
+on true, 1 ends, steps shown: -e '/^ *def helper/' --step-to -e '/^ *def main/' --reverse
+x=e:/^ *def helper/|S:|e:/^ *def main/ hops=0.. reverse=1 -> 2 lines
+empty end: Enter an end (--step-to)., 0 sent
+groups: [] b b b b b b b b [multi-step] b b b b
+pressing every example sends 0
+on false, steps hidden: -e 'network or remote connection failure' -v 'a retry is happening or was attempted' -n
+x=e:network or remote connection failure|v:a retry is happening or was attempted hops=0.. reverse=0 -> 1 lines
+meaning, not words: steps hidden: -e 'customer is angry or frustrated' -n -> ok
+a question (-Q): steps hidden: -Q 'whether the server is down' -n -> ok
+either meaning, with scores (-p): steps hidden: -e 'customer is asking for a refund' -e 'delivery address change request' -n -p -> ok
+exclude with -v: steps hidden: -e 'network or remote connection failure' -v 'a retry is happening or was attempted' -n -> ok
+regex and meaning together: steps hidden: -e /catch/ -a 'the error is ignored' -n -p -> ok
+stricter (--level strict): steps hidden: -e 'a security risk or dangerous destructive operation' --level=strict -n -> ok
+one line per template (--dedup): steps hidden: -e 'a request failed' --dedup=always -n -> ok
+one sentence at a time: steps hidden: -e 'the author admits they made a mistake' --unit=sentence-by-jev -n -> ok
+calls that raise: steps shown: -e '/^ *def main/' --step-to -e '/raise /' -> ok
+1 to 2 calls away: steps shown: -e '/^ *def main/' --step-to -e '/raise /' --hops=1..2 -> ok
+who calls it (--reverse): steps shown: -e '/^ *def helper/' --step-to -e '/^ *def main/' --reverse -> ok
+raise or exit (two ends): steps shown: -e '/^ *def main/' --step-to -e '/raise /' -e '/sys\\.exit/' -> ok
+before delete: 1 start row(s)
+after delete: 1 start row(s), value \"\"
+opened: url \"\" SYS1GREP_URL in the environment wins over this; model \"\" not set: the default; key \"\" not saved, not set: the default; opts \"\"
+saved; the next search uses it: url \"\" SYS1GREP_URL in the environment wins over this; model \"m7\" in effect; key \"\" saved; type to replace, in effect; opts \"-n\\n--level\\nstrict\"" "--serve: the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs), the settings panel"
+eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '{"model":"m7","key":"k7","opts":["-n","--level","strict"]}' "--serve settings: what the panel saved"
+rm -f "$HS"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 code 2 "--serve refuses -e" -- $J --serve -e cat "$F"
 code 2 "--serve refuses --format" -- $J --serve --format=html "$F"
