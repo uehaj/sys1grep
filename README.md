@@ -186,7 +186,7 @@ to the narrowest:
   now: a hint says when `--dedup=auto` would pay.
 - **Check before paying.** `--dry-run` sends nothing and prints the settings the search would run with, the
   files, how many lines each would send and every request with its questions. Its last line estimates the input
-  tokens and, for TypeSafe itself, the price (`~3178 input tokens, ~$0.000133`; within about 10%). `-i` shows the
+  tokens and the price at Jev's list price (`~3178 input tokens, ~$0.000133`; within about 10%; another URL adds `at TypeSafe's list price`). `-i` shows the
   same totals on the terminal and sends only after `y`.
   Before the bulk of requests, every target is sized (`--max-filesize`, default 10M); one over it is skipped
   outright, like `rg`'s own `--max-filesize`, named on stderr (`-y` does not affect it). A `.gz` is sized
@@ -302,8 +302,9 @@ SYS1GREP_URL=https://ai-gateway.vercel.sh/typesafe/v1/systemone SYS1GREP_MODEL=t
 SYS1GREP_URL=http://localhost:8000/v1/systemone sys1grep -e ...
 ```
 
-The summary line shows the cost the endpoint reports (`usage.cost`), or for TypeSafe itself an estimate at list
-price marked `~`.
+Every price sys1grep shows (`--dry-run`, the large-send warning, the `--max-cost` question, the summary line) is the cost
+the endpoint reports (`usage.cost`), or else an estimate at TypeSafe's list price marked `~`; with another URL the
+estimate says `at TypeSafe's list price`, so a local model shows what a paid one would cost, not what you pay.
 
 From source: `git clone https://github.com/uehaj/sys1grep.git && cd sys1grep && npm install -g .`,
 or run it in place with `node sys1grep.mjs ...`.

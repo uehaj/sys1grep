@@ -182,18 +182,20 @@ echo "$out" | grep -q "^sys1grep: file $F: 8 lines, 7 to send" || fail "--dry-ru
 echo "$out" | grep -q '4× Does line Lnnn match the meaning: "cat"?' || fail "--dry-run groups questions"
 code 0 "--dry-run, no match" -- $J --dry-run -e nothing "$F"
 reset; eq "$($J --dry-run -q -v cat "$F" | tail -1 | cut -d, -f1)" "sys1grep: dry run: 1 request" "--dry-run ignores -q"
-$J --dry-run -e cat "$F" | tail -1 | grep -Eq ' chars, ~[0-9]+ input tokens; nothing sent$' || fail "--dry-run estimates tokens, no price for SYS1GREP_URL"
+$J --dry-run -e cat "$F" | tail -1 | grep -Eq " chars, ~[0-9]+ input tokens, ~\\\$0\\.[0-9]{6} at TypeSafe's list price; nothing sent\$" || fail "--dry-run estimates tokens and the price, at TypeSafe's list price, for SYS1GREP_URL"
 $E SYS1GREP_API_KEY=unused node ../sys1grep.mjs --dry-run -e cat "$F" | tail -1 | grep -Eq ' chars, ~[0-9]+ input tokens, ~\$0\.[0-9]{6}; nothing sent$' || fail "--dry-run estimates the price for TypeSafe"
 reset; eq "$($J --verbose -n -e cat "$F" 2>/dev/null | nums)" "1 4 " "--verbose keeps stdout"
 eq "$(stat count)" "1" "--verbose sends"
 eq "$($J --verbose -e cat "$F" 2>&1 >/dev/null | grep -c '^sys1grep: request 1 \[judge\]')" "1" "--verbose on stderr"
 # The summary line says what its numbers are (#91); its total counts every line read, also those a regex left out (#79)
-eq "$($J --verbose -e cat "$F" 2>&1 >/dev/null | tail -1)" "2 of 8 lines matched; 7 sent to Jev in 1 request, 1 input token" "summary line"
+eq "$($J --verbose -e cat "$F" 2>&1 >/dev/null | tail -1)" "2 of 8 lines matched; 7 sent to Jev in 1 request, 1 input token, ~\$0.000000 at TypeSafe's list price" "summary line"
+printf 'cat @nousage\ndog\n' >"$tmp/nu.txt"
+eq "$($J --verbose -c -e cat "$tmp/nu.txt" 2>&1 >/dev/null | tail -1)" "1 of 2 lines matched; 2 sent to Jev in 1 request, 0 input tokens" "summary line: an endpoint that reports no usage shows no price"
 eq "$($J --verbose -e /cat/ "$F" 2>&1 >/dev/null | tail -1)" "2 of 8 lines matched; nothing sent" "summary line, regex only"
 # stderr whose reader quit: what cannot be said is dropped (as console.error drops it) and the exit status stands
 ( $J --verbose -e /cat/ "$F" 2>&1 >/dev/null && r=0 || r=$?; echo $r >"$tmp/rc" ) | true; eq "$(cat "$tmp/rc")" "0" "--verbose with stderr closed"
-eq "$($J --verbose -e /dog/ -a cat "$F" 2>&1 >/dev/null | tail -1)" "1 of 8 lines matched; 2 sent to Jev in 1 request, 1 input token" "summary line counts the lines a regex left out"
-$J --verbose --dedup -e cat "$F" 2>&1 >/dev/null | tail -1 | grep -Eq '^2 of 8 lines matched; [0-9]+ sent to Jev \([0-9]+ folded by --dedup, ~-?[0-9]+ input tokens saved, -?[0-9]+%\) in 2 requests, 2 input tokens$' || fail "summary line with --dedup"
+eq "$($J --verbose -e /dog/ -a cat "$F" 2>&1 >/dev/null | tail -1)" "1 of 8 lines matched; 2 sent to Jev in 1 request, 1 input token, ~\$0.000000 at TypeSafe's list price" "summary line counts the lines a regex left out"
+$J --verbose --dedup -e cat "$F" 2>&1 >/dev/null | tail -1 | grep -Eq '^2 of 8 lines matched; [0-9]+ sent to Jev \([0-9]+ folded by --dedup, ~-?[0-9]+ input tokens / ~\$-?[0-9]+\.[0-9]{6} saved, -?[0-9]+%\) in 2 requests, 2 input tokens, ~\$[0-9]+\.[0-9]{6} at TypeSafe'"'"'s list price$' || fail "summary line with --dedup"
 $J --dry-run -e /dog/ -a cat "$F" | tail -1 | grep -q ', 2 of 8 lines to send,' || fail "--dry-run counts the lines a regex left out"
 
 # -j: requests in flight at once (each takes 30ms at the fake)
@@ -1445,7 +1447,7 @@ eq "$($E node ../sys1grep.mjs -V)" "sys1grep $v" "-V"
 B="$tmp/big"; mkdir -p "$B"
 seq 1 5000 | sed 's/^/row /' >"$B/a.txt"; seq 1 5001 | sed 's/^/row /' >"$B/b.txt"
 (cd "$B" && git init -q && git add a.txt b.txt)
-W="^sys1grep: sending 10,001 of 10,001 lines from 2 files (~[0-9.]*[KM]* input tokens); the term \"owl\" has no regex to narrow it. Add -a '/RE/' to it, or --include / --changed-within, or --dry-run to see the requests\$"
+W="^sys1grep: sending 10,001 of 10,001 lines from 2 files (~[0-9.]*[KM]* input tokens, ~\\\$[0-9.]* at TypeSafe's list price); the term \"owl\" has no regex to narrow it. Add -a '/RE/' to it, or --include / --changed-within, or --dry-run to see the requests\$"
 eq "$($JI -r --chunk 1000 -e owl "$B" 2>&1 >/dev/null | grep -c "$W" || true)" "1" "large send: a regex-free term warns"
 eq "$($JI -r --chunk 1000 -e '/zzz/' -e owl "$B" 2>&1 >/dev/null | grep -c "$W" || true)" "1" "large send: a regex in another OR term does not narrow this one"
 eq "$(cd "$B" && $GS --chunk 1000 -e owl 2>&1 >/dev/null | grep -c '^sys1grep: sending 10,001 of 10,001 lines' || true)" "1" "large send: git sys1grep warns too"

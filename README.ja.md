@@ -173,8 +173,8 @@ Jev に送る行が増えるほど、費用も時間もかかります。いち�
   違う行をまとめて、テンプレートごとに 1 行だけ判定します。`auto`/`always`/`never`、当面は既定で off。
   `--dedup=auto` が割に合うときはヒントを出します。
 - **払う前に確かめる。** `--dry-run` は何も送らず、この検索が使う設定、検索するファイル、ファイルごとの
-  送る行数、各リクエストとその質問を表示します。最後の行には入力トークン数と、TypeSafe 本体なら料金の
-  見積もりが出ます（`~3178 input tokens, ~$0.000133`。誤差 1 割程度）。`-i` は同じ集計を端末に出し、
+  送る行数、各リクエストとその質問を表示します。最後の行には入力トークン数と、Jev の定価での料金の
+  見積もりが出ます（`~3178 input tokens, ~$0.000133`。誤差 1 割程度。別の URL では `at TypeSafe's list price` が付きます）。`-i` は同じ集計を端末に出し、
   `y` と答えたときだけ送ります。
   リクエストの本体を送る前に、まず対象のサイズ（`--max-filesize`、既定 10M）を計測し、超えるものは
   rg の `--max-filesize` と同じく無条件に飛ばして stderr に名前を出します（`-y` は効きません）。`.gz` は
@@ -298,7 +298,9 @@ SYS1GREP_URL=https://ai-gateway.vercel.sh/typesafe/v1/systemone SYS1GREP_MODEL=t
 SYS1GREP_URL=http://localhost:8000/v1/systemone sys1grep -e ...
 ```
 
-集計行には、エンドポイントが返した費用（`usage.cost`）を出します。TypeSafe 本体の場合は定価での推定を `~` 付きで出します。
+sys1grep が出す価格（`--dry-run`、大量送信の警告、`--max-cost` の質問、集計行）は、エンドポイントが返した費用（`usage.cost`）か、
+返さなければ TypeSafe の定価での推定で、後者には `~` を付けます。別の URL のときは `at TypeSafe's list price` と添えるので、
+ローカルのモデルでは、実際に払う額ではなく、有料のモデルならいくらかかるかが出ます。
 
 ソースから使うなら `git clone https://github.com/uehaj/sys1grep.git && cd sys1grep && npm install -g .`、
 またはそのまま `node sys1grep.mjs ...` で動きます。
