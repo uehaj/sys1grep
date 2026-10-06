@@ -271,7 +271,7 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
                command line, then each file searched (units, and how many would be sent) and each request
                with its questions, grouped by wording (line ids read Lnnn). The key's value never prints.
                The --dedup and --unit=sentence-by-jev questions are answered no, so their counts are an estimate.
-               The last line estimates the input tokens and the price at Jev's list price (~, within about 10%; another URL says so)
+               The last line estimates the input tokens and the price (~, within about 10%; --max-cost says whose)
   --verbose    print the same to stderr while searching, and the summary line even when not a terminal
   -i, --interactive  first show what --dry-run would send (files, lines, requests) and ask on the
                terminal; search only on y. Nothing is sent before the answer; no terminal is an error
@@ -285,7 +285,8 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
                from their content too. a .gz is
                sized decompressed (zlib stops at the limit). -g's commits stay out of this: each is already bounded by -M
                when sent
-  --max-cost=USD  the input tokens about to be sent are estimated and priced; over this (default 1) the
+  --max-cost=USD  the input tokens about to be sent are estimated and priced (a local URL is free; jev-latest 0.042,
+               clef 0.24, clef-flash 0.09 USD per M tokens; any other model as Jev); over this (default 1) the
                run asks to continue, on the terminal. No terminal and the limit exceeded is exit 2,
                naming the option that would let it through; -q does not change this (scripts pass -y).
                -i already asks unconditionally and earlier, so this does not ask again
@@ -534,7 +535,7 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                検索するファイル (単位の数と送る数) と各リクエストの質問を表示する (質問は文面ごとにまとめて
                数え、行の ID は Lnnn と表示)。キーの値は表示しない。--dedup と --unit=sentence-by-jev の事前の問い合わせは
                no と答えたものとして数えるので、その場合の数は目安。最後の行に
-               入力トークン数と、Jev の定価での料金の見積もりを出す (~ 付き、誤差 1 割程度。別の URL では、そう添える)
+               入力トークン数と料金の見積もりを出す (~ 付き、誤差 1 割程度。誰の価格かは --max-cost の項)
   --verbose    同じ表示を検索しながら stderr に出す。端末でなくても最後の集計行を出す
   -i, --interactive  まず --dry-run と同じ内容 (ファイル・行数・リクエスト数) を見せて端末で聞き、
                y のときだけ検索する。答えるまで何も送らない。端末が無ければエラー
@@ -546,7 +547,8 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                標準入力は読んでから計測し、超えていれば同じく飛ばす。--cached / <tree>: の対象は blob
                で、その内容から計測する。.gz は展開後の大きさで計測する (上限で展開を止める)。
                -g のコミットはここに含まれない (送るときに -M ですでに上限がある)
-  --max-cost=USD  送る予定の入力トークンを見積もって値段を出す。これ (既定 1) を超えたら端末で続けるか
+  --max-cost=USD  送る予定の入力トークンを見積もって値段を出す (ローカル URL は無料、jev-latest 0.042、clef 0.24、
+               clef-flash 0.09 USD/M トークン、他のモデルは Jev と同じ)。これ (既定 1) を超えたら端末で続けるか
                聞く。端末が無く上限を超えていれば終了コード 2 で、どのオプションを緩めれば通るかを言う。
                -q でも変わらない (スクリプトからは -y)。
                -i は無条件かつこれより前に聞くので、二重には聞かない
@@ -691,12 +693,19 @@ const fillPart = (part, vars) => part.replace(/\{\{(\w+)\}\}/g, (m, k) => (Objec
 
 const customUrl = opt['sys1-url'] || SYS1GREP_URL;
 const apiUrl = customUrl || 'https://api.typesafe.ai/v1/systemone';
-// Every price shown is Jev's list price unless the endpoint reports its own cost (usage.cost); with another URL it says so.
-const listTag = customUrl ? " at TypeSafe's list price" : '';
 const apiHost = (() => { try { return new URL(apiUrl).host; } catch { die(`not a URL: ${apiUrl} (--sys1-url / SYS1GREP_URL)`); } })();
 const model = opt['sys1-model'] || SYS1GREP_MODEL || 'jev-latest';
+// The price shown and checked by --max-cost (#174), USD per M input tokens, unless the endpoint reports its own cost
+// (usage.cost): a local URL is free, a model in PRICES has its own, anything else is Jev's list price. The host as typed
+// decides locality, with no DNS lookup, and only for a URL the user gave (SYS1GREP_URL / --sys1-url).
+const PRICES = { 'jev-latest': 0.042, clef: 0.24, 'clef-flash': 0.09 };
+const LOCAL_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
+const localUrl = !!customUrl && LOCAL_HOST.test(apiHost);
+const pricePerM = localUrl ? 0 : Object.hasOwn(PRICES, model) ? PRICES[model] : PRICES['jev-latest'];
+const priceTag = localUrl ? ' (local URL, free)' : !customUrl ? ''
+  : Object.hasOwn(PRICES, model) && model !== 'jev-latest' ? ` at ${model}'s list price` : " at TypeSafe's list price";
 const credential = opt['sys1-api-key'] || envAPI_KEY.value;
-if (credential && new URL(apiUrl).protocol === 'http:' && !/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(apiHost))
+if (credential && new URL(apiUrl).protocol === 'http:' && !LOCAL_HOST.test(apiHost))
   console.error(`sys1grep: warning: the API key goes to ${apiHost} over plain http`);
 // --dry-run prints the files and the requests that would be sent, to stdout, and sends nothing. --verbose prints
 // the same to stderr while searching. -q's early exits would cut the list short, so --dry-run turns -q off.
@@ -2074,19 +2083,18 @@ function guardCost(chunks, asks, terms) {
     return { bytes: t.bytes + Buffer.byteLength(body), cjk: t.cjk + cjkBytesOf(body) };
   }, { bytes: sentBytes, cjk: sentCjkBytes });
   const estTokens = estimateTokens(sentRequests + chunks.length, bits.bytes, bits.cjk);
-  // Every price shown, --max-cost's included, is TypeSafe's list price even for a custom endpoint
-  // (OpenRouter, a local server): a wrong number the guard can act on beats none it cannot (#58's open question).
-  // #125 review (item 4): say so in the question itself, so a custom endpoint's own price is never mistaken for it.
-  const estPrice = (estTokens * 0.042) / 1e6;
+  // pricePerM (the owner's decision of 2026-10-04, replacing item 4 of 2026-09-27): a local URL is free, a model of
+  // PRICES has its own price, anything else Jev's. For another URL the question says whose price it is (priceTag).
+  const estPrice = (estTokens * pricePerM) / 1e6;
   const meaning = wide && wide.find(lit => lit.kind === 'm').text;
   if (meaning) {
     const short = meaning.length > 40 ? `${meaning.slice(0, 40).replace(/\s+\S*$/, '')}…` : meaning;
-    const cost = `~${new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(estTokens)} input tokens, ~$${estPrice.toFixed(2)}${listTag}`;
+    const cost = `~${new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(estTokens)} input tokens, ~$${estPrice.toFixed(2)}${priceTag}`;
     const msg = `sys1grep: sending ${units.toLocaleString('en-US')} of ${totalUnits.toLocaleString('en-US')} ${unitName} from ${read.size.toLocaleString('en-US')} file${read.size === 1 ? '' : 's'} (${cost}); the term "${safe(short)}" has no regex to narrow it. Add -a '/RE/' to it, or --include / --changed-within, or --dry-run to see the requests`;
     if (!warned.includes(msg)) { console.error(msg); warned.push(msg); }
   }
   if (opt.yes) return;
-  const at = listTag + (customUrl ? ' (SYS1GREP_URL is another endpoint)' : '');
+  const at = priceTag + (customUrl && !localUrl ? ' (SYS1GREP_URL is another endpoint)' : '');
   if (estPrice > MAX_COST) askToContinue(`sys1grep: about ${estTokens.toLocaleString('en-US')} input tokens, ~$${estPrice.toFixed(2)}${at}  (--max-cost ${MAX_COST})`);
 }
 guardCost(chunks, asksByUnit, starting);
@@ -2474,10 +2482,10 @@ if (summarizer && !dry && matched && pipedBytes > SUMMARY_MAX) {
 // Summary only when interactive; grep prints nothing to stderr when scripted.
 if (dry) {
   const assumed = [willFold && `--dedup=${opt.dedup}`, opt.unit === 'sentence-by-jev' && '--unit=sentence-by-jev'].filter(Boolean);
-  const tokens = estimateTokens(traced, tracedBytes, tracedCjkBytes), price = `, ~$${(tokens * 0.042 / 1e6).toFixed(6)}${listTag}`;
+  const tokens = estimateTokens(traced, tracedBytes, tracedCjkBytes), price = `, ~$${(tokens * pricePerM / 1e6).toFixed(6)}${priceTag}`;
   // #125 review: the size guard is gone (an oversized file is skipped outright above, not asked about); --dry-run
   // and -i show only the cost guard's verdict here, consistent with what a real run would ask.
-  const guard = (tokens * 0.042) / 1e6 > MAX_COST ? `; over --max-cost ${MAX_COST}, would ask` : '';
+  const guard = (tokens * pricePerM) / 1e6 > MAX_COST ? `; over --max-cost ${MAX_COST}, would ask` : '';
   logPlan(`dry run: ${traced} request${traced === 1 ? '' : 's'}, ${sent.length} of ${totalUnits} ${unitName} to send, ${tracedQuestions} questions, ${tracedChars} chars, ~${tokens} input tokens${price}; nothing sent${assumed.length ? ` (${assumed.join(' and ')} questions assumed no)` : ''}${guard}`);
 } else if ((process.stderr.isTTY || opt.verbose) && !opt.quiet) {
   // #143: dedup off by default until real-run stats say auto should be it; meanwhile a run that would have paid
@@ -2485,9 +2493,9 @@ if (dry) {
   if (opt.dedup === 'never' && dedupEstimate?.pays) {
     console.error(`sys1grep: ${dedupEstimate.units} units fold to at most ${dedupEstimate.templates} templates; --dedup=auto would save ~${dedupEstimate.requests} requests (~${kify(dedupEstimate.saved)} tokens)`);
   }
-  // The API's own usage.cost when reported (OpenRouter does); else an estimate at Jev's list price, tagged for another URL.
-  const perToken = usedCost > 0 && usedTokens > 0 ? usedCost / usedTokens : 0.042 / 1e6;
-  const cost = usedCost > 0 ? `, $${usedCost.toFixed(6)}` : usedTokens > 0 ? `, ~$${(usedTokens * perToken).toFixed(6)}${listTag}` : '';
+  // The API's own usage.cost when reported (OpenRouter does); else an estimate at pricePerM (see the block after `model`), tagged for another URL.
+  const perToken = usedCost > 0 && usedTokens > 0 ? usedCost / usedTokens : pricePerM / 1e6;
+  const cost = usedCost > 0 ? `, $${usedCost.toFixed(6)}` : usedTokens > 0 ? `, ~$${(usedTokens * perToken).toFixed(6)}${priceTag}` : '';
   // --dedup's savings: what the folded units would have cost as requests of their own (estimated, #92's fit), less
   // what its questions did cost (reported). A net figure: on prose, which barely folds, it can come out negative.
   let folded = '';

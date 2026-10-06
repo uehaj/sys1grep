@@ -96,7 +96,8 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   (`sys1grep: big.log: skipped, 25 MB is over --max-filesize=10M`), named on stderr, and `-y` does not affect it
   (a named file over the limit is skipped too). Separately, the input about to be sent (including the setup
   requests above, if any ran) is priced (`--max-cost`, default 1 USD) and asks to continue on the terminal if it
-  is over; a custom `SYS1GREP_URL` is still priced at TypeSafe's list price, and the question says so.
+  is over; the price is Jev's unless the URL is local or the model has its own price (see Changed), and the
+  question says whose.
   `-y`/`--yes` answers that question yes without asking, and without a terminal a limit exceeded is exit 2.
   `-i` already asks unconditionally and earlier, so this does not ask again; `--dry-run` and `-i` show the same
   verdict. `-M`/`--max-columns` (default 2000, 8000 with `-z`) is unchanged from before this PR: it bounds only
@@ -201,6 +202,13 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   (units, templates, requests, tokens) for every `--dedup` value.
 
 ### Changed
+- The price shown and checked by `--max-cost` (`--dry-run`, the large-send warning, the question, the summary line)
+  depends on the URL and the model: a local URL (`localhost`, `127.0.0.1`, `[::1]`, by the host as typed, only for a
+  URL you set) is free, so `--max-cost` asks about nothing there and no longer stops a run without a terminal; a
+  model in the table is priced at its own price (`jev-latest` 0.042, `clef` 0.24, `clef-flash` 0.09 USD per M input
+  tokens); any other model at Jev's 0.042. For another URL the price says whose it is (`at TypeSafe's list price`,
+  `at clef's list price`, `(local URL, free)`). Before, a custom URL was priced at Jev's list price whatever it was
+  (the owner's decision of 2026-09-27, replaced on 2026-10-04). An endpoint that reports `usage.cost` still shows that.
 - `--dedup` takes `auto`, `always` or `never` (#143); a bare `--dedup` is `--dedup=always`, unchanged from
   before. **Default is `never` for now**, kept off until real-run stats say `auto` should be the default; a
   run that would have paid to fold prints one stderr hint naming `--dedup=auto` (not with `-q`, gated like the

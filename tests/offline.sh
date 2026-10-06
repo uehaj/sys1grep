@@ -21,6 +21,8 @@ base="http://127.0.0.1:$(cat "$tmp/port")"
 # No key from the environment, and a HOME and cwd without .env, so nothing real is read or sent
 E="env -u SYS1GREP_API_KEY -u SYS1GREP_TEMPLATE -u SEMGREP_API_KEY -u TYPESAFE_API_KEY -u SYS1GREP_MODEL -u SEMGREP_MODEL -u SEMGREP_URL -u SEMGREP_SUMMARIZER -u SEMGREP_SUMMARIZER_MODEL -u SYS1GREP_SUMMARIZER_API_KEY -u SEMGREP_SUMMARIZER_API_KEY -u OLLAMA_HOST -u NO_COLOR -u LC_ALL -u LC_MESSAGES HOME=$tmp SYS1GREP_OPTS="
 J="$E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs"
+# JN: the same fake by a host the price rule does not count as local (0.0.0.0), so a price is shown and --max-cost can ask
+JN="$E SYS1GREP_URL=http://0.0.0.0:${base##*:}/v1 node ../sys1grep.mjs"
 stat() { curl -s "$base" | node -pe "JSON.parse(require('fs').readFileSync(0)).$1"; }
 reset() { curl -s "$base/reset" >/dev/null; }
 nums() { cut -d: -f1 | tr '\n' ' '; }
@@ -188,20 +190,21 @@ echo "$out" | grep -q "^sys1grep: file $F: 8 lines, 7 to send" || fail "--dry-ru
 echo "$out" | grep -q '4× Does line Lnnn match the meaning: "cat"?' || fail "--dry-run groups questions"
 code 0 "--dry-run, no match" -- $J --dry-run -e nothing "$F"
 reset; eq "$($J --dry-run -q -v cat "$F" | tail -1 | cut -d, -f1)" "sys1grep: dry run: 1 request" "--dry-run ignores -q"
-$J --dry-run -e cat "$F" | tail -1 | grep -Eq " chars, ~[0-9]+ input tokens, ~\\\$0\\.[0-9]{6} at TypeSafe's list price; nothing sent\$" || fail "--dry-run estimates tokens and the price, at TypeSafe's list price, for SYS1GREP_URL"
+$JN --dry-run -e cat "$F" | tail -1 | grep -Eq " chars, ~[0-9]+ input tokens, ~\\\$0\\.[0-9]{6} at TypeSafe's list price; nothing sent\$" || fail "--dry-run estimates tokens and the price, at TypeSafe's list price, for SYS1GREP_URL"
 $E SYS1GREP_API_KEY=unused node ../sys1grep.mjs --dry-run -e cat "$F" | tail -1 | grep -Eq ' chars, ~[0-9]+ input tokens, ~\$0\.[0-9]{6}; nothing sent$' || fail "--dry-run estimates the price for TypeSafe"
 reset; eq "$($J --verbose -n -e cat "$F" 2>/dev/null | nums)" "1 4 " "--verbose keeps stdout"
 eq "$(stat count)" "1" "--verbose sends"
 eq "$($J --verbose -e cat "$F" 2>&1 >/dev/null | grep -c '^sys1grep: request 1 \[judge\]')" "1" "--verbose on stderr"
 # The summary line says what its numbers are (#91); its total counts every line read, also those a regex left out (#79)
-eq "$($J --verbose -e cat "$F" 2>&1 >/dev/null | tail -1)" "2 of 8 lines matched; 7 sent to Jev in 1 request, 1 input token, ~\$0.000000 at TypeSafe's list price" "summary line"
+eq "$($J --verbose -e cat "$F" 2>&1 >/dev/null | tail -1)" "2 of 8 lines matched; 7 sent to Jev in 1 request, 1 input token, ~\$0.000000 (local URL, free)" "summary line"
+eq "$($JN --verbose -e cat "$F" 2>&1 >/dev/null | tail -1)" "2 of 8 lines matched; 7 sent to Jev in 1 request, 1 input token, ~\$0.000000 at TypeSafe's list price" "summary line, a non-local custom URL"
 printf 'cat @nousage\ndog\n' >"$tmp/nu.txt"
 eq "$($J --verbose -c -e cat "$tmp/nu.txt" 2>&1 >/dev/null | tail -1)" "1 of 2 lines matched; 2 sent to Jev in 1 request, 0 input tokens" "summary line: an endpoint that reports no usage shows no price"
 eq "$($J --verbose -e /cat/ "$F" 2>&1 >/dev/null | tail -1)" "2 of 8 lines matched; nothing sent" "summary line, regex only"
 # stderr whose reader quit: what cannot be said is dropped (as console.error drops it) and the exit status stands
 ( $J --verbose -e /cat/ "$F" 2>&1 >/dev/null && r=0 || r=$?; echo $r >"$tmp/rc" ) | true; eq "$(cat "$tmp/rc")" "0" "--verbose with stderr closed"
-eq "$($J --verbose -e /dog/ -a cat "$F" 2>&1 >/dev/null | tail -1)" "1 of 8 lines matched; 2 sent to Jev in 1 request, 1 input token, ~\$0.000000 at TypeSafe's list price" "summary line counts the lines a regex left out"
-$J --verbose --dedup -e cat "$F" 2>&1 >/dev/null | tail -1 | grep -Eq '^2 of 8 lines matched; [0-9]+ sent to Jev \([0-9]+ folded by --dedup, ~-?[0-9]+ input tokens / ~\$-?[0-9]+\.[0-9]{6} saved, -?[0-9]+%\) in 2 requests, 2 input tokens, ~\$[0-9]+\.[0-9]{6} at TypeSafe'"'"'s list price$' || fail "summary line with --dedup"
+eq "$($J --verbose -e /dog/ -a cat "$F" 2>&1 >/dev/null | tail -1)" "1 of 8 lines matched; 2 sent to Jev in 1 request, 1 input token, ~\$0.000000 (local URL, free)" "summary line counts the lines a regex left out"
+$J --verbose --dedup -e cat "$F" 2>&1 >/dev/null | tail -1 | grep -Eq '^2 of 8 lines matched; [0-9]+ sent to Jev \([0-9]+ folded by --dedup, ~-?[0-9]+ input tokens / ~\$-?[0-9]+\.[0-9]{6} saved, -?[0-9]+%\) in 2 requests, 2 input tokens, ~\$[0-9]+\.[0-9]{6} \(local URL, free\)$' || fail "summary line with --dedup"
 $J --dry-run -e /dog/ -a cat "$F" | tail -1 | grep -q ', 2 of 8 lines to send,' || fail "--dry-run counts the lines a regex left out"
 
 # -j: requests in flight at once (each takes 30ms at the fake)
@@ -551,8 +554,8 @@ code 2 "--edges: no such file" -- $J --edges="$tmp/none" -e alpha --step-to delt
 code 2 "--step-to given twice" -- $J -e alpha --step-to delta --step-to gamma "$tmp/e.txt"
 eq "$($J -e alpha --step-to delta --step-to gamma "$tmp/e.txt" 2>&1 | head -1)" "sys1grep: --step-to cannot be given twice: only one step is supported" "--step-to given twice: the message"
 # --max-cost counts the run: the end's requests are asked about with what the start already sent (no terminal: exit 2)
-eq "$(notty $J -e 'a comment' --step-to 'raised here' --max-cost 0.00005 "$C" 2>&1 </dev/null | grep -c 'about 1,')" "1" "--max-cost: start and end together"
-code 0 "--max-cost: each alone under it" -- $J -e 'a comment' --step-to 'raised here' --max-cost 0.00008 "$C"
+eq "$(notty $JN -e 'a comment' --step-to 'raised here' --max-cost 0.00005 "$C" 2>&1 </dev/null | grep -c 'about 1,')" "1" "--max-cost: start and end together"
+code 0 "--max-cost: each alone under it" -- $JN -e 'a comment' --step-to 'raised here' --max-cost 0.00008 "$C"
 # --dry-run: every answer is 0, so it walks from every unit the start expression could hold for, a bound
 out=$($J --dry-run -e 'a comment' --step-to 'raised here' "$C")
 case $out in *'walk (a bound: every unit the start expression could hold for starts): 6 at hop 0; stopped: no new unit'*'[step-to]'*'dry run: 2 requests, 6 of 6 functions'*) ;; *) fail "--dry-run bound: $out" ;; esac
@@ -700,7 +703,7 @@ printf 'cat local\n' >"$GC/base.txt"; (cd "$GC" && git commit -qam local) # a lo
 eq "$(cd "$GC" && $GS -n -e cat '@{u}' -- base.txt)" "@{u}:base.txt:1:cat" "#50: @{u}: the name as typed, the upstream's tree, not the local commit"
 
 # -r leaves out what git ignores; a file or directory named on the command line is searched even so
-I="$tmp/ign" JI="$E SYS1GREP_URL=$base/v1 node $SG"
+I="$tmp/ign" JI="$E SYS1GREP_URL=$base/v1 node $SG" JIN="$E SYS1GREP_URL=http://0.0.0.0:${base##*:}/v1 node $SG"
 mkdir -p "$I/dist/sub" "$I/src/build"
 for f in a.txt x.log dist/d.txt dist/sub/e.txt src/s.txt src/t.log src/build/b.txt; do printf 'cat\n' >"$I/$f"; done
 printf 'dist/\n*.log\nbuild/\n' >"$I/.gitignore"
@@ -1182,22 +1185,37 @@ sh -c "$J --max-filesize 10K -e cat < '$tmp/huge.txt'" 2>&1 >/dev/null | grep -q
 reset; eq "$(sh -c "$J -n -e cat < '$F'" | nums)" "1 4 " "stdin under --max-filesize is still searched"
 # --max-cost 0: any estimated price is over it, so even ordinary input asks; --max-filesize's own skip above never
 # asks, so a run now shows at most this one question (item 8, now moot: see the PR body)
-reset; code 2 "--max-cost 0, no terminal" -- notty sh -c "$J --max-cost 0 -e cat '$F' </dev/null"
-out=$(notty $J --max-cost 0 -e cat "$F" </dev/null 2>&1 >/dev/null) || true
+reset; code 2 "--max-cost 0, no terminal" -- notty sh -c "$JN --max-cost 0 -e cat '$F' </dev/null"
+out=$(notty $JN --max-cost 0 -e cat "$F" </dev/null 2>&1 >/dev/null) || true
 echo "$out" | grep -q -- 'input tokens.*--max-cost 0' || fail "the message names --max-cost: $out"
-# item 4 (owner 2026-09-27): --max-cost keeps pricing at TypeSafe's list price even for a custom endpoint (every
-# offline test's own SYS1GREP_URL counts as one), and now says so in the question
+# owner 2026-10-04 (replacing item 4 of 2026-09-27): --max-cost prices a local URL at 0, a model of the price table at its
+# own price, anything else at Jev's list price; for another URL the question says which (JN is not a local host)
 echo "$out" | grep -q "at TypeSafe's list price (SYS1GREP_URL is another endpoint)" || fail "the question says it priced at TypeSafe's list price for the custom endpoint: $out"
-reset; eq "$($J -y --max-cost 0 -n -e cat "$F" | nums)" "1 4 " "-y bypasses --max-cost too"
+reset; eq "$($JN -y --max-cost 0 -n -e cat "$F" | nums)" "1 4 " "-y bypasses --max-cost too"
+# a local URL is free (the host as typed, no DNS): no price to ask about, even with --max-cost 0 and no terminal
+reset; code 0 "--max-cost 0 on a local URL: free, no question" -- notty sh -c "$J --max-cost 0 -e cat '$F' </dev/null"
+dry() { $E node ../sys1grep.mjs --dry-run "$@" -e cat "$F" | tail -1; }
+for u in "http://localhost:1/v1" "http://[::1]:1/v1" "http://127.0.0.1:1/v1"; do
+  dry --sys1-url="$u" | grep -q ', ~\$0\.000000 (local URL, free); nothing sent$' || fail "$u is a local URL: free"
+done
+for u in "http://10.0.0.1:1/v1" "http://0.0.0.0:1/v1" "http://127.0.0.2:1/v1" "http://localhost.example.com:1/v1"; do
+  dry --sys1-url="$u" | grep -q ", ~\$0\.0000[0-9][0-9] at TypeSafe's list price; nothing sent\$" || fail "$u is not a local URL: Jev's list price"
+done
+# the price table: clef 0.24 and clef-flash 0.09 against jev-latest 0.042 (ratios 5.7 and 2.1), an unknown model at Jev's
+price() { dry --sys1-url=http://10.0.0.1:1/v1 --sys1-model="$1" | grep -o '~\$0\.[0-9]*' | tr -d '~$'; }
+a=$(price jev-latest); c=$(price clef); f=$(price clef-flash); x=$(price no-such-model)
+awk "BEGIN{exit !($c / $a > 5.5 && $c / $a < 5.9 && $f / $a > 2.0 && $f / $a < 2.3)}" || fail "price table: jev-latest=$a clef=$c clef-flash=$f"
+eq "$x" "$a" "an unknown model is priced as jev-latest"
+dry --sys1-url=http://10.0.0.1:1/v1 --sys1-model=clef | grep -q "at clef's list price; nothing sent\$" || fail "a model of the table says whose price it is"
 # -i already asks unconditionally, before anything is sent: the guard above does not ask a second time
-reset; out=$(asking "$JI -i --max-cost 0 -l -e cat '$P/a.md'" y)
+reset; out=$(asking "$JIN -i --max-cost 0 -l -e cat '$P/a.md'" y)
 eq "$(printf '%s\n' "$out" | grep -c '\[y/N\]')" "1" "-i and the cost guard together: one question, not two"
 # --dry-run and -i show the same verdict the cost guard would ask about; the size guard no longer asks, so it has
 # nothing left to show in this line (the skip above already told the real story, per file)
 out=$($J --dry-run --max-filesize 10K -e cat "$tmp/huge.txt" 2>&1)
 case "$out" in *'large files:'*) fail "--dry-run no longer shows a size-guard verdict: $out" ;; esac
 echo "$out" | grep -q -- "$tmp/huge.txt: skipped, .* is over --max-filesize=10K" || fail "--dry-run still shows the file being skipped, like a real run: $out"
-$J --dry-run --max-cost 0 -e cat "$F" | grep -q 'over --max-cost 0, would ask' || fail "--dry-run shows the cost guard's verdict"
+$JN --dry-run --max-cost 0 -e cat "$F" | grep -q 'over --max-cost 0, would ask' || fail "--dry-run shows the cost guard's verdict"
 # -M and --max-filesize/--max-cost/-y all take effect from SYS1GREP_OPTS too, not just the command line
 reset; eq "$($E SYS1GREP_URL=$base/v1 SYS1GREP_OPTS='--max-columns 3000' node ../sys1grep.mjs -n -e cat "$tmp/long.txt" | nums)" "1 2 " "--max-columns in SYS1GREP_OPTS"
 reset; code 1 "--max-filesize, --max-cost and -y in SYS1GREP_OPTS take effect" -- $E SYS1GREP_URL=$base/v1 SYS1GREP_OPTS='--max-filesize 10K --max-cost 0 -y' node ../sys1grep.mjs -e cat "$tmp/huge.txt" </dev/null
@@ -1381,7 +1399,7 @@ echo "$out" | grep -qF -- '-M 3000 (SYS1GREP_OPTS), --max-filesize 5M (SYS1GREP_
 $J --dry-run -z -e cat "$F" | grep -q '^sys1grep: options: .*, -M 8000, ' || fail "options: -M's default with -z"
 # -i's preview passes #58's lines: the options line with the limits, and the cost guard's verdict (the size guard
 # no longer has one to show: an oversized file is skipped, not asked about, before -i's own preview even runs)
-reset; out=$(asking "$JI -i --max-cost 0 -l -e cat '$F'" n)
+reset; out=$(asking "$JIN -i --max-cost 0 -l -e cat '$F'" n)
 eq "$(stat count)" "0" "-i with the guard's verdict, n: nothing sent"
 echo "$out" | grep -q '^sys1grep: options: .*--max-cost 0' || fail "-i shows the limits in the options line: $out"
 echo "$out" | grep -q 'over --max-cost 0, would ask' || fail "-i shows the cost guard's verdict: $out"
@@ -1454,12 +1472,12 @@ B="$tmp/big"; mkdir -p "$B"
 seq 1 5000 | sed 's/^/row /' >"$B/a.txt"; seq 1 5001 | sed 's/^/row /' >"$B/b.txt"
 (cd "$B" && git init -q && git add a.txt b.txt)
 W="^sys1grep: sending 10,001 of 10,001 lines from 2 files (~[0-9.]*[KM]* input tokens, ~\\\$[0-9.]* at TypeSafe's list price); the term \"owl\" has no regex to narrow it. Add -a '/RE/' to it, or --include / --changed-within, or --dry-run to see the requests\$"
-eq "$($JI -r --chunk 1000 -e owl "$B" 2>&1 >/dev/null | grep -c "$W" || true)" "1" "large send: a regex-free term warns"
-eq "$($JI -r --chunk 1000 -e '/zzz/' -e owl "$B" 2>&1 >/dev/null | grep -c "$W" || true)" "1" "large send: a regex in another OR term does not narrow this one"
+eq "$($JIN -r --chunk 1000 -e owl "$B" 2>&1 >/dev/null | grep -c "$W" || true)" "1" "large send: a regex-free term warns"
+eq "$($JIN -r --chunk 1000 -e '/zzz/' -e owl "$B" 2>&1 >/dev/null | grep -c "$W" || true)" "1" "large send: a regex in another OR term does not narrow this one"
 eq "$(cd "$B" && $GS --chunk 1000 -e owl 2>&1 >/dev/null | grep -c '^sys1grep: sending 10,001 of 10,001 lines' || true)" "1" "large send: git sys1grep warns too"
 eq "$($JI -r --chunk 1000 -e '/row/' -a owl "$B" 2>&1 >/dev/null | grep -c '^sys1grep: sending' || true)" "0" "large send: a regex in the same term narrows it, even one every line matches"
-eq "$($JI -r --chunk 1000 -e '!/zzz/' -a owl "$B" 2>&1 >/dev/null | grep -c "$W" || true)" "1" "large send: a negated regex does not narrow its term"
-eq "$($JI -r -y --chunk 1000 -e owl "$B" 2>&1 >/dev/null | grep -c "$W" || true)" "1" "large send: -y does not silence it"
+eq "$($JIN -r --chunk 1000 -e '!/zzz/' -a owl "$B" 2>&1 >/dev/null | grep -c "$W" || true)" "1" "large send: a negated regex does not narrow its term"
+eq "$($JIN -r -y --chunk 1000 -e owl "$B" 2>&1 >/dev/null | grep -c "$W" || true)" "1" "large send: -y does not silence it"
 awk -v B="$B" 'BEGIN { for (i = 1; i <= 5000; i++) printf "%s/a.txt:1\tS\t%s/a.txt:%d\tR\n", B, B, i; for (i = 1; i <= 5001; i++) printf "%s/a.txt:1\tS\t%s/b.txt:%d\tR\n", B, B, i }' >"$tmp/big-edges.tsv"
 eq "$($JI -r --chunk 1000 --edges="$tmp/big-edges.tsv" -e '/^row 1$/' --step-to owl "$B" 2>&1 >/dev/null | grep -c '^sys1grep: sending 10,001 of 10,001 lines' || true)" "1" "large send: --step-to checks the end's requests"
 eq "$($JI -r --chunk 1000 -q -e owl "$B" 2>&1 | grep -c '^sys1grep: sending' || true)" "0" "large send: -q is silent"
