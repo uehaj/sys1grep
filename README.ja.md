@@ -278,8 +278,11 @@ SYS1GREP_URL=http://localhost:8000/v1/systemone sys1grep -e ...
 受けず、2 つ目には `529 "The model is busy"` を返すので、`-j 1` にしてください（既定の `-j 8` は再試行が尽きます）。
 397 行のソースで「環境変数を読んでいる」を探すと、正解 10 行はすべて拾いましたが 34 行が当たりました
 （ゼロショット、Jev の既定しきい値で適合率は約 29%）。`-t` を上げ、`npm run judge` で確かめてください。
-sys1grep ではまだ試していないもの:
-[strands-decider](https://github.com/strands-labs/strands-decider)（`strands-decider serve`。スキーマ上は同じパスと形、ワーカーも 1 つ）、
+[strands-decider](https://github.com/strands-labs/strands-decider)（`strands-decider serve`、2B、M4 の `mps`）も試しました。
+`SYS1GREP_URL=http://127.0.0.1:8000/v1/systemone` だけで、キーなしでそのまま動きます（30 行が 2.7 秒）。2 つのリクエストが
+同時に届くとサーバーが落ちる（exit 134、Metal のアサーション）ので、こちらも `-j 1` にしてください。`npm run judge`
+（51 行、10 ケース、`-j 1`）では、既定のしきい値で適合率 0.64、再現率 0.94、F1 0.76、`-t 0.6 -T 0.45` で F1 0.81 でした。
+別の日の Jev の実行は F1 0.96 です。偽陽性が増え、Jev のしきい値は引き継げません。sys1grep ではまだ試していないもの:
 Cloudflare の Clef。1 リクエストの質問数は、どのバックエンドでも 64 までです。
 `--max-cost` は URL によらず Jev の定価で見積もるので、ローカルのモデルでは、有料のバックエンドなら
 いくらかかるかの上限であって、実際に払う額ではありません。
