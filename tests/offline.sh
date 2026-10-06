@@ -1696,13 +1696,17 @@ dark .err override comes after its base rule: ok
 main.two's one-column breakpoint tracks the card width (880px): ok
 title row: .icon h1 #gear
 Settings is a <dialog> holding the settings form, not a bottom collapsible: ok
-hint-step: role=tooltip ok, linked by aria-describedby ok
-hint-edges: role=tooltip ok, linked by aria-describedby ok
-hint-rank: role=tooltip ok, linked by aria-describedby ok
-hint-summarize: role=tooltip ok, linked by aria-describedby ok
+the dialog has an accessible name (aria-labelledby its heading): ok
+the url field is the dialog's initial focus, not the close button: ok
+hint-step: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-edges: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-rank: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-summarize: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
 hints hidden by default (source): ok
-hover reveal is mouse-only: ok
+hover reveal is scoped to the icon, not the whole row: ok
+a shown hint never blocks clicks (pointer-events: none): ok
 keyboard-focus of the icon and tap both reveal: ok
+no stray rule overrides a hint's display beyond those three: ok
 hint-step explains the walk: starts-with-Finds=true lines=4
 first start row: 3 children (select, input, delete)
 steps hidden: -e '/def main/'
@@ -1745,9 +1749,10 @@ before delete: 1 start row(s)
 after delete: 1 start row(s), value \"\"
 gear opens the dialog: open=true, url \"\" SYS1GREP_URL in the environment wins over this; model \"\" not set: the default; key \"\" not saved, not set: the default; opts \"\"
 saved; the next search uses it: url \"\" SYS1GREP_URL in the environment wins over this; model \"m7\" in effect; key \"\" saved; type to replace, in effect; opts \"-n\\n--level\\nstrict\"
-the x closes the dialog and returns focus to the gear: open=false, focused=true
+the x closes the dialog and returns focus to the gear: open=false, focused=true, body scroll restored=true
+reopening clears the previous save message: sst=\"\", body scroll locked=true
 a backdrop click closes the dialog: open=false
-hints start closed: step:undefined/closed edges:undefined/closed rank:undefined/closed summarize:undefined/closed
+hints start closed: step:false/closed edges:false/closed rank:false/closed summarize:false/closed
 tapping the rank \"?\" opens only it: step:false/closed edges:false/closed rank:true/open summarize:false/closed
 Esc closes it: step:false/closed edges:false/closed rank:false/closed summarize:false/closed
 tapping a second \"?\" closes the first: step:false/closed edges:true/open rank:false/closed summarize:false/closed

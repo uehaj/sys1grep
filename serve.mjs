@@ -316,10 +316,10 @@ fieldset.group { border: 1px solid var(--border); border-radius: 12px; padding: 
 .hintctl { position: relative; display: inline-flex; }
 .qbtn { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); background: var(--input-bg); color: var(--muted); font-size: 10px; line-height: 1; padding: 0; display: inline-flex; align-items: center; justify-content: center; cursor: help; }
 .qbtn:hover, .qbtn:focus-visible { color: var(--fg); border-color: var(--accent); }
-.hint { position: absolute; z-index: 30; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 6px; width: max-content; max-width: min(360px, calc(100vw - 32px)); padding: 8px 10px; background: var(--code); color: var(--code-fg); font-size: 11px; line-height: 1.5; white-space: pre-line; text-align: left; border-radius: 8px; box-shadow: var(--shadow); display: none; }
-@media (hover: hover) { .hintgroup:hover .hint { display: block; } }
+.hint { position: absolute; z-index: 30; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 6px; width: max-content; max-width: min(360px, calc(100vw - 32px)); padding: 8px 10px; background: var(--code); color: var(--code-fg); font-size: 11px; line-height: 1.5; white-space: pre-line; text-align: left; border-radius: 8px; box-shadow: var(--shadow); display: none; pointer-events: none; }
+@media (hover: hover) { .hintctl:hover .hint { display: block; } }
 .qbtn:focus-visible + .hint, .hintgroup.open .hint { display: block; }
-@media (max-width: 480px) { .hint { position: fixed; left: 16px; right: 16px; bottom: 16px; top: auto; transform: none; max-width: none; width: auto; } }
+@media (max-width: 1200px) { .hint { position: fixed; left: 16px; right: 16px; bottom: 16px; top: auto; transform: none; max-width: none; width: auto; } }
 .dlgbody { padding: 20px 24px; }
 dialog#sd { background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 0; }
 dialog#sd::backdrop { background: rgba(0, 0, 0, .45); }
@@ -343,16 +343,16 @@ iframe { width: 100%; border: 0; min-height: 80px; } pre.out { white-space: pre-
 <div class="title" id="title"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#fff" stroke-width="2.2"/><line x1="15.3" y1="15.3" x2="20.5" y2="20.5" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg></span><h1>sys<span class="accent">1grep</span></h1><button type="button" class="gear" id="gear" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
 <form id="f" autocomplete="off" onsubmit="return false">
 <fieldset class="group" id="startgrp"><legend class="glabel">start</legend><div id="fields"></div><button type="button" id="add" title="add a start" aria-label="add a start">+ start</button></fieldset>
-<div class="row"><div class="withhint hintgroup" id="hg-step"><label title="chain a start meaning to one or more end meanings, following the call/reference graph between them (--step-to)"><input type="checkbox" id="step" aria-describedby="hint-step"> multi-step</label><span class="hintctl"><button type="button" class="qbtn" id="q-step" aria-expanded="false" aria-label="more about multi-step">?</button><small class="hint" id="hint-step" role="tooltip">Finds the start functions, then walks calls from them to the functions that match the end.
+<div class="row"><div class="withhint hintgroup" id="hg-step"><label title="chain a start meaning to one or more end meanings, following the call/reference graph between them (--step-to)"><input type="checkbox" id="step" aria-describedby="hint-step"> multi-step</label><span class="hintctl"><button type="button" class="qbtn" id="q-step" aria-expanded="false" aria-controls="hint-step" aria-label="more about multi-step">?</button><small class="hint" id="hint-step" role="tooltip">Finds the start functions, then walks calls from them to the functions that match the end.
 A call is found by name: \`name(\` in a function's body (comments and strings left out) links to every function called \`name\`. Same-named functions all link; calls not written as \`name(\` (a function passed as a value, a call through a variable) are missed.
 Default: from a function to the functions it calls. --reverse: to the functions that call it.
 --hops limits how many calls away an end may be. For exact relations, start --serve with --edges=FILE.</small></span></div></div>
 <fieldset class="group" id="steps" hidden><legend class="glabel">end (--step-to)</legend><div id="ends"></div><button type="button" id="addend" title="add an end" aria-label="add an end">+ end</button>
-<div class="row edges hintgroup" id="hg-edges"><span class="note">edges</span><span class="hintctl"><button type="button" class="qbtn" id="q-edges" aria-expanded="false" aria-label="more about edges">?</button><small class="hint" id="hint-edges" role="tooltip">--hops limits how many hops away an end may be; --reverse searches backwards along the graph</small></span><label title="how many hops the end may be from the start, e.g. 1..2">--hops <input type="text" name="hops" size="6" aria-describedby="hint-edges"></label><label><input type="checkbox" name="reverse" aria-describedby="hint-edges"> --reverse</label></div></fieldset>
+<div class="row edges hintgroup" id="hg-edges"><span class="note">edges</span><span class="hintctl"><button type="button" class="qbtn" id="q-edges" aria-expanded="false" aria-controls="hint-edges" aria-label="more about edges">?</button><small class="hint" id="hint-edges" role="tooltip">--hops limits how many hops away an end may be; --reverse searches backwards along the graph</small></span><label title="how many hops the end may be from the start, e.g. 1..2">--hops <input type="text" name="hops" size="6" aria-describedby="hint-edges"></label><label><input type="checkbox" name="reverse" aria-describedby="hint-edges"> --reverse</label></div></fieldset>
 <div class="row">
 <button type="submit" id="go">Search</button><button type="button" id="est" title="run with --dry-run: shows the request size and estimated cost, no results">Estimate cost</button><button type="button" id="stop" disabled>Stop</button>
-<div class="withhint hintgroup" id="hg-rank"><label title="order matches by Jev's relevance score, or by plain substring match; off keeps file order">rank <select name="rank" aria-describedby="hint-rank"><option value="">off</option><option value="jev">jev</option><option value="match">match</option></select></label><span class="hintctl"><button type="button" class="qbtn" id="q-rank" aria-expanded="false" aria-label="more about rank">?</button><small class="hint" id="hint-rank" role="tooltip">off keeps file order</small></span></div>
-<div class="withhint hintgroup" id="hg-summarize"><label title="have a small model read the matches and answer in a sentence or two"><input type="checkbox" name="summarize" aria-describedby="hint-summarize"> summarize</label><span class="hintctl"><button type="button" class="qbtn" id="q-summarize" aria-expanded="false" aria-label="more about summarize">?</button><small class="hint" id="hint-summarize" role="tooltip">answers in a sentence or two after the search</small></span></div>
+<div class="withhint hintgroup" id="hg-rank"><label title="order matches by Jev's relevance score, or by plain substring match; off keeps file order">rank <select name="rank" aria-describedby="hint-rank"><option value="">off</option><option value="jev">jev</option><option value="match">match</option></select></label><span class="hintctl"><button type="button" class="qbtn" id="q-rank" aria-expanded="false" aria-controls="hint-rank" aria-label="more about rank">?</button><small class="hint" id="hint-rank" role="tooltip">off keeps file order</small></span></div>
+<div class="withhint hintgroup" id="hg-summarize"><label title="have a small model read the matches and answer in a sentence or two"><input type="checkbox" name="summarize" aria-describedby="hint-summarize"> summarize</label><span class="hintctl"><button type="button" class="qbtn" id="q-summarize" aria-expanded="false" aria-controls="hint-summarize" aria-label="more about summarize">?</button><small class="hint" id="hint-summarize" role="tooltip">answers in a sentence or two after the search</small></span></div>
 <input type="text" name="summarize-prompt" placeholder="summary instruction" style="display:none;flex:1;min-width:160px">
 </div>
 <div class="row"><pre id="cmd"></pre><button type="button" id="copy">Copy</button></div>
@@ -369,8 +369,8 @@ Default: from a function to the functions it calls. --reverse: to the functions 
 <label>--include <input name="include"></label><label>--exclude <input name="exclude"></label>
 <label>--changed-within <input name="changed-within" placeholder="2h, 7d, a date"></label><label class="chk"><input type="checkbox" name="g"> -g git log</label>
 </div></details></form>
-<dialog id="sd"><div class="dlgbody"><div class="dlghead"><h2>Settings</h2><button type="button" class="dlgx" id="sdx" aria-label="Close" title="Close">&times;</button></div><form id="sf" autocomplete="off" onsubmit="return false"><div class="grid">
-<label>url <input name="set-url" placeholder="https://api.typesafe.ai/v1/systemone"><small class="note" id="src-url"></small></label>
+<dialog id="sd" aria-labelledby="sdh"><div class="dlgbody"><div class="dlghead"><h2 id="sdh">Settings</h2><button type="button" class="dlgx" id="sdx" aria-label="Close" title="Close">&times;</button></div><form id="sf" autocomplete="off" onsubmit="return false"><div class="grid">
+<label>url <input name="set-url" placeholder="https://api.typesafe.ai/v1/systemone" autofocus><small class="note" id="src-url"></small></label>
 <label>model <input name="set-model" placeholder="jev-latest"><small class="note" id="src-model"></small></label>
 <label>key <input type="password" name="set-key" autocomplete="new-password"><small class="note" id="src-key"></small><span class="chk"><input type="checkbox" name="clear-key"> remove</span></label>
 <label>opts, one argument per line <textarea name="set-opts" rows="3"></textarea><small class="note" id="src-opts"></small></label>
@@ -514,10 +514,17 @@ const settingsReq = async (method, body) => {
   if (!r.ok) throw new Error(j.error);
   return j;
 };
-gear.onclick = () => { settingsReq('GET').then(fillSettings, e => { sst.textContent = e.message; }); sd.showModal(); };
+let bodyOverflow;
+gear.onclick = () => {
+  sst.textContent = '';
+  settingsReq('GET').then(fillSettings, e => { sst.textContent = e.message; });
+  bodyOverflow = document.body.style.overflow;
+  document.body.style.overflow = 'hidden';
+  sd.showModal();
+};
 document.getElementById('sdx').onclick = () => sd.close();
 sd.onclick = e => { if (e.target === sd) sd.close(); };
-sd.onclose = () => gear.focus();
+sd.onclose = () => { document.body.style.overflow = bodyOverflow; gear.focus(); };
 document.getElementById('save').onclick = () => {
   const p = {};
   for (const k of SFIELDS) {

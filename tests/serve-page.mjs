@@ -6,11 +6,15 @@ const U = process.argv[2], html = await (await fetch(U)).text();
 const text = el => (el.children.length ? el.children.map(text).join('') : String(el.text));
 class El {
   constructor(tag, attrs = '') {
-    Object.assign(this, { tagName: tag, children: [], style: {}, text: '', className: '', value: '', ls: {}, attrs });
+    // attrMap starts from the real HTML attributes (role, aria-*, autofocus, ...), not just what setAttribute()
+    // writes later, or a pin that reads an attribute set only in markup (e.g. the initial aria-expanded) saw undefined.
+    const attrMap = {};
+    for (const m of attrs.matchAll(/([a-zA-Z][\w-]*)(?:="([^"]*)")?/g)) attrMap[m[1]] = m[2] ?? '';
+    Object.assign(this, { tagName: tag, children: [], style: {}, text: '', className: attrMap.class ?? '', value: '', ls: {}, attrs, attrMap });
     this.hidden = /\shidden(\s|=|$)/.test(attrs);
     this.checked = /\schecked(\s|=|$)/.test(attrs);
     this.disabled = /\sdisabled(\s|=|$)/.test(attrs);
-    this.type = /\stype="([^"]+)"/.exec(attrs)?.[1];
+    this.type = attrMap.type;
   }
   append(...xs) { for (const x of xs) { x.parent = this; this.children.push(x); } }
   remove() { this.parent.children.splice(this.parent.children.indexOf(this), 1); }
@@ -18,8 +22,8 @@ class El {
   get lastChild() { return this.children.at(-1); }
   addEventListener(t, fn) { (this.ls[t] ??= []).push(fn); }
   focus() { document.activeElement = this; }
-  setAttribute(k, v) { (this.attrMap ??= {})[k] = String(v); }
-  getAttribute(k) { return this.attrMap?.[k]; }
+  setAttribute(k, v) { this.attrMap[k] = String(v); }
+  getAttribute(k) { return this.attrMap[k]; }
   get classList() {
     const self = this, names = () => self.className.split(/\s+/).filter(Boolean);
     return {
@@ -81,19 +85,40 @@ byId.f.elements = byId.sf.elements = elements;
   console.log(`title row: ${seq(byId.title.children).join(' ')}`);
   const insideSd = (() => { for (let p = byId.sf.parent; p; p = p.parent) if (p === byId.sd) return true; return false; })();
   console.log(`Settings is a <dialog> holding the settings form, not a bottom collapsible: ${byId.sd.tagName === 'dialog' && insideSd && !/<summary>Settings<\/summary>/.test(html) ? 'ok' : 'FAIL'}`);
+  console.log(`the dialog has an accessible name (aria-labelledby its heading): ${byId.sd.getAttribute('aria-labelledby') === 'sdh' && byId.sdh?.tagName === 'h2' ? 'ok' : 'FAIL'}`);
+  console.log(`the url field is the dialog's initial focus, not the close button: ${elements['set-url'].getAttribute('autofocus') !== undefined ? 'ok' : 'FAIL'}`);
   for (const n of ['step', 'edges', 'rank', 'summarize']) {
     const hasRole = new RegExp(`id="hint-${n}" role="tooltip"`).test(html), linked = new RegExp(`aria-describedby="hint-${n}"`).test(html);
-    console.log(`hint-${n}: role=tooltip ${hasRole ? 'ok' : 'FAIL'}, linked by aria-describedby ${linked ? 'ok' : 'FAIL'}`);
+    console.log(`hint-${n}: role=tooltip ${hasRole ? 'ok' : 'FAIL'}, linked by aria-describedby ${linked ? 'ok' : 'FAIL'}, aria-controls ${byId['q-' + n].getAttribute('aria-controls') === 'hint-' + n ? 'ok' : 'FAIL'}`);
   }
-  console.log(`hints hidden by default (source): ${/\.hint \{[^}]*display: none; \}/.test(html) ? 'ok' : 'FAIL'}`);
-  console.log(`hover reveal is mouse-only: ${/@media \(hover: hover\) \{ \.hintgroup:hover \.hint \{ display: block; \} \}/.test(html) ? 'ok' : 'FAIL'}`);
+  console.log(`hints hidden by default (source): ${/\.hint \{[^}]*display: none; pointer-events: none; \}/.test(html) ? 'ok' : 'FAIL'}`);
+  // the hover trigger is the icon's own small box (.hintctl), not the whole label row (.hintgroup) below which the
+  // multi-step and edges hints sit -- a row-wide trigger stayed open over the content below and (being the tooltip's
+  // own ancestor) never lost :hover while the pointer crossed it, so a click on the end field or the edges "?" never
+  // reached them (r1 review). pointer-events: none is the second line of defense: even if a future rule re-widens
+  // the trigger, the tooltip itself cannot be the elementFromPoint hit, so a click always reaches what is under it.
+  console.log(`hover reveal is scoped to the icon, not the whole row: ${/@media \(hover: hover\) \{ \.hintctl:hover \.hint \{ display: block; \} \}/.test(html) ? 'ok' : 'FAIL'}`);
+  console.log(`a shown hint never blocks clicks (pointer-events: none): ${/\.hint \{[^}]*pointer-events: none; \}/.test(html) ? 'ok' : 'FAIL'}`);
   console.log(`keyboard-focus of the icon and tap both reveal: ${/\.qbtn:focus-visible \+ \.hint, \.hintgroup\.open \.hint \{ display: block; \}/.test(html) ? 'ok' : 'FAIL'}`);
+  // mutation-provable: the three rules above are the only ones in the stylesheet that touch .hint's display. A
+  // fourth -- an unconditional override appended later, e.g. ".hintgroup .hint { display: block; }", which the
+  // string checks above do not rule out on their own -- would turn every tooltip permanently visible; stripping the
+  // three known-good rules by their exact text and then searching what is left for another .hint/display pairing
+  // catches it. Verified by injecting exactly that mutation into a scratch copy of this page: this line prints FAIL.
+  const style = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  const known = [
+    '.hint { position: absolute; z-index: 30; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 6px; width: max-content; max-width: min(360px, calc(100vw - 32px)); padding: 8px 10px; background: var(--code); color: var(--code-fg); font-size: 11px; line-height: 1.5; white-space: pre-line; text-align: left; border-radius: 8px; box-shadow: var(--shadow); display: none; pointer-events: none; }',
+    '.hintctl:hover .hint { display: block; }',
+    '.qbtn:focus-visible + .hint, .hintgroup.open .hint { display: block; }',
+  ];
+  const stripped = known.reduce((s, k) => s.split(k).join(''), style);
+  console.log(`no stray rule overrides a hint's display beyond those three: ${/\.hint\b[^{}]*\{[^{}]*display\s*:/.test(stripped) ? 'FAIL' : 'ok'}`);
   const hintStepText = /<small class="hint" id="hint-step" role="tooltip">([\s\S]*?)<\/small>/.exec(html)?.[1] ?? '';
   console.log(`hint-step explains the walk: starts-with-Finds=${hintStepText.startsWith('Finds the start functions')} lines=${hintStepText.split('\n').length}`);
 }
 const sent = [];
 const document = {
-  getElementById: id => byId[id] ?? null, createElement: t => new El(t), activeElement: null, ls: {},
+  getElementById: id => byId[id] ?? null, createElement: t => new El(t), activeElement: null, ls: {}, body: new El('body'),
   addEventListener(t, fn) { (this.ls[t] ??= []).push(fn); },
   _fire(t, e) { for (const fn of this.ls[t] ?? []) fn(e); },
 };
@@ -216,8 +241,9 @@ Object.assign(elements['set-opts'], { value: '-n\n --level \nstrict\n' });
 await byId.save.onclick();
 console.log(`${byId.sst.textContent}: ${settings()}`);
 byId.sdx.onclick();
-console.log(`the x closes the dialog and returns focus to the gear: open=${byId.sd.open}, focused=${document.activeElement === byId.gear}`);
+console.log(`the x closes the dialog and returns focus to the gear: open=${byId.sd.open}, focused=${document.activeElement === byId.gear}, body scroll restored=${document.body.style.overflow !== 'hidden'}`);
 byId.gear.onclick();
+console.log(`reopening clears the previous save message: sst="${byId.sst.textContent}", body scroll locked=${document.body.style.overflow === 'hidden'}`);
 byId.sd.onclick({ target: byId.sd }); // a click that lands on the dialog itself (the backdrop), not its content
 console.log(`a backdrop click closes the dialog: open=${byId.sd.open}`);
 
