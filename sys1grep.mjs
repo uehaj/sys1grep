@@ -2493,7 +2493,7 @@ if (dry) {
   if (opt.dedup === 'never' && dedupEstimate?.pays) {
     console.error(`sys1grep: ${dedupEstimate.units} units fold to at most ${dedupEstimate.templates} templates; --dedup=auto would save ~${dedupEstimate.requests} requests (~${kify(dedupEstimate.saved)} tokens)`);
   }
-  // The API's own usage.cost when reported (OpenRouter does); else an estimate at Jev's list price, tagged for another URL.
+  // The API's own usage.cost when reported (OpenRouter does); else an estimate at pricePerM (see the block after `model`), tagged for another URL.
   const perToken = usedCost > 0 && usedTokens > 0 ? usedCost / usedTokens : pricePerM / 1e6;
   const cost = usedCost > 0 ? `, $${usedCost.toFixed(6)}` : usedTokens > 0 ? `, ~$${(usedTokens * perToken).toFixed(6)}${priceTag}` : '';
   // --dedup's savings: what the folded units would have cost as requests of their own (estimated, #92's fit), less
