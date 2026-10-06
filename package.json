@@ -49,6 +49,7 @@
     "dedup-eval": "node tests/dedup-eval.mjs",
     "cause-eval": "node tests/cause-eval.mjs",
     "skill-eval": "bash tests/skill-eval/run.sh",
+    "serve": "node sys1grep.mjs --serve",
     "release": "sh scripts/release.sh",
     "smoke": "node --no-warnings tests/smoke.mts"
   }

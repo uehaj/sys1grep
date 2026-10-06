@@ -202,9 +202,9 @@ const fromQuery = (sp, init) => { // null when a value is out of range
 };
 
 export function serve(argv) {
-  const at = argv.findIndex(a => /^--serve(=|$)/.test(a)), port = argv[at].slice(8);
+  const isServe = a => /^--serve(=|$)/.test(a), port = argv.filter(isServe).at(-1).slice(8); // the last one's port: npm run serve adds a bare --serve
   if (port && !(/^\d+$/.test(port) && Number(port) < 65536)) throw new Error(`--serve=${port}: not a port number`);
-  const rest = argv.filter((_, i) => i !== at), dd = rest.indexOf('--');
+  const rest = argv.filter(a => !isServe(a)), dd = rest.indexOf('--');
   const before = dd < 0 ? rest : rest.slice(0, dd), after = dd < 0 ? [] : rest.slice(dd);
   // the key stays in this process (never in the page or the command shown); the summary instruction is a control, not a launch option
   const [noKey, key] = lift(before, 'sys1-api-key'), [launch, prompt] = lift(noKey, 'summarize-prompt');

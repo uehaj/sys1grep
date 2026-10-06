@@ -1778,6 +1778,16 @@ a tap elsewhere closes it: step:false/closed edges:false/closed rank:false/close
 eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '{"model":"m7","key":"k7","opts":["-n","--level","strict"]}' "--serve settings: what the panel saved"
 rm -f "$HS"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
+# two --serve (npm run serve adds one): the last one's port is used and neither reaches the child
+PORT=$(node -e "const s = require('net').createServer().listen(0, '127.0.0.1', () => { console.log(s.address().port); s.close(); })")
+$E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve --serve=$PORT "$F" >"$tmp/serve5.url" 2>/dev/null &
+serve=$!
+i=0; while [ ! -s "$tmp/serve5.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve --serve=PORT did not start"; sleep 0.05; done
+U=$(cat "$tmp/serve5.url"); BASE=${U%%\?*}; K=${U##*k=}
+case $U in http://127.0.0.1:$PORT/*) ;; *) fail "--serve --serve=PORT: the port: $U" ;; esac
+eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=" | node -pe "JSON.parse(require('fs').readFileSync(0)).text")" "cat
+cat dog" "--serve --serve=PORT: searches still run"
+kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 code 2 "--serve refuses -e" -- $J --serve -e cat "$F"
 code 2 "--serve refuses --format" -- $J --serve --format=html "$F"
 eq "$($J --serve=99999 "$F" 2>&1 | head -1 | cut -c1-30)" "sys1grep: --serve=99999: not a" "--serve: a bad port is an error"

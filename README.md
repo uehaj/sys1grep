@@ -836,6 +836,8 @@ http://127.0.0.1:51234/?k=3f9e...
 $ sys1grep --serve=8080 -y --level=strict -r src/     # a fixed port; the options given here are the page's first values
 ```
 
+From a clone, `npm run serve -- -r src/` is the same (`--` keeps npm from reading the options; `npm run serve -- --serve=8080 -r src/` fixes the port; with no target the search reads an empty stdin, so name one).
+
 The printed URL carries a token made fresh at launch (`?k=...`). Every route needs it, the page itself included: without
 it (in the query, or in a header for the page's own requests) the server answers 404 to everything, so another local
 account or process cannot read the page, its token, or a search's results merely by knowing the port.
