@@ -186,7 +186,7 @@ to the narrowest:
   now: a hint says when `--dedup=auto` would pay.
 - **Check before paying.** `--dry-run` sends nothing and prints the settings the search would run with, the
   files, how many lines each would send and every request with its questions. Its last line estimates the input
-  tokens and the price at Jev's list price (`~3178 input tokens, ~$0.000133`; within about 10%; another URL adds `at TypeSafe's list price`). `-i` shows the
+  tokens and the price (`~3178 input tokens, ~$0.000133`; within about 10%; see "Other endpoints" for whose price). `-i` shows the
   same totals on the terminal and sends only after `y`.
   Before the bulk of requests, every target is sized (`--max-filesize`, default 10M); one over it is skipped
   outright, like `rg`'s own `--max-filesize`, named on stderr (`-y` does not affect it). A `.gz` is sized
@@ -303,8 +303,12 @@ SYS1GREP_URL=http://localhost:8000/v1/systemone sys1grep -e ...
 ```
 
 Every price sys1grep shows (`--dry-run`, the large-send warning, the `--max-cost` question, the summary line) is the cost
-the endpoint reports (`usage.cost`), or else an estimate at TypeSafe's list price marked `~`; with another URL the
-estimate says `at TypeSafe's list price`, so a local model shows what a paid one would cost, not what you pay.
+the endpoint reports (`usage.cost`), or else an estimate marked `~`. The estimate's price per million input tokens: a local
+URL is free (`localhost`, `127.0.0.1` or `[::1]`, judged by the host as typed with no DNS lookup, and only for a URL you set
+with `SYS1GREP_URL` or `--sys1-url`); a model in this table has its own price, `jev-latest` 0.042, `clef` 0.24 and
+`clef-flash` 0.09 (USD); any other model is priced as Jev, 0.042. With another URL the estimate says whose price it is:
+`at TypeSafe's list price`, `at clef's list price` or `(local URL, free)`. `--max-cost` uses the same price, so it asks
+about nothing on a local URL.
 
 From source: `git clone https://github.com/uehaj/sys1grep.git && cd sys1grep && npm install -g .`,
 or run it in place with `node sys1grep.mjs ...`.
