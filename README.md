@@ -310,6 +310,23 @@ with `SYS1GREP_URL` or `--sys1-url`); a model in this table has its own price, `
 `at TypeSafe's list price`, `at clef's list price` or `(local URL, free)`. `--max-cost` uses the same price, so it asks
 about nothing on a local URL.
 
+**Local decision models.** A model that serves the same `POST /v1/systemone` can be used instead of Jev, with no key and no
+network, but both tried so far are less accurate than Jev: raise `-t`, tune with `npm run judge`, and expect more false
+positives. Both also run one request at a time, so use `-j 1`.
+
+- [Jeff](https://github.com/firelex/jeff) (`jeff-serve`, 0.8B, base v1.2, zero-shot, MLX): works with
+  `--sys1-url=http://127.0.0.1:8765/v1/systemone --sys1-model=jeff-latest`. It answers a second request at once with
+  `529 "The model is busy"`, and the default `-j 8` runs out of retries. On `npm run judge` (51 lines, 10 cases, `-j 1`)
+  precision 0.68, recall 0.61, F1 0.64 at the default thresholds and F1 0.77 at `-t 0.75 -T 0.85`, against F1 0.96 for Jev
+  (a run of another day): not a drop-in. v1.2 is a community preview; adapters do not carry across versions.
+- [strands-decider](https://github.com/strands-labs/strands-decider) (`strands-decider serve`, 2B, an M4 with `mps`):
+  `SYS1GREP_URL=http://127.0.0.1:8000/v1/systemone` with no key works as is (30 lines in 2.7 s). Two requests at once crash
+  its server (exit 134, a Metal assertion). On the same `npm run judge` set: precision 0.64, recall 0.94, F1 0.76 at the
+  default thresholds and F1 0.81 at `-t 0.6 -T 0.45`.
+- Not tried with sys1grep yet: Cloudflare's Clef.
+
+A request carries at most 64 questions for every backend.
+
 From source: `git clone https://github.com/uehaj/sys1grep.git && cd sys1grep && npm install -g .`,
 or run it in place with `node sys1grep.mjs ...`.
 
