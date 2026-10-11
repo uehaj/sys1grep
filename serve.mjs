@@ -187,7 +187,7 @@ const initOf = launch => {
 const liftAll = (args, name) => {
   const rest = [], values = [];
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === `--${name}` && i + 1 < args.length) values.push(args[++i]);
+    if (args[i] === `--${name}`) { if (i + 1 >= args.length) throw new Error(`--serve: --${name} needs KIND:TEXT (Q:a question, e:a meaning)`); values.push(args[++i]); }
     else if (args[i].startsWith(`--${name}=`)) values.push(args[i].slice(name.length + 3));
     else rest.push(args[i]);
   }
@@ -297,7 +297,7 @@ export function serve(argv) {
 
 const json = x => JSON.stringify(x).replace(/</g, '\\u003c');
 // a labelled control with its "?" hint (the same markup as rank's): the label, then the icon and its tooltip
-const hg = (name, label, text) => `<div class="withhint hintgroup" id="hg-${name}">${label}<span class="hintctl"><button type="button" class="qbtn" id="q-${name}" aria-expanded="false" aria-controls="hint-${name}" aria-label="more about ${name}">?</button><small class="hint" id="hint-${name}" role="tooltip">${text}</small></span></div>`;
+const hg = (name, label, text) => `<div class="withhint hintgroup" id="hg-${name}">${label.replace(/<(select|input)/, `<$1 aria-describedby="hint-${name}"`)}<span class="hintctl"><button type="button" class="qbtn" id="q-${name}" aria-expanded="false" aria-controls="hint-${name}" aria-label="more about ${label.replace(/<select.*?<\/select>/, '').replace(/<[^>]+>/g, '').trim()}">?</button><small class="hint" id="hint-${name}" role="tooltip">${text}</small></span></div>`;
 const page = ({ init, launch, after, token, suggest }) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark"><title>sys1grep</title>
@@ -344,6 +344,7 @@ dialog#sd::backdrop { background: rgba(0, 0, 0, .45); }
 details { margin: 6px 0; background: var(--input-bg); border-radius: 10px; } summary { cursor: pointer; color: var(--muted); padding: 8px 12px; }
 summary.dot::after { content: " \\25CF"; color: var(--link); }
 .grid { display: grid; gap: 12px 20px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); padding: 4px 12px 12px; }
+.grid .withhint { align-items: flex-start; } .grid .withhint > label { flex: 1; min-width: 0; }
 .grid label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); } .grid label.chk { flex-direction: row; align-items: center; gap: 6px; }
 .grid input:not([type=checkbox]), .grid select, .grid textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); width: 100%; font: inherit; }
 main { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin: 12px 0 4px; display: grid; gap: 16px; grid-template-columns: 1fr; } main.two { grid-template-columns: 3fr 2fr; }
@@ -405,7 +406,7 @@ const LABELS = { e: '-e meaning', a: '-a and', v: '-v and not', Q: '-Q question'
 // A close icon, not text, so the button's accessible name comes from aria-label alone, in every browser.
 const DEL_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>';
 const TIPS = {
-  Q: ['a question', 'the lines that answer this question, not the lines asking it, e.g. why did it fail'],
+  Q: ['a question', 'the lines that answer this question, not the lines asking it, e.g. why did it fail. A question is never a regex: use -e for /regex/'],
   e: ['a meaning (or /regex/)', 'lines that mean this, in any language; several -e are OR. e.g. an API key is read'],
   a: ['and this meaning', 'AND onto the term before it: both must hold on the line'],
   v: ['and not this meaning', 'AND NOT onto the term before it: this must not hold (as the first field, a bare negation)'],

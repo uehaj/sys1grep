@@ -1721,6 +1721,19 @@ hint-step: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
 hint-edges: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
 hint-rank: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
 hint-summarize: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-level: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-t: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-T: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-C: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-autoscope: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-n: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-p: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-dedup: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-unit: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-include: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-exclude: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-changed: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-g: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
 hints hidden by default (source): ok
 hover reveal is scoped to the icon, not the whole row: ok
 a shown hint never blocks clicks (pointer-events: none): ok
@@ -1728,22 +1741,23 @@ keyboard-focus of the icon and tap both reveal: ok
 no stray rule overrides a hint's display beyond those three: ok
 hint-step explains the walk: starts-with-Finds=true lines=4
 first start row: 3 children (select, input, delete)
-steps hidden: -Q '/def main/'
-x=Q:/def main/ hops=0.. reverse=0 -> 1 lines
-off, start+: steps hidden: -Q '/def main/' -a /helper/
-x=Q:/def main/|a:/helper/ hops=0.. reverse=0 -> 1 lines
-on, starts kept: steps shown: -Q '/def main/' -a /helper/ --step-to
-on, 2 starts + 2 ends: steps shown: -Q '/def main/' -a /helper/ --step-to -e '/raise /' -e '/sys\\.exit/'
-x=Q:/def main/|a:/helper/|S:|e:/raise /|e:/sys\\.exit/ hops=0.. reverse=0 -> 1 lines
+the first start field is a question (-Q) by default: ok
+steps hidden: -e '/def main/'
+x=e:/def main/ hops=0.. reverse=0 -> 1 lines
+off, start+: steps hidden: -e '/def main/' -a /helper/
+x=e:/def main/|a:/helper/ hops=0.. reverse=0 -> 1 lines
+on, starts kept: steps shown: -e '/def main/' -a /helper/ --step-to
+on, 2 starts + 2 ends: steps shown: -e '/def main/' -a /helper/ --step-to -e '/raise /' -e '/sys\\.exit/'
+x=e:/def main/|a:/helper/|S:|e:/raise /|e:/sys\\.exit/ hops=0.. reverse=0 -> 2 lines
 delete names: remove start condition 1 | remove start condition 2 | remove end condition 1 | remove end condition 2 | remove end condition 3
-steps shown: -Q '/def main/' --step-to
-steps shown: -Q '/def main/' --step-to -e '/raise /' --hops=1..2
-x=Q:/def main/|S:|e:/raise / hops=1..2 reverse=0 -> 1 lines
-addend + reverse: steps shown: -Q '/def main/' --step-to -e '/raise /' -e '/sys\\.exit/' --hops=1..2 --reverse
-x=Q:/def main/|S:|e:/raise /|e:/sys\\.exit/ hops=1..2 reverse=1 -> 1 lines
-steps hidden: -Q '/def main/'
-x=Q:/def main/ hops=1..2 reverse=0 -> 1 lines
-steps shown: -Q '/def main/' --step-to -e '/raise /' --hops=1..2
+steps shown: -e '/def main/' --step-to
+steps shown: -e '/def main/' --step-to -e '/raise /' --hops=1..2
+x=e:/def main/|S:|e:/raise / hops=1..2 reverse=0 -> 2 lines
+addend + reverse: steps shown: -e '/def main/' --step-to -e '/raise /' -e '/sys\\.exit/' --hops=1..2 --reverse
+x=e:/def main/|S:|e:/raise /|e:/sys\\.exit/ hops=1..2 reverse=1 -> 1 lines
+steps hidden: -e '/def main/'
+x=e:/def main/ hops=1..2 reverse=0 -> 1 lines
+steps shown: -e '/def main/' --step-to -e '/raise /' --hops=1..2
 on true, 2 ends, steps shown: -e '/^ *def main/' --step-to -e '/raise /' -e '/sys\\.exit/'
 on true, 1 ends, steps shown: -e '/^ *def helper/' --step-to -e '/^ *def main/' --reverse
 x=e:/^ *def helper/|S:|e:/^ *def main/ hops=0.. reverse=1 -> 2 lines
@@ -1771,11 +1785,11 @@ saved; the next search uses it: url \"\" SYS1GREP_URL in the environment wins ov
 the x closes the dialog and returns focus to the gear: open=false, focused=true, body scroll restored=true
 reopening clears the previous save message: sst=\"\", body scroll locked=true
 a backdrop click closes the dialog: open=false
-hints start closed: step:false/closed edges:false/closed rank:false/closed summarize:false/closed
-tapping the rank \"?\" opens only it: step:false/closed edges:false/closed rank:true/open summarize:false/closed
-Esc closes it: step:false/closed edges:false/closed rank:false/closed summarize:false/closed
-tapping a second \"?\" closes the first: step:false/closed edges:true/open rank:false/closed summarize:false/closed
-a tap elsewhere closes it: step:false/closed edges:false/closed rank:false/closed summarize:false/closed" "--serve: the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs), the settings dialog, and the hint tooltips"
+hints start closed: step:false/closed edges:false/closed rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed
+tapping the rank \"?\" opens only it: step:false/closed edges:false/closed rank:true/open summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed
+Esc closes it: step:false/closed edges:false/closed rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed
+tapping a second \"?\" closes the first: step:false/closed edges:true/open rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed
+a tap elsewhere closes it: step:false/closed edges:false/closed rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed" "--serve: the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs), the settings dialog, and the hint tooltips"
 eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '{"model":"m7","key":"k7","opts":["-n","--level","strict"]}' "--serve settings: what the panel saved"
 rm -f "$HS"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
@@ -1789,6 +1803,7 @@ case $U in http://127.0.0.1:$PORT/*) ;; *) fail "--serve --serve=PORT: the port:
 eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=" | node -pe "JSON.parse(require('fs').readFileSync(0)).text")" "cat
 cat dog" "--serve --serve=PORT: searches still run"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
+code 2 "--serve: --suggest without a value" -- $J --serve "$F" --suggest
 code 2 "--serve refuses -e" -- $J --serve -e cat "$F"
 code 2 "--serve refuses --format" -- $J --serve --format=html "$F"
 eq "$($J --serve=99999 "$F" 2>&1 | head -1 | cut -c1-30)" "sys1grep: --serve=99999: not a" "--serve: a bad port is an error"

@@ -3,6 +3,7 @@
 import vm from 'node:vm';
 
 const U = process.argv[2], html = await (await fetch(U)).text();
+const HINTS = [...html.matchAll(/id="hg-([\w-]+)"/g)].map(m => m[1]); // every "?" hint of the page
 const text = el => (el.children.length ? el.children.map(text).join('') : String(el.text));
 class El {
   constructor(tag, attrs = '') {
@@ -87,7 +88,7 @@ byId.f.elements = byId.sf.elements = elements;
   console.log(`Settings is a <dialog> holding the settings form, not a bottom collapsible: ${byId.sd.tagName === 'dialog' && insideSd && !/<summary>Settings<\/summary>/.test(html) ? 'ok' : 'FAIL'}`);
   console.log(`the dialog has an accessible name (aria-labelledby its heading): ${byId.sd.getAttribute('aria-labelledby') === 'sdh' && byId.sdh?.tagName === 'h2' ? 'ok' : 'FAIL'}`);
   console.log(`the url field is the dialog's initial focus, not the close button: ${elements['set-url'].getAttribute('autofocus') !== undefined ? 'ok' : 'FAIL'}`);
-  for (const n of ['step', 'edges', 'rank', 'summarize']) {
+  for (const n of HINTS) {
     const hasRole = new RegExp(`id="hint-${n}" role="tooltip"`).test(html), linked = new RegExp(`aria-describedby="hint-${n}"`).test(html);
     console.log(`hint-${n}: role=tooltip ${hasRole ? 'ok' : 'FAIL'}, linked by aria-describedby ${linked ? 'ok' : 'FAIL'}, aria-controls ${byId['q-' + n].getAttribute('aria-controls') === 'hint-' + n ? 'ok' : 'FAIL'}`);
   }
@@ -139,6 +140,8 @@ const search = async () => {
 };
 const state = () => `steps ${!byId.steps ? 'missing' : byId.steps.hidden ? 'hidden' : 'shown'}: ${byId.cmd.textContent.replace(/^sys1grep \S+ /, '')}`;
 
+console.log(`the first start field is a question (-Q) by default: ${byId.fields.children[0].firstChild.value === 'Q' ? 'ok' : 'FAIL'}`);
+byId.fields.children[0].firstChild.value = 'e'; // the walk below starts from a regex, which -Q is never
 byId.fields.children[0].children[1].value = '/def main/';
 fire();
 console.log(state());
@@ -249,7 +252,7 @@ console.log(`a backdrop click closes the dialog: open=${byId.sd.open}`);
 
 // hint tooltips: the hover/keyboard-focus reveal is pure CSS (pinned at source level above); only the tap toggle and
 // its own-group Esc-close are JS, so those are what this drives.
-const hintNames = ['step', 'edges', 'rank', 'summarize'];
+const hintNames = HINTS;
 const hintState = () => hintNames.map(n => `${n}:${byId['q-' + n].getAttribute('aria-expanded')}/${byId['hg-' + n].classList.contains('open') ? 'open' : 'closed'}`).join(' ');
 console.log(`hints start closed: ${hintState()}`);
 byId['q-rank'].onclick();
