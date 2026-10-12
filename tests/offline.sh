@@ -1754,6 +1754,14 @@ printf '{"opts":["-e","x"]}' >"$tmp/post.json"
 eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses a REFUSED flag (-e)"
 printf '{"opts":["--sys1-api-key=x"]}' >"$tmp/post.json"
 eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses --sys1-api-key (its own field)"
+# #234 (#233 review on #198): --unit=zero is -z's output shape, refused at launch; opts resolves "unit" to a plain
+# string option DENY never sees, so it slipped through until now, in either split form, and last-wins still applies
+printf '{"opts":["--unit=zero"]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ") $(field j.error <"$tmp/post.out")" "400 \"opts: --unit=zero is not allowed (it is -z's output shape, already refused there)\"" "--serve settings: opts refuses --unit=zero"
+printf '{"opts":["--unit","zero"]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses --unit zero (split)"
+printf '{"opts":["--unit=zero","--unit=line"]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "200" "--serve settings: opts accepts --unit=zero overridden by a later --unit=line (last wins, like the launch)"
 printf '{"opts":["--level","strict","-t","0.7"]}' >"$tmp/post.json"
 eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "200" "--serve settings: opts accepts a value-taking option's value"
 eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '{"key":"k9","model":"m9","opts":["--level","strict","-t","0.7"]}' "--serve settings: a refused POST (the two above) left this opts as it was"
@@ -2159,6 +2167,21 @@ eq "$(curl -s "${BASE}results?k=$K&x=e:main&rank=&n=1&unit=line" | node -pe "JSO
 eq "$(curl -s "${BASE}results?k=$K&x=e:main&rank=&n=1&unit=function" | node -pe "JSON.parse(require('fs').readFileSync(0)).text" | sed "s/$(printf '\033')\[[0-9;]*m//g" | tr '\n' '|')" "1:def main():|2:  helper()||" "--serve: the control accepts function explicitly too (the whole function, same as the launch default)"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 eq "$(node check-unit-control.mjs)" "function false true false" "--serve toArgv: a launch --unit=function is not overridden in step mode, a non-step pick still sends --unit, a step-mode pick is inert"
+eq "$(node check-details-controls.mjs)" "-e a -A 2 -B 1 --unit=sentence-by-jev -o -j 4 --max-cost=0.5 false false true" "--serve toArgv: -A/-B/-o/-j/--max-cost all reach the command with a sentence unit; -o is sentenceOnly so unit=line omits it outright; a walk leaves -A/-B/-o inert but still sends -j/--max-cost"
+section 'serve: cost guard (--max-cost)'
+# #234 (Q1, measured 2026-10-12): a search over --max-cost is refused at once (--serve has no /dev/tty to ask on),
+# naming -y and --max-cost, neither of which the page can set; Details' own --max-cost control (above) lets a later
+# search clear it, once, for that search. JN's host (0.0.0.0) is not counted as local, so --max-cost 0 always asks.
+$E SYS1GREP_URL=http://0.0.0.0:${base##*:}/v1 node ../sys1grep.mjs --serve --max-cost 0 "$F" >"$tmp/serve9.url" 2>/dev/null &
+serve=$!
+i=0; while [ ! -s "$tmp/serve9.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve --max-cost 0 did not start"; sleep 0.05; done
+U=$(cat "$tmp/serve9.url"); BASE=${U%%\?*} K=${U#*k=}
+GOT=$(curl -s "${BASE}results?k=$K&x=e:cat&rank=")
+eq "$(printf '%s' "$GOT" | node -pe "/needs a terminal to confirm on/.test(JSON.parse(require('fs').readFileSync(0)).error)")" "true" "--serve: a search over --max-cost is refused at once, naming the guard"
+eq "$(printf '%s' "$GOT" | node -pe "/~\\\$[0-9.]+/.test(JSON.parse(require('fs').readFileSync(0)).error)")" "true" "--serve: the refusal already carries the estimate (the same price --dry-run would show)"
+eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=&max-cost=1" | node -pe "JSON.parse(require('fs').readFileSync(0)).text")" "cat
+cat dog" "--serve: Details' --max-cost control clears the guard for a later search"
+kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 section 'serve: --serve=PORT'
 # two --serve (npm run serve adds one): the last one's port is used and neither reaches the child
 PORT=$(node -e "const s = require('net').createServer().listen(0, '127.0.0.1', () => { console.log(s.address().port); s.close(); })")

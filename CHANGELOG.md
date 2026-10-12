@@ -6,6 +6,20 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 ## [Unreleased]
 
 ### Added
+- `--serve`: Details now has `-A`/`-B` (lines of context, each side, like `-C`), `-j` (concurrent requests) and
+  `--max-cost` (the cost guard), and `-o` shown only when the unit is a sentence (#234, #211 item 10, decided).
+  `-A`/`-B`/`-o` go inert during a multi-step walk, like `-C`/`--dedup` already do; `-j`/`--max-cost` still apply
+  there. `--chunk`, `--max-columns`, `--max-filesize` and `--template` stay in Settings > default options; `-l`/`-c`
+  stay with the CLI (#211 item 11). A search that crosses `--max-cost` is refused at once (`--serve` has no
+  `/dev/tty` to ask `-y`'s question on), naming `-y` and `--max-cost`; the page now shows that refusal's own
+  estimate next to it and a button to rerun that one search, once, with `--max-cost` just above it.
+
+### Fixed
+- `--serve` settings (the default-options panel): `opts` now refuses `--unit=zero` the way the launch already does
+  (`-z`'s output shape, not for `--serve`); it previously slipped through DENY, which never sees `unit` as a plain
+  string option (#233 review on #198).
+
+### Added
 - `--serve`: the `unit` select in Details also offers `function` (#233), matching `--unit=function`'s CLI set
   (`line` / `sentence-by-jev` / `sentence-by-rule` / `function`; `zero` stays out, it's `-z`, refused on purpose).
   A launch's `--unit=function` no longer turns into `--unit=line` once multi-step is on: the control used to force
