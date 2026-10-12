@@ -21,6 +21,7 @@ Run `OFFLINE_ONLY=PATTERN npm run test:offline` on the section a change touches 
   dummy model and key there (#206). Use `HOME=$(mktemp -d)` for the server and the script alike. `serve-page.mjs`
   refuses the real `HOME`; `offline.sh` fails if the real `settings.json` appears or changes during a run (it looks at
   the file's existence, size and mtime, never its content). Never print a real settings file or `.env`.
+- `--serve` work: run the `serve-check` skill and put its result in the PR.
 - The fake scores a line 0.9 when it contains the meaning verbatim, `N` when the line also carries `@N`, else 0.05.
   It understands the judging question (`Does line L000 match the meaning: "…"?`) and the auto-scope question
   (`Does the meaning "…" restrict its matches to …?`: 0.9 when the meaning carries `@s:KEY` for that question's
