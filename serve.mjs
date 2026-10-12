@@ -56,6 +56,9 @@ const optsError = opts => {
   let tokens;
   try { ({ tokens } = parseOpts(opts.map(a => fill(a, 'x')))); }
   catch (e) { return e.message; }
+  // #234 (#233 review on #198): --unit=zero is -z's output shape, refused at launch (unitAt above); opts resolves
+  // "unit" to a plain string option DENY never sees, so it slipped through here until now.
+  if (unitAt(opts) === 'zero') return "--unit=zero is not allowed (it is -z's output shape, already refused there)";
   const bad = tokens.find(k => DENY.has(k.name));
   if (!bad) return null;
   const tok = opts[bad.index]; // the original, unfilled element: a cluster like "-nr" stays "-nr", not just "-r"
@@ -128,14 +131,24 @@ const CONTROLS = [
   { k: 't', flag: '-t', re: '^(\\d+(\\.\\d+)?)?$' },
   { k: 'T', flag: '-T', re: '^(\\d+(\\.\\d+)?)?$' },
   { k: 'C', flag: '-C', re: '^\\d*$', nostep: true },
+  // #234: -A/-B (lines of context, each side), like -C; multi-step prints paths, not lines (sys1grep.mjs's own
+  // conflict check), so these go inert there too.
+  { k: 'A', flag: '-A', re: '^\\d*$', nostep: true },
+  { k: 'B', flag: '-B', re: '^\\d*$', nostep: true },
   { k: 'dedup', flag: '--dedup', re: '^(never|auto|always)$', nostep: true, def: 'never' },
   // No def: a multi-step walk's own default unit is function (sys1grep.mjs), not line, so the control goes
   // inert (like C) rather than forcing a value back. Whatever the launch already set keeps applying unchanged.
   { k: 'unit', flag: '--unit', re: '^(line|sentence-by-jev|sentence-by-rule|function)$', nostep: true },
+  // #234 (#211 item 10, owner): -o, shown only with a sentence unit (sentenceOnly, below); def: false, so it is
+  // never sent (not left inert on a stale checked box) once the unit picked away from sentence hides it.
+  { k: 'o', flag: '-o', neg: '--no-o', bool: true, nostep: true, sentenceOnly: true, def: false },
   { k: 'auto-scope', flag: '--auto-scope', neg: '--no-auto-scope', bool: true },
   { k: 'n', flag: '-n', neg: '--no-n', bool: true },
   { k: 'p', flag: '-p', neg: '--no-p', bool: true },
   { k: 'g', flag: '-g', neg: '--no-gitlog', bool: true, nostep: true, def: false },
+  // #234: -j (concurrent requests) and --max-cost (the cost guard) apply to a walk's requests too, unlike C/A/B/o/dedup.
+  { k: 'j', flag: '-j', re: '^\\d*$' },
+  { k: 'max-cost', flag: '--max-cost', re: '^(\\d+(\\.\\d+)?)?$' },
   { k: 'include', flag: '--include', words: true },
   { k: 'exclude', flag: '--exclude', words: true },
   { k: 'changed-within', flag: '--changed-within' },
@@ -183,9 +196,11 @@ export const toArgv = (p, init) => {
     if (f[0] === 'S') out.push(v('reverse') ? '--step-reverse-to' : '--step-to');
     else if (f.slice(2)) out.push(`-${f[0]}`, f.slice(2));
   }
+  const unit = v('unit');
   for (const c of CONTROLS) {
     if (!c.flag) continue;
-    const off = (c.step && !step) || (c.nostep && step); // what does not apply goes back to its default, over a launch value
+    // what does not apply goes back to its default, over a launch value; sentenceOnly (-o): only with a sentence unit
+    const off = (c.step && !step) || (c.nostep && step) || (c.sentenceOnly && !/^sentence-by-/.test(unit));
     if (off && c.def === undefined) continue;
     const now = off ? c.def : v(c.k), was = init[c.k];
     if (now === was) continue;
@@ -200,19 +215,42 @@ export const toArgv = (p, init) => {
   if (sum && v('summarize-prompt')) out.push(`--summarize-prompt=${v('summarize-prompt')}`);
   return out;
 };
+// #234 (Q1, measured 2026-10-12): a search over --max-cost is refused at once, naming -y and --max-cost, neither of
+// which the page can set. The refusal already carries the same estimate --dry-run would show (sys1grep.mjs prices it
+// the same way for both), so this reads the price out of the error instead of firing a second --dry-run request:
+// the bump a "Search anyway" button would use, or null when there is none. Exported (like toArgv/initOf) so it is
+// both stringified into the client script and directly testable with no DOM.
+// The price must come from the guard's own line (sys1grep.mjs's askToContinue), anchored on "about N input tokens,
+// ~$X.XX": a bare /\$([\d.]+)/ over the whole stderr can match a $ earlier in it first -- auto-scope's own "scope:
+// ..." line, or a skipped file's name, can carry one (#234 review).
+// No bump in a multi-step walk (#234 review): the first refusal only prices the start side, a retry really sends
+// it (sentRequests/sentBytes, sys1grep.mjs), and the end side's guard then compares the cumulative cost and can
+// refuse again with no button of its own, after spending the start's cost for nothing. Details' --max-cost field
+// (also #234, applies in a walk) is the way there instead.
+export const costRetryOf = (p, error) => {
+  if ((p.x ?? []).some(f => f[0] === 'S')) return null;
+  const price = /needs a terminal to confirm on/.test(error ?? '') && /about [\d,]+ input tokens, ~\$([\d.]+)/.exec(error)?.[1];
+  return price ? (Math.round((Number(price) + 0.01) * 100) / 100).toFixed(2) : null;
+};
 // The launch's values, from the command line (what parseArgs cannot place is left at the default).
 export const initOf = launch => {
   const fill = { '--rank': '--rank=jev', '--summarize': '--summarize=x', '--dedup': '--dedup=always', '--no-rank': '--rank=\0', '--no-summarize': '--summarize=\0' };
   const { values: o } = parseArgs({
     args: launch.map(a => fill[a] ?? a), strict: false, allowPositionals: true, allowNegative: true,
     options: { rank: { type: 'string' }, level: { type: 'string' }, t: { type: 'string' }, T: { type: 'string' }, C: { type: 'string' },
+      A: { type: 'string' }, B: { type: 'string' }, j: { type: 'string' }, 'max-cost': { type: 'string' },
       dedup: { type: 'string' }, unit: { type: 'string' }, 'auto-scope': { type: 'boolean' }, n: { type: 'boolean' }, p: { type: 'boolean' },
       g: { type: 'boolean' }, include: { type: 'string', multiple: true }, exclude: { type: 'string', multiple: true },
       'changed-within': { type: 'string' }, hops: { type: 'string' }, summarize: { type: 'string' },
       'summarize-prompt': { type: 'string' } },
   });
   const rank = o.rank === undefined || o.rank === '\0' ? '' : ['jev', 'match'].includes(o.rank) ? o.rank : 'jev'; // a bare --rank swallows the next word
-  return { x: [], rank, level: o.level ?? 'normal', t: o.t ?? '', T: o.T ?? '', C: o.C ?? '', dedup: o.dedup ?? 'never', unit: o.unit ?? 'line',
+  return { x: [], rank, level: o.level ?? 'normal', t: o.t ?? '', T: o.T ?? '', C: o.C ?? '', A: o.A ?? '', B: o.B ?? '', j: o.j ?? '',
+    'max-cost': o['max-cost'] ?? '',
+    // -o: never a launch option (REFUSED_LAUNCH), so the launch can never have set it; a constant, like C/A/B above an
+    // unset launch, needed only so toArgv's v('o') has an init to compare against.
+    o: false,
+    dedup: o.dedup ?? 'never', unit: o.unit ?? 'line',
     'auto-scope': o['auto-scope'] ?? true, n: !!o.n, p: !!o.p, g: !!o.g, include: (o.include ?? []).join(' '), exclude: (o.exclude ?? []).join(' '),
     'changed-within': o['changed-within'] ?? '', hops: o.hops ?? '0..', reverse: false, summarize: o.summarize !== undefined && o.summarize !== '\0' && o.summarize !== 'ask', // ask: the lines, unasked off a terminal
     'summarize-prompt': '' };
@@ -479,10 +517,13 @@ Default: from a function to the functions it calls. reverse (--step-reverse-to):
 ${hg('level', '<label>level <select name="level"><option>loose</option><option>normal</option><option>strict</option></select></label>', 'how strict a match must be (--level): loose takes more lines, strict fewer')}
 ${hg('t', '<label>-t <input name="t" size="5" inputmode="decimal"></label>', '-t: a line matches when its probability is at least this (0 to 1)')}${hg('T', '<label>-T <input name="T" size="5" inputmode="decimal"></label>', '-T: a negated meaning holds when the probability is below this (0 to 1)')}
 ${hg('C', '<label>context lines (-C) <input name="C" size="3" inputmode="numeric"></label>', '-C: lines of context before and after each match')}
+${hg('A', '<label>-A <input name="A" size="3" inputmode="numeric"></label>', '-A: lines of context after each match (trailing only)')}${hg('B', '<label>-B <input name="B" size="3" inputmode="numeric"></label>', '-B: lines of context before each match (leading only)')}
 ${hg('autoscope', '<label class="chk"><input type="checkbox" name="auto-scope"> auto-scope</label>', '--auto-scope: narrow the files by what Jev says the meaning restricts to (a language, a kind of file); off is --no-auto-scope')}
 ${hg('n', '<label class="chk"><input type="checkbox" name="n"> -n line numbers</label>', '-n: show line numbers')}${hg('p', '<label class="chk"><input type="checkbox" name="p"> -p scores</label>', '-p: show the probability of each meaning on the matching lines')}
 ${hg('dedup', '<label>dedup <select name="dedup"><option>never</option><option>auto</option><option>always</option></select></label>', '--dedup: judge one line per template (lines that differ only in ids, numbers, dates) and reuse the answer; auto does it when it pays')}
 ${hg('unit', '<label>unit <select name="unit"><option>line</option><option>sentence-by-jev</option><option>sentence-by-rule</option><option>function</option></select></label>', '--unit: what one question judges: a line, a sentence (found by Jev or by a rule), or a function (git grep -W\'s boundaries). A multi-step walk is by function regardless of this. zero (-z, same as --unit=zero) is refused here, like -z itself')}
+${hg('o', '<label class="chk"><input type="checkbox" name="o"> -o matching sentences only</label>', '-o: with a sentence unit, print only the matching sentences, not the whole line')}
+${hg('j', '<label>-j <input name="j" size="3" inputmode="numeric"></label>', '-j: concurrent requests to the API')}${hg('maxcost', '<label>--max-cost <input name="max-cost" size="5" inputmode="decimal"></label>', '--max-cost: ask before sending when the estimated price is over this many USD')}
 ${hg('include', '<label>--include <input name="include"></label>', '--include: only file names matching these globs, space separated. Applies to -r and git sys1grep; it narrows the launch targets, never widens them')}${hg('exclude', '<label>--exclude <input name="exclude"></label>', '--exclude: not file names matching these globs, space separated. Applies to -r and git sys1grep')}
 ${hg('changed', '<label>--changed-within <input name="changed-within" placeholder="2h, 7d, a date"></label>', '--changed-within: only files modified within 30m, 2h, 7d, 2w, or since a date. Applies to -r and git sys1grep')}${hg('g', '<label class="chk"><input type="checkbox" name="g"> -g git log</label>', '-g: search git log\'s commits, one record each')}
 </div></details></form>
@@ -500,6 +541,7 @@ ${hg('changed', '<label>--changed-within <input name="changed-within" placeholde
 <script>
 const CONTROLS = ${json(CONTROLS)}, INIT = ${json(init)}, LAUNCH = ${json(launch)}, AFTER = ${json(after)}, TOKEN = ${json(token)}, EXAMPLES = ${json(EXAMPLES)}, SUGGEST = ${json(suggest)};
 const toArgv = ${toArgv};
+const costRetryOf = ${costRetryOf};
 const quote = (s, force) => (!force && /^[\\w@%+=:,./-]+$/.test(s) ? s : "'" + s.replace(/'/g, "'\\\\''") + "'");
 const shown = argv => argv.map((t, i) => (/^-[eavQP]$/.test(argv[i - 1] ?? '') ? quote(t, t[0] === '-') : /^--[a-z-]+=/.test(t) ? t.replace(/=([\\s\\S]*)/, (_, v) => '=' + quote(v)) : quote(t)));
 const f = document.getElementById('f'), fields = document.getElementById('fields'), cmd = document.getElementById('cmd');
@@ -549,9 +591,12 @@ const show = () => {
   document.getElementById('tg-git').hidden = !g;
   f.elements.rank.disabled = f.elements.summarize.disabled = multi;
   f.elements['summarize-prompt'].style.display = p.summarize && !multi ? '' : 'none';
+  // #234: -o is useful only with a sentence unit (owner, #211 item 10); hidden otherwise, like steps for multi-step.
+  document.getElementById('hg-o').hidden = !/^sentence-by-/.test(p.unit);
   cmd.textContent = ['sys1grep', ...LAUNCH.map(t => quote(t)), ...shown(toArgv(p, INIT)), ...AFTER.map(t => quote(t))].join(' ');
   if (!ask.hidden) drawAsk();
-  document.getElementById('ds').className = CONTROLS.some(c => !['rank'].includes(c.k) && !c.step && p[c.k] !== INIT[c.k] && !(c.nostep && multi)) ? 'dot' : '';
+  document.getElementById('ds').className = CONTROLS.some(c => !['rank'].includes(c.k) && !c.step && p[c.k] !== INIT[c.k]
+    && !(c.nostep && multi) && !(c.sentenceOnly && !/^sentence-by-/.test(p.unit))) ? 'dot' : '';
   return p;
 };
 const query = p => { const q = new URLSearchParams({ k: TOKEN }); for (const x of p.x) q.append('x', x); for (const [k, v] of Object.entries(p)) if (k !== 'x') q.set(k, v === true ? '1' : v === false ? '0' : v); return q; };
@@ -600,6 +645,20 @@ document.getElementById('stop').onclick = () => {
   ctl.abort(); gen++; running = 0; busy(false);
   for (const el of [document.getElementById('left'), document.getElementById('right')]) if (!el.hidden && /\.\.\.$/.test(el.textContent)) el.textContent = 'stopped';
 };
+// costRetryOf (shared, above): the bump a "Search anyway" button should use, or null for none (no match, or a
+// multi-step walk). Offers a button that reruns this one search, once, with --max-cost at that bump -- not a
+// change to the Details field, so the next search still uses what was there before.
+const addCostRetry = (j, p, into) => {
+  const bump = costRetryOf(p, j.error);
+  if (!bump) return;
+  const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Search anyway (--max-cost ' + bump + ')';
+  b.onclick = () => {
+    if (running) return;
+    gen++; ctl = new AbortController(); busy(true); into.textContent = 'searching...';
+    get('results', { ...p, 'max-cost': bump }, into);
+  };
+  into.append(document.createElement('br'), b);
+};
 const run = kind => {
   const p = show(), left = document.getElementById('left'), right = document.getElementById('right');
   if (running) return;
@@ -617,6 +676,7 @@ const run = kind => {
   // happen in the same synchronous turn, so running never drops to 0 in between).
   if (sum) running++;
   get(kind, p, left).then(j => {
+    if (kind === 'results' && mine === gen) addCostRetry(j, p, left);
     if (!sum) return;
     if (mine !== gen) { running = Math.max(0, running - 1); return; }
     if (!(j.text || j.html)) { show1(j, right); running = Math.max(0, running - 1); if (running === 0) busy(false); return; }
@@ -734,7 +794,7 @@ document.getElementById('save').onclick = () => {
 // group (a tap elsewhere or Esc closes every open one), so a touch screen reaches them without a pointer that hovers.
 // every "?" this page has: the four hand-written ones plus every hg()-built one in Details, so a new hg() call
 // never needs this list touched by hand.
-const HINTS = ['step', 'edges', 'rank', 'summarize', 'level', 't', 'T', 'C', 'autoscope', 'n', 'p', 'dedup', 'unit', 'include', 'exclude', 'changed', 'g'];
+const HINTS = ['step', 'edges', 'rank', 'summarize', 'level', 't', 'T', 'C', 'A', 'B', 'autoscope', 'n', 'p', 'dedup', 'unit', 'o', 'j', 'maxcost', 'include', 'exclude', 'changed', 'g'];
 const hintEls = HINTS.map(n => ({ n: n, b: document.getElementById('q-' + n), g: document.getElementById('hg-' + n) }));
 // CSS places each tooltip next to its icon (left-aligned by default, right-aligned for rank/summarize, upward for
 // multi-step/edges) until this measures it and moves it where it fits. Every layout read happens right-aligned to the icon: a tooltip laid

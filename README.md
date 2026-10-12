@@ -872,8 +872,9 @@ switch (on, it shows the end fields, `--step-to` and one or more meanings, and t
 leave the command and the search and keep their values), example buttons (searches from this README and
 [docs/use-cases.md](docs/use-cases.md), then multi-step walks; one fills the fields and the controls it needs, puts the rest back to their launch values, and waits for Search; `EN` / `日本語` beside the label switches their labels and
 meanings, remembered in the browser), a
-**Details** fold with the other options (`--level`, `-t`/`-T`, `-C`, `--auto-scope`, `-n`, `-p`, `--dedup`, `--unit`,
-`--include`, `--exclude`, `--changed-within`, `-g`), and the
+**Details** fold with the other options (`--level`, `-t`/`-T`, `-C`, `-A`/`-B`, `--auto-scope`, `-n`, `-p`, `--dedup`,
+`--unit`, `-o` (shown only with a sentence unit), `-j`, `--max-cost`, `--include`, `--exclude`, `--changed-within`,
+`-g`), and the
 **command line** for the controls as they are now, with a Copy button; pasted in a terminal it runs the
 same search. An option at its launch value is left out of what the controls add. `rank` off shows the matches in file order
 as text, on shows the ranked cards; `summarize` adds a right column: Search runs once, and once its results are on
@@ -885,9 +886,12 @@ those results came, the question says so. No results on screen, or multi-step on
 
 Each search runs sys1grep itself (the options given at launch, then the controls'), so everything the command line does
 the page does, and only that. The server listens on `127.0.0.1` only, answers only to that host name, and the page never
-sees the API key. The targets, `-j`, `--chunk`, `-M`, `--max-filesize`, `--max-cost`, `-y`, `--edges`, `--template`, the
-API settings and `--summarize`'s TOOL are fixed at launch: the page can narrow what was given but not widen it. A search
-over the cost guard fails on the page, as it does without a terminal; launch with `-y` to let it through.
+sees the API key. The targets, `--chunk`, `-M`, `--max-filesize`, `-y`, `--edges`, `--template`, the
+API settings and `--summarize`'s TOOL are fixed at launch: the page can narrow what was given but not widen it (`--chunk`,
+`-M` and `--max-filesize` still reach the Settings dialog's default options). A search over `--max-cost` is refused at
+once (`--serve` has no `/dev/tty` to ask `-y`'s question on, or launch with `-y` to let it through unasked); the error
+carries the same estimate `--dry-run` would show, and a button next to it reruns that one search, once, with
+`--max-cost` just above the estimate (not a change to the Details field).
 The meanings come from the page, so `-e -a -v -Q --step-to` and `-l -c -q -o -z -i --format --color --dry-run` are refused at launch.
 
 **Settings** edits `~/.config/sys1grep/settings.json` (see [Install](#install)): `url`, `model`, the key, `opts` (one argument

@@ -370,12 +370,16 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
                --template's {{answer}} and prints when TOOL is done. Before --summarize-prompt's TEXT, which can override it. Needs
                --rank (not with -l) or --summarize, except in SYS1GREP_OPTS. (It replaces --summarize-format.)
   --serve[=PORT]  serve a search page on 127.0.0.1 (a random free port, printed, or PORT) instead of searching: a box for
-               the meanings (-e -P -a -v -Q --step-to), rank / summarize and the other options as controls, results as cards
-               (--rank --format=html), and the command line for the current controls, to copy. Each search runs this
-               program with the options given here plus what the controls changed; the targets and -j, --chunk, -M,
-               --max-cost, -y, --edges, --template and the API settings stay as given. The meanings come from the page,
-               so -e -P -a -v -Q --step-to and what the page replaces (-l -c -q -o -z -i --format --color --dry-run) are
-               refused. Needs -y (or a higher --max-cost) to search over the cost guard. One Jev request per search.
+               the meanings (-e -P -a -v -Q --step-to), rank / summarize and the other options (including -A/-B/-j/
+               --max-cost, and -o with a sentence unit) as controls, results as cards (--rank --format=html), and the
+               command line for the current controls, to copy. Each search runs this program with the options given
+               here plus what the controls changed; the targets and --chunk, -M, --max-filesize, -y, --edges,
+               --template and the API settings stay as given. The meanings come from the page, so -e -P -a -v -Q
+               --step-to and what the page replaces (-l -c -q -o -z -i --format --color --dry-run) are refused at
+               launch (-o is still a Details control, just not a launch option).
+               A search over the cost guard (no -y, or --max-cost too low) is refused at once, naming -y and
+               --max-cost; the page shows the same estimate --dry-run would and a button to rerun that one search
+               with --max-cost just above it. One Jev request per search.
                --suggest=Q:TEXT or --suggest=e:TEXT (or --suggest TEXT; repeat; a bare TEXT is a question) sets suggested-question buttons
   --template=NAME  the document --rank or --summarize --format=html writes (default: SYS1GREP_TEMPLATE, else default):
                ~/.config/sys1grep/templates/NAME.html, else the bundled one (default, print, search, terminal); a
@@ -640,12 +644,15 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                --summarize-prompt の TEXT より前に置くので TEXT で上書きできる。
                --rank (-l とは併用不可) か --summarize が要る (SYS1GREP_OPTS では要らない)。--summarize-format の後継
   --serve[=PORT]  検索せずに、127.0.0.1 で検索ページを出す (空いているポートを選んで表示、または PORT)。意味を
-               入れる欄 (-e -P -a -v -Q --step-to)、rank / summarize などのオプションをコントロールにし、結果は
-               カード (--rank --format=html)、いまのコントロールのコマンドラインをコピー用に表示する。検索のたびに
-               ここで指定したオプションにコントロールの変更を足してこのプログラムを実行する。対象と -j・--chunk・-M・
-               --max-cost・-y・--edges・--template・API 設定は指定のまま。意味はページから来るので -e -P -a -v -Q --step-to と、
-               ページが置き換えるもの (-l -c -q -o -z -i --format --color --dry-run) は受け付けない。費用の確認を通すには
-               -y (か高めの --max-cost) が要る。検索ごとに Jev へ 1 リクエスト。
+               入れる欄 (-e -P -a -v -Q --step-to)、rank / summarize などのオプション (-A/-B/-j/--max-cost、文単位
+               のときだけの -o も含む) をコントロールにし、結果はカード (--rank --format=html)、いまのコントロール
+               のコマンドラインをコピー用に表示する。検索のたびにここで指定したオプションにコントロールの変更を
+               足してこのプログラムを実行する。対象と --chunk・-M・--max-filesize・-y・--edges・--template・API 設定は
+               指定のまま。意味はページから来るので -e -P -a -v -Q --step-to と、起動時にページが置き換えるもの
+               (-l -c -q -o -z -i --format --color --dry-run) は受け付けない (-o は起動オプションではないが、
+               コントロールとしては使える)。費用の確認を越える検索はその場で拒まれ、-y と --max-cost を名指しする。
+               ページはその拒否が持つ見積もり (--dry-run と同じもの) を示し、--max-cost をそれより上げてその検索
+               だけやり直すボタンを出す。検索ごとに Jev へ 1 リクエスト。
                --suggest=Q:TEXT か --suggest=e:TEXT (--suggest TEXT でもよい。繰り返せる。TEXT だけなら質問) でおすすめ質問のボタンを指定する
   --template=NAME  --rank か --summarize の --format=html が書く文書 (既定は SYS1GREP_TEMPLATE、無ければ default)。
                ~/.config/sys1grep/templates/NAME.html、無ければ同梱のもの (default, print, search, terminal)。/ を含むか
