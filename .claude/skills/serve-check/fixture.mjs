@@ -1,7 +1,10 @@
-// node fixture.mjs DIR: writes DIR/fixture.txt, a target file that makes every meaning-based example in serve.mjs's
-// EXAMPLES array match tests/fake-jev.mjs. Also writes DIR/fixture.jsx, a tiny source file (a "function main",
-// a throw, nothing more) so the multi-step/regex examples ("on this repository") find something without needing DIR
-// itself to be this repo. Run from the repo root: node .claude/skills/serve-check/fixture.mjs workdir/serve-check.
+// node fixture.mjs DIR: writes DIR/target/fixture.txt, a target file that makes every meaning-based example in
+// serve.mjs's EXAMPLES array match tests/fake-jev.mjs. Also writes DIR/target/fixture.jsx, a tiny source file (a
+// "function main", a throw, nothing more) so the multi-step/regex examples ("on this repository") find something
+// without needing DIR itself to be this repo. --serve -r DIR/target is the launch; DIR itself holds the run's own
+// files (the fake's port, --serve's URL, logs, screenshots) so none of them sit inside the searched target (a
+// --serve URL holds ?k=TOKEN, and a growing log would be new content a later search could match against).
+// Run from the repo root: node .claude/skills/serve-check/fixture.mjs workdir/serve-check.
 //
 // This reads EXAMPLES from serve.mjs, so a new field in an existing example is picked up for free. A new or
 // reworded EXAMPLE is not: the per-heading LINES table below is the only thing that knows how to make each example
@@ -43,8 +46,9 @@ if (missing.length || stale.length) {
   process.exit(1);
 }
 
-mkdirSync(dir, { recursive: true });
+const target = `${dir}/target`;
+mkdirSync(target, { recursive: true });
 const lines = wanted.flatMap(h => LINES[h]);
-writeFileSync(`${dir}/fixture.txt`, lines.join('\n') + '\n');
-writeFileSync(`${dir}/fixture.jsx`, 'export function main() {\n  try { risky(); } catch (e) { throw e; }\n}\n');
-console.log(`wrote ${dir}/fixture.txt (${lines.length} lines) and ${dir}/fixture.jsx`);
+writeFileSync(`${target}/fixture.txt`, lines.join('\n') + '\n');
+writeFileSync(`${target}/fixture.jsx`, 'export function main() {\n  try { risky(); } catch (e) { throw e; }\n}\n');
+console.log(`wrote ${target}/fixture.txt (${lines.length} lines) and ${target}/fixture.jsx`);
