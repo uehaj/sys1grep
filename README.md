@@ -131,18 +131,22 @@ repeated queries over a large, fixed corpus a vector index is cheaper and faster
 
 ## Regex terms
 
-`-e`/`-a`/`-v '/pattern/flags'` (first and last character `/`, JavaScript flags) is matched locally,
-as a plain regex, with no request at all. It prefilters its AND term: only the lines it holds for
-ever ask that term's meanings, so a cheap regex in front of a meaning cuts both the bill and the wait. A line is sent
-only if some term's regexes all hold for it (a term with no regex holds for every line), so with
-`-e '/re/' -a A -e B` a line without `re` is still sent, asked `B` only. A query of regex terms alone
-sends nothing, even with `--unit=sentence-by-jev`: the rules alone then decide where wrapped lines join. Anything that isn't shaped like `/…/flags` is still a meaning, so
-`-e '/etc 以下のファイルを変更している'` (no closing `/`) is unaffected; a meaning that really starts
-and ends with `/` can be written with a leading space to dodge the regex reading.
+`-P '/pattern/flags'` (first and last character `/`, JavaScript flags) starts a regex term, OR'd like
+`-e`, and is matched locally with no request at all. `-a`/`-v '/pattern/flags'` AND / AND NOT a regex
+onto the preceding term, the same shape deciding regex from meaning there. It prefilters its AND term:
+only the lines it holds for ever ask that term's meanings, so a cheap regex in front of a meaning cuts
+both the bill and the wait. A line is sent only if some term's regexes all hold for it (a term with no
+regex holds for every line), so with `-P '/re/' -a A -e B` a line without `re` is still sent, asked `B`
+only. A query of regex terms alone sends nothing, even with `--unit=sentence-by-jev`: the rules alone
+then decide where wrapped lines join. `-P '!/RE/'` is not allowed; negate a regex with `-v '/RE/'`
+instead. `-e` and `-Q` never read their value as a regex: a `/RE/flags`-shaped value there is refused,
+with a hint naming `-P`, so `-e '/etc 以下のファイルを変更している'` (no closing `/`) is unaffected,
+and a meaning for `-a`/`-v` that really starts and ends with `/` can still be written with a leading
+space to dodge the regex reading.
 
 ```sh
-$ ./sys1grep -e '/ERROR|FATAL/' app.log                               # no requests at all
-$ ./sys1grep -e '/timeout/i' -a '顧客に影響が出ている' app.log         # only lines with "timeout" go to Jev
+$ ./sys1grep -P '/ERROR|FATAL/' app.log                               # no requests at all
+$ ./sys1grep -P '/timeout/i' -a '顧客に影響が出ている' app.log         # only lines with "timeout" go to Jev
 ```
 
 A regex's named and numbered groups pass to the other meanings of the *same* AND term as
@@ -152,7 +156,7 @@ an error rather than an empty string (so is a reference to a negated regex's gro
 no group stays literal, as in ECMAScript, so `$100 以上の請求` is unaffected.
 
 ```sh
-$ ./sys1grep -e '/(?<date>\d{4}-\d\d-\d\d) (?<time>\d\d:\d\d)/' \
+$ ./sys1grep -P '/(?<date>\d{4}-\d\d-\d\d) (?<time>\d\d:\d\d)/' \
             -a '$<time> が深夜（0時〜5時）であり、$<date> が週末である' app.log
 #   2026-09-19 03:12 ... → asks "03:12 が深夜（0時〜5時）であり、2026-09-19 が週末である"
 ```
@@ -165,7 +169,7 @@ is never colored. `-o` prints each match on a line of its own, as `grep -o`; a l
 whole, since a meaning has no matching part.
 
 ```sh
-$ ./sys1grep -o -n -e '/[A-Z]+-\d+/' -a 'the ticket is still open' notes.txt   # the ticket ids, one per line
+$ ./sys1grep -o -n -P '/[A-Z]+-\d+/' -a 'the ticket is still open' notes.txt   # the ticket ids, one per line
 ```
 
 ## Sending less
@@ -203,7 +207,7 @@ to the narrowest:
   on; `-q` silences the line, `-y` does not.
 
 ```sh
-$ sys1grep --dry-run -r --include='*.log' --changed-within=today -e '/ERROR|FATAL/' -a 'a customer is affected' logs/
+$ sys1grep --dry-run -r --include='*.log' --changed-within=today -P '/ERROR|FATAL/' -a 'a customer is affected' logs/
 ```
 
 `--verbose` (or `--dry-run`) also shows *where* a setting that was not typed on the command line came from
@@ -692,7 +696,7 @@ start and end send nothing, which makes a free reachability search. In Python 3.
 that `load` reaches and that hold a `raise`:
 
 ```
-$ cd /usr/lib64/python3.6/json && sys1grep -e '/^\s*def load\b/' --step-to '/\braise\b/' *.py
+$ cd /usr/lib64/python3.6/json && sys1grep -P '/^\s*def load\b/' --step-to -P '/\braise\b/' *.py
 sys1grep: walk: 1 at hop 0, 1 at hop 1, 3 at hop 2, 1 at hop 3, 1 at hop 4, 1 at hop 5; stopped: no new unit
 0 __init__.py-274-load
   1 __init__.py:302:loads
@@ -702,9 +706,11 @@ sys1grep: walk: 1 at hop 0, 1 at hop 1, 3 at hop 2, 1 at hop 3, 1 at hop 4, 1 at
           5 scanner.py:28:_scan_once
 ```
 
-- **The expressions.** The expression before `--step-to` is the start's, as in any search; every `-e` / `-a` /
-  `-v` / `-Q` after it is the end's. `--step-to MEANING` and `--step-to '/RE/'` are `--step-to -e ...`; the file
-  names follow. A step is a search, not a hop: one `--step-to` is two steps, whatever the hops between them.
+- **The expressions.** The expression before `--step-to` is the start's, as in any search; every `-e` / `-P` /
+  `-a` / `-v` / `-Q` after it is the end's. A bare `--step-to MEANING` is `--step-to -e MEANING` and a bare
+  `--step-to '/RE/'` is auto-detected and becomes `--step-to -P '/RE/'`; the file names follow. Write the
+  explicit `-P` form for a regex end, as in the example above: it reads the same but names the option. A step
+  is a search, not a hop: one `--step-to` is two steps, whatever the hops between them.
 - **The edges.** Without `--edges` the unit is a function (`--unit=function`) and an edge is a call: `name(` in
   a function's body, its comments, docstrings and strings left out, links to every function of that name. A name
   comes from the funcname line (the `def` under a decorator). `--edges=FILE` walks any other relation instead,
@@ -965,7 +971,7 @@ When the top results look unrelated (rotations, refreshes, the final error itsel
   `resolved db-primary.internal to 10.0.4.22 (replica-2)`. Nothing in the line says it is wrong, so no hypothesis
   holds, nor did a meaning written from the final error
   (`-e "the job connected to a read-only replica instead of the primary database"`). Search for the thing the error
-  names instead (`-e '/snapshot|replica/'`) and read the numbers.
+  names instead (`-P '/snapshot|replica/'`) and read the numbers.
 - **A line that never came**: a worker that claimed a shard and never finished it, a step or a migration that started
   and never ended. On all six such logs the start line was not among the results. The top result was a routine line,
   the final error, or once the previous run's `alias products switched to products-20260927`, whose 09-28
@@ -1073,9 +1079,12 @@ The API key and endpoint are read the same way as on the command line (`SYS1GREP
 ## Usage
 
 ```
-usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION [-a MEANING] [-v MEANING]... [FILE...]
+usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION|-P /RE/FLAGS [-a MEANING] [-v MEANING]... [FILE...]
 
-  -e MEANING   lines matching this meaning (several -e are OR'd)
+  -e MEANING   lines matching this meaning (several -e are OR'd); MEANING is always sent to Jev, never
+               read as a regex — a /RE/flags-shaped value is refused, with a hint naming -P
+  -P '/RE/FLAGS' a regex term, OR'd like -e; matched locally, no request; -a/-v after it AND/AND NOT
+               onto it, same as after -e; -P '!/RE/' is not allowed, negate with -v '/RE/'
   -Q, --question QUESTION  lines that answer QUESTION, not lines asking it; the same as
                -e "the line answers: QUESTION" (see "Lines that answer a question" above)
   -a MEANING   AND onto the preceding -e/-Q term.      -e A -a B -e C  =  (A and B) or C
@@ -1168,8 +1177,10 @@ Not with `-q`, `--summarize` or `--step-to`, nor when only a negated meaning kep
 
 ### Expression grammar
 
-`-e` starts an OR term. `-a` and `-v` extend the previous term with AND and AND NOT.
-A leading `!` on a meaning negates just that meaning (quote it, `!` is history expansion in most shells).
+`-e` and `-P` each start an OR term, the first always a meaning, the second always a regex. `-a` and
+`-v` extend the previous term with AND and AND NOT.
+A leading `!` on a meaning negates just that meaning (quote it, `!` is history expansion in most shells);
+a leading `!` on a `-P` value is refused instead — negate a regex term with `-v '/RE/'`.
 
 | command | means |
 |---|---|

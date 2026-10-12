@@ -119,18 +119,22 @@ top-k か質問ごとの閾値調整が要ります。また索引を作らず�
 
 ## 正規表現項
 
-`-e`/`-a`/`-v '/pattern/flags'`（先頭と末尾が `/`、フラグは JavaScript のもの）はローカルで判定される
-ただの正規表現で、リクエストは一切発生しません。同じ AND 項の絞り込みになり、これが当たった行だけが
-その項の意味を尋ねられるので、意味の前に安い正規表現を置くと、費用も待ち時間も下がります。行が送られるのは、
-どれかの項の正規表現がすべて当たったときだけです（正規表現の無い項はどの行にも当たる扱い）。そのため
-`-e '/re/' -a A -e B` では、`re` を含まない行も送られ、`B` だけを尋ねられます。正規表現項だけの式は何も
-送りません。`--unit=sentence-by-jev` でも、そのときは折り返しのつなぎ方を規則だけで決めます。`/…/flags` の形をしていないものは今まで通り意味です。`-e '/etc 以下のファイルを変更している'`
-（閉じる `/` が無い）は影響を受けません。本当に `/` で始まり `/` で終わる意味は、正規表現と誤認されない
-よう先頭にスペースを置けます。
+`-P '/pattern/flags'`（先頭と末尾が `/`、フラグは JavaScript のもの）は `-e` と同じく OR 項を始めますが、
+こちらは常に正規表現で、ローカルで判定されリクエストは一切発生しません。`-a`/`-v '/pattern/flags'` は
+その項に AND / AND NOT で重なり、こちらも形で正規表現か意味かが決まるのは変わりません。同じ AND 項の
+絞り込みになり、これが当たった行だけがその項の意味を尋ねられるので、意味の前に安い正規表現を置くと、
+費用も待ち時間も下がります。行が送られるのは、どれかの項の正規表現がすべて当たったときだけです
+（正規表現の無い項はどの行にも当たる扱い）。そのため `-P '/re/' -a A -e B` では、`re` を含まない行も
+送られ、`B` だけを尋ねられます。正規表現項だけの式は何も送りません。`--unit=sentence-by-jev` でも、
+そのときは折り返しのつなぎ方を規則だけで決めます。`-P '!/RE/'` は使えません。正規表現の否定は
+`-v '/RE/'` で行います。`-e` と `-Q` は値を正規表現として読むことがもうありません。`/RE/flags` の形の
+値を渡すと `-P` を使うよう促すエラーで拒否されるので、`-e '/etc 以下のファイルを変更している'`
+（閉じる `/` が無い）は影響を受けません。`-a`/`-v` に渡す、本当に `/` で始まり `/` で終わる意味は、
+正規表現と誤認されないよう先頭にスペースを置けます。
 
 ```sh
-$ ./sys1grep -e '/ERROR|FATAL/' app.log                               # リクエストなし
-$ ./sys1grep -e '/timeout/i' -a '顧客に影響が出ている' app.log         # timeout を含む行だけ Jev へ
+$ ./sys1grep -P '/ERROR|FATAL/' app.log                               # リクエストなし
+$ ./sys1grep -P '/timeout/i' -a '顧客に影響が出ている' app.log         # timeout を含む行だけ Jev へ
 ```
 
 正規表現の名前付き・番号付きグループは、同じ AND 項の他の意味に `$<name>`、`$1`-`$99`、`$&`、`$$` として
@@ -140,7 +144,7 @@ $ ./sys1grep -e '/timeout/i' -a '顧客に影響が出ている' app.log        
 文字として残るので、`$100 以上の請求` は影響を受けません。
 
 ```sh
-$ ./sys1grep -e '/(?<date>\d{4}-\d\d-\d\d) (?<time>\d\d:\d\d)/' \
+$ ./sys1grep -P '/(?<date>\d{4}-\d\d-\d\d) (?<time>\d\d:\d\d)/' \
             -a '$<time> が深夜（0時〜5時）であり、$<date> が週末である' app.log
 #   2026-09-19 03:12 ... → 「03:12 が深夜（0時〜5時）であり、2026-09-19 が週末である」と尋ねる
 ```
@@ -152,7 +156,7 @@ $ ./sys1grep -e '/(?<date>\d{4}-\d\d-\d\d) (?<time>\d\d:\d\d)/' \
 `-o` は一致をそれぞれ 1 行ずつ出します（`grep -o` と同じ）。意味には「一致した部分」がないので、意味だけで当たった行は行全体を出します。
 
 ```sh
-$ ./sys1grep -o -n -e '/[A-Z]+-\d+/' -a 'チケットがまだ閉じていない' notes.txt   # チケット番号を 1 行ずつ
+$ ./sys1grep -o -n -P '/[A-Z]+-\d+/' -a 'チケットがまだ閉じていない' notes.txt   # チケット番号を 1 行ずつ
 ```
 
 ## 送る量を減らす
@@ -192,7 +196,7 @@ Jev に送る行が増えるほど、費用も時間もかかります。いち�
   検索はそのまま続きます。`-q` ではこの行は出ず、`-y` では消えません。
 
 ```sh
-$ sys1grep --dry-run -r --include='*.log' --changed-within=today -e '/ERROR|FATAL/' -a '顧客に影響が出ている' logs/
+$ sys1grep --dry-run -r --include='*.log' --changed-within=today -P '/ERROR|FATAL/' -a '顧客に影響が出ている' logs/
 ```
 
 `--verbose`（や `--dry-run`）は、コマンドラインで指定しなかった設定が*どこから*来たか
@@ -680,7 +684,7 @@ $ sys1grep -e "--summarize が行をツールに渡している" --step-to "ツ�
 無料で到達可能性を調べられます。Python 3.6 の `json` で、`load` からたどり着き `raise` を含む関数:
 
 ```
-$ cd /usr/lib64/python3.6/json && sys1grep -e '/^\s*def load\b/' --step-to '/\braise\b/' *.py
+$ cd /usr/lib64/python3.6/json && sys1grep -P '/^\s*def load\b/' --step-to -P '/\braise\b/' *.py
 sys1grep: walk: 1 at hop 0, 1 at hop 1, 3 at hop 2, 1 at hop 3, 1 at hop 4, 1 at hop 5; stopped: no new unit
 0 __init__.py-274-load
   1 __init__.py:302:loads
@@ -690,9 +694,11 @@ sys1grep: walk: 1 at hop 0, 1 at hop 1, 3 at hop 2, 1 at hop 3, 1 at hop 4, 1 at
           5 scanner.py:28:_scan_once
 ```
 
-- **式。** `--step-to` の前の式が開始の式で、普通の検索と同じです。後ろの `-e` / `-a` / `-v` / `-Q` はすべて終点の式です。
-  `--step-to 意味` と `--step-to '/RE/'` は `--step-to -e ...` と同じで、ファイル名はその後に置きます。step はホップでは
-  なく検索の段です。間に何ホップあっても、`--step-to` 1 つで 2 段です。
+- **式。** `--step-to` の前の式が開始の式で、普通の検索と同じです。後ろの `-e` / `-P` / `-a` / `-v` / `-Q` はすべて終点の式です。
+  `--step-to 意味` は `--step-to -e 意味` と同じで、`--step-to '/RE/'` は形から正規表現と判定されて
+  `--step-to -P '/RE/'` と同じになります。ファイル名はその後に置きます。正規表現の終点は、上の例のように
+  `-P` を明示する書き方のほうが分かりやすいので、ドキュメントではそちらを使います。step はホップではなく
+  検索の段です。間に何ホップあっても、`--step-to` 1 つで 2 段です。
 - **辺。** `--edges` が無ければ単位は関数 (`--unit=function`) で、辺は呼び出しです。関数本体 (コメント・docstring・
   文字列は除く) の `名前(` が、その名前の関数すべてにつながります。名前は関数名の行 (デコレータの下の `def`) から
   取ります。`--edges=FILE` は別の関係をたどります。1 行 1 本で `FROM_FILE:LINE<TAB>FROM_NAME<TAB>TO_FILE:LINE<TAB>TO_NAME`、
@@ -892,7 +898,7 @@ $ sys1grep -n --dedup --level strict --rank \
   `resolved db-primary.internal to 10.0.4.22 (replica-2)`。行のどこにもおかしいとは書いていないので、どの仮説も
   当たりません。最後のエラーから書いた意味
   （`-e "the job connected to a read-only replica instead of the primary database"`）でも当たりませんでした。
-  エラーが名指すもので探し（`-e '/snapshot|replica/'`）、数値を読んでください。
+  エラーが名指すもので探し（`-P '/snapshot|replica/'`）、数値を読んでください。
 - **来なかった行**: シャードを取ったまま終えなかったワーカー、始まって終わらなかったステップやマイグレーション。
   この 6 本ではどれも開始の行が結果に入りませんでした。1 位は日常の行か最後のエラー、1 本は前回の実行の
   `alias products switched to products-20260927` で、09-28 のそれは来ていません。これを狙った意味
@@ -998,9 +1004,12 @@ API キーとエンドポイントの読み方はコマンドラインと同じ�
 ## 使い方
 
 ```
-usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION [-a MEANING] [-v MEANING]... [FILE...]
+usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION|-P /RE/FLAGS [-a MEANING] [-v MEANING]... [FILE...]
 
-  -e MEANING   この意味に合う行 (複数指定は OR)
+  -e MEANING   この意味に合う行 (複数指定は OR)。MEANING は常に Jev へ送る意味で、正規表現として読むこと
+               はない。/RE/flags の形の値は拒否し、-P を使うよう促す
+  -P '/RE/FLAGS' 正規表現項。-e と同じく OR で、ローカルで判定しリクエストは発生しない。直後の -a/-v は
+               -e のときと同じく AND/AND NOT で連結。-P '!/RE/' は使えない。否定は -v '/RE/' で行う
   -Q, --question QUESTION  QUESTION に答えている行 (尋ねている行ではない)。-e "the line answers: QUESTION"
                と同じ (上の「問いに答えている行を探す」参照)
   -a MEANING   直前の -e/-Q 項に AND で連結。-e A -a B -e C は (A and B) or C
@@ -1088,8 +1097,10 @@ FILE を省略すると stdin を読みます。複数ファイルなら `file:`
 
 ### 式の書き方
 
-`-e` が OR の項を始め、`-a` / `-v` は直前の項に AND / AND NOT で連結します。
+`-e` と `-P` がそれぞれ OR の項を始めます。前者は常に意味、後者は常に正規表現です。`-a` / `-v` は
+直前の項に AND / AND NOT で連結します。
 意味の先頭に `!` を付けるとその意味だけを否定できます（シェルの履歴展開を避けるためシングルクォートで囲んでください）。
+`-P` の値の先頭に `!` を付けることはできません。正規表現の否定は `-v '/RE/'` で行います。
 
 | コマンド | 意味 |
 |---|---|

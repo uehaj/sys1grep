@@ -27,7 +27,7 @@ _Avoid_: source (the code uses `sources` for the units printed)
 Multi-step matching (`--step-to`, `--step-reverse-to`, `--edges`, `--hops`) came in #163. The terms below are its words.
 
 **Unit**:
-What one question judges, and what decides which lines are printed for a match: a line, a record (`--unit=zero`, `-z`), a sentence (`--unit=sentence-by-jev` or `sentence-by-rule`), or a function (`--unit=function`). A regex term judges it locally; a meaning is judged by Jev.
+What one question judges, and what decides which lines are printed for a match: a line, a record (`--unit=zero`, `-z`), a sentence (`--unit=sentence-by-jev` or `sentence-by-rule`), or a function (`--unit=function`). A regex term, started with `-P` (or `-a`/`-v` onto a preceding term), judges it locally; a meaning, started with `-e` or `-Q`, is judged by Jev. `-e` and `-Q` are meaning-only since #238: a `/RE/flags`-shaped value there is refused, pointing at `-P`.
 _Avoid_: chunk (a chunk is a batch of units sent in one request, `--chunk`), block
 
 **Multi-step matching**:

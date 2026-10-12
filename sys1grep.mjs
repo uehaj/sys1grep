@@ -21,6 +21,9 @@ process.stderr.on('error', () => {});
 // Errors are one line plus exit code 2, like grep. No stack traces.
 const die = (msg, hint = true) => { console.error(`sys1grep: ${msg}${hint ? "\nTry 'sys1grep --help' for more information." : ''}`); process.exit(2); };
 process.on('uncaughtException', e => die(e.message));
+// /pattern/flags (first and last char /, JS flags): a regex term's shape, used both by openStep (below, to decide
+// whether a bare --step-to/--step-reverse-to value becomes -e or -P) and by the term parser further down.
+const RE_SHAPE = /^\/(.*)\/([dgimsuvy]*)$/s;
 
 // --serve [PORT] (#166): a search page on 127.0.0.1; serve.mjs runs this script again for each search.
 if (process.argv.slice(2, process.argv.indexOf('--') < 0 ? undefined : process.argv.indexOf('--')).some(a => /^--serve(=|$)/.test(a))) {
@@ -88,11 +91,13 @@ const openStep = args => {
   for (let i = 0; i < args.length; i++) {
     const m = !out.includes('--') && /^(--step(?:-reverse)?-to)(?:=([\s\S]*))?$/.exec(args[i]);
     const dashed = i + 1 < args.length && args[i + 1].startsWith('-') && !isOption(args[i + 1]);
-    if (!out.includes('--') && dashed && ['-e', '-a', '-v', '-Q', '--question'].includes(args[i])) { out.push(`${args[i]}${args[i] === '--question' ? '=' : ''}${args[++i]}`); continue; }
+    if (!out.includes('--') && dashed && ['-e', '-P', '-a', '-v', '-Q', '--question'].includes(args[i])) { out.push(`${args[i]}${args[i] === '--question' ? '=' : ''}${args[++i]}`); continue; }
     if (!m) { out.push(args[i]); continue; }
     const value = m[2] ?? (i + 1 < args.length && !isOption(args[i + 1]) ? args[++i] : undefined);
     if (value !== undefined && !value.trim()) die(`${m[1]}: MEANING must not be empty`);
-    out.push(m[1], ...(value === undefined ? [] : [`-e${value}`]));
+    // A bare end/start expression right after --step-to / --step-reverse-to is -e MEANING, or -P '/RE/' when it is
+    // shaped like a regex (-e no longer accepts one): --step-to '/raise /' is --step-to -P '/raise /'.
+    out.push(m[1], ...(value === undefined ? [] : [`${RE_SHAPE.test(value) ? '-P' : '-e'}${value}`]));
   }
   return out;
 };
@@ -129,28 +134,30 @@ const optSrc = name => {
   return !last ? null : last.index < defaults.length ? OPTS_NAME : '';
 };
 // --help: Japanese when the locale starts with ja, English otherwise
-const HELP_EN = `usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION [-a MEANING] [-v MEANING]... [FILE...]
+const HELP_EN = `usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION|-P /RE/ [-a MEANING] [-v MEANING]... [FILE...]
        sys1grep [OPTION]... -e START1 [-e START2]... --step-to END1 [-e END2]... [FILE...]
 grep by meaning, powered by Jev (TypeSafe System One). Reads stdin when FILE is omitted.
 As git sys1grep, FILE arguments are pathspecs and every tracked file is searched, like git grep.
 
-  -e MEANING   lines matching this meaning (several -e are OR'd)
+  -e MEANING   lines matching this meaning (several -e are OR'd). Always a meaning: a value shaped
+               /RE/FLAGS is refused, naming -P (e.g. -e '/catch/' is no longer a regex: use -P '/catch/')
   -Q, --question QUESTION  lines that answer QUESTION, not lines asking it; the same as
                -e "the line answers: QUESTION". "why the job failed" matches "the disk was full",
-               "whether the server is down" matches a denial too. Combines with -e / -a / -v / ! like -e
-  -a MEANING   AND onto the preceding -e/-Q term.      -e A -a B -e C  =  (A and B) or C
-  -v MEANING   AND NOT onto the preceding -e/-Q term.  -e A -v B       =  A and not B
-               At the front it is a bare negation.  -v B            =  not B  (like grep -v)
-  !MEANING     a leading ! negates just that meaning, in -e / -Q / -a / -v alike
-               -e A -e '!B'  =  A or not B.   -a '!C' is the same as -v C
-  /RE/FLAGS    a regex term (first and last char /, JS flags dgimsuvy): matched locally, no
-               request. Prefilters its AND term: only units it holds for ask that term's meanings
-                 -e '/ERROR|FATAL/'  -a '/timeout/i'  -v '/^DEBUG/'   !/RE/ negates it, as above
+               "whether the server is down" matches a denial too. Combines with -e / -a / -v / ! like -e.
+               Always a question, never a regex
+  -P /RE/FLAGS a regex term (first and last char /, JS flags dgimsuvy), OR'd like -e; matched
+               locally, no request. Prefilters its AND term: only units it holds for ask that
+               term's meanings.  -P '/ERROR|FATAL/'  -a '/timeout/i'  -v '/^DEBUG/'
                named/numbered groups pass to that term's meanings as $<name>, $1-$99, $&, $$
                (ECMAScript's replace patterns). $<name> naming no group, or a negated regex's
                group, is an error; prefer $<name> and single quotes ($1 doesn't survive double
-               quotes in sh/bash/zsh). A meaning that really starts and ends with / needs a
-               leading space to not be read as a regex
+               quotes in sh/bash/zsh). -P '!/RE/' is not allowed; negate with -v '/RE/'
+  -a MEANING   AND onto the preceding -e/-Q/-P term.      -e A -a B -e C  =  (A and B) or C
+  -v MEANING   AND NOT onto the preceding -e/-Q/-P term.  -e A -v B       =  A and not B
+               At the front it is a bare negation.  -v B            =  not B  (like grep -v)
+               -v also takes a /RE/ (a regex AND NOT: -P '/RE/' -v '/other/')
+  !MEANING     a leading ! negates just that meaning, in -e / -Q / -a / -v alike (not -P)
+               -e A -e '!B'  =  A or not B.   -a '!C' is the same as -v C
   --level=LEVEL strictness preset, sets both thresholds (default normal)
                  loose  : -t 0.3 -T 0.7  catch more, accept some noise
                  normal : -t 0.5 -T 0.5
@@ -247,10 +254,10 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
                units (functions, by default) that match START, walk the edges (calls, or --edges) from them breadth
                first, and print each path to a reached unit that matches END (an end): two searches (steps) joined
                by any number of calls (hops). Each side is an expression of its own, and several -e on a side are
-               OR'd. A step is a search, not a hop: every -e / -a / -v / -Q after --step-to is the end expression.
-               --step-to MEANING or --step-to '/RE/' is --step-to -e MEANING. No score steers the
-               walk; the units reached within --hops are judged against the end expression in one batch. A
-               regex-only start and end send nothing.
+               OR'd. A step is a search, not a hop: every -e / -P / -a / -v / -Q after --step-to is the end expression.
+               --step-to MEANING is --step-to -e MEANING; --step-to '/RE/' is --step-to -P '/RE/'. No score
+               steers the walk; the units reached within --hops are judged against the end expression in one
+               batch. A regex-only start and end send nothing.
                Without --edges the unit is a function (--unit=function) and an edge is a call: name( in a
                function's body (comments, docstrings and strings left out) links to every function of that name.
                Each path prints as a tree: the hop, file:line and the function's name, : for an end and - for a
@@ -262,11 +269,11 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
                  # where --summarize hands lines to the tool, and what a function it reaches does when the tool fails
                  sys1grep -e "--summarize hands the lines to the tool" --step-to "what happens when it fails" sys1grep.mjs
                  # regex only, nothing is sent: main itself (hop 0) and the functions it reaches that hold a raise
-                 sys1grep -e '/^ *def main/' --step-to '/raise /' *.py
+                 sys1grep -P '/^ *def main/' --step-to -P '/raise /' *.py
                  # backwards: does main reach helper? (--step-reverse-to walks callee to caller)
-                 sys1grep -e '/^ *def helper/' --step-reverse-to '/^ *def main/' *.py
+                 sys1grep -P '/^ *def helper/' --step-reverse-to -P '/^ *def main/' *.py
                  # only ends exactly 1 or 2 calls from the start
-                 sys1grep -e '/^ *def main/' --hops=1..2 --step-to '/raise /' *.py
+                 sys1grep -P '/^ *def main/' --hops=1..2 --step-to -P '/raise /' *.py
   --edges=FILE the edges to walk instead of calls, one per line: FROM_FILE:LINE<TAB>FROM_NAME<TAB>TO_FILE:LINE
                <TAB>TO_NAME. A line stands for the unit holding it, of any --unit but zero. Any relation works
                (imports, links, log ids); write an undirected one both ways
@@ -357,11 +364,11 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
                --template's {{answer}} and prints when TOOL is done. Before --summarize-prompt's TEXT, which can override it. Needs
                --rank (not with -l) or --summarize, except in SYS1GREP_OPTS. (It replaces --summarize-format.)
   --serve[=PORT]  serve a search page on 127.0.0.1 (a random free port, printed, or PORT) instead of searching: a box for
-               the meanings (-e -a -v -Q --step-to), rank / summarize and the other options as controls, results as cards
+               the meanings (-e -P -a -v -Q --step-to), rank / summarize and the other options as controls, results as cards
                (--rank --format=html), and the command line for the current controls, to copy. Each search runs this
                program with the options given here plus what the controls changed; the targets and -j, --chunk, -M,
                --max-cost, -y, --edges, --template and the API settings stay as given. The meanings come from the page,
-               so -e -a -v -Q --step-to and what the page replaces (-l -c -q -o -z -i --format --color --dry-run) are
+               so -e -P -a -v -Q --step-to and what the page replaces (-l -c -q -o -z -i --format --color --dry-run) are
                refused. Needs -y (or a higher --max-cost) to search over the cost guard. One Jev request per search.
                --suggest=Q:TEXT or --suggest=e:TEXT (or --suggest TEXT; repeat; a bare TEXT is a question) sets suggested-question buttons
   --template=NAME  the document --rank or --summarize --format=html writes (default: SYS1GREP_TEMPLATE, else default):
@@ -404,28 +411,30 @@ Environment (read from the environment, else from ~/.config/sys1grep/settings.js
     argument each. A variable set to empty counts as unset and falls through, except SYS1GREP_OPTS=, which still
     drops opts. Keep the file at 0600.
   e.g.  {"key": "your-key", "opts": ["--level", "strict", "-n"]}`;
-const HELP_JA = `usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION [-a MEANING] [-v MEANING]... [FILE...]
+const HELP_JA = `usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION|-P /RE/ [-a MEANING] [-v MEANING]... [FILE...]
        sys1grep [OPTION]... -e START1 [-e START2]... --step-to END1 [-e END2]... [FILE...]
 jev (TypeSafe System One) で意味的にマッチする行を探す grep。FILE 省略時は stdin。
 git sys1grep として呼ぶと git grep と同じく FILE は pathspec になり、追跡中のファイルを全部探す。
 
-  -e MEANING   この意味に合う行 (複数指定は OR)
+  -e MEANING   この意味に合う行 (複数指定は OR)。常に意味として扱う: /RE/FLAGS の形の値は
+               拒否し、-P を案内する (例: -e '/catch/' is no longer a regex: use -P '/catch/')
   -Q, --question QUESTION  QUESTION に答えている行 (尋ねている行ではない)。-e "the line answers: QUESTION"
                と同じ。「ジョブはなぜ失敗したか」は「ディスクが満杯だった」に一致し、「サーバが落ちているか」は
-               否定の答えにも一致する。-e / -a / -v / ! とは -e と同じように組み合わせられる
-  -a MEANING   直前の -e/-Q 項に AND で連結。-e A -a B -e C は (A and B) or C
-  -v MEANING   直前の -e/-Q 項に AND NOT で連結。-e A -v B は A and not B
-               先頭に置けば単独の否定。-v B は not B (grep -v 相当)
-  !MEANING     -e / -Q / -a / -v のどこでも、先頭に ! を付けるとその意味だけ否定
-               -e A -e '!B' は A or not B。-a '!C' は -v C と同じ
-  /RE/FLAGS    正規表現項 (先頭と末尾が /、フラグは JS の dgimsuvy)。ローカルで判定しリクエストなし。
-               同じ AND 項の絞り込みになり、これが当たった行だけその項の意味を尋ねる
-                 -e '/ERROR|FATAL/'  -a '/timeout/i'  -v '/^DEBUG/'   !/RE/ は上と同じく否定
+               否定の答えにも一致する。-e / -a / -v / ! とは -e と同じように組み合わせられる。常に質問で、
+               正規表現にはならない
+  -P /RE/FLAGS 正規表現項 (先頭と末尾が /、フラグは JS の dgimsuvy)。-e と同じく OR される。ローカルで
+               判定しリクエストなし。同じ AND 項の絞り込みになり、これが当たった行だけその項の意味を尋ねる
+                 -P '/ERROR|FATAL/'  -a '/timeout/i'  -v '/^DEBUG/'
                名前付き・番号付きグループは同じ項の意味に $<name>, $1-$99, $&, $$ として渡る
                (ECMAScript の置換パターン)。$<name> が存在しないグループを指す、または否定した
                正規表現のグループを指すのはエラー。$<name> と単一引用符を推奨 ($1 は sh/bash/zsh
-               のダブルクォート内で生き残らない)。/ で始まり / で終わる本物の意味は、正規表現と
-               誤認されないよう先頭にスペースを置く
+               のダブルクォート内で生き残らない)。-P '!/RE/' は使えない。否定は -v '/RE/' で行う
+  -a MEANING   直前の -e/-Q/-P 項に AND で連結。-e A -a B -e C は (A and B) or C
+  -v MEANING   直前の -e/-Q/-P 項に AND NOT で連結。-e A -v B は A and not B
+               先頭に置けば単独の否定。-v B は not B (grep -v 相当)。-v も /RE/ を取れる
+               (正規表現の AND NOT: -P '/RE/' -v '/other/')
+  !MEANING     -e / -Q / -a / -v のどこでも、先頭に ! を付けるとその意味だけ否定 (-P では不可)
+               -e A -e '!B' は A or not B。-a '!C' は -v C と同じ
   --level=LEVEL 厳しさ。肯定と否定の閾値をまとめて決める (既定 normal)
                  loose  : -t 0.3 -T 0.7  多少あやしくても拾う
                  normal : -t 0.5 -T 0.5
@@ -519,8 +528,9 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                ユニット (既定では関数) を探し、そこから辺 (呼び出し、または --edges) を幅優先でたどり、たどり
                着いたユニットのうち END に当たるもの (終点) までのパスを出す。2 回の検索 (step) を、何段でも
                よい呼び出し (hop) でつなぐ。両側はそれぞれ別の式で、片側に -e を複数並べると OR。step は
-               ホップではなく検索の段: --step-to の後の -e / -a / -v / -Q はすべて終点の式。--step-to 意味 や
-               --step-to '/RE/' は --step-to -e 意味 と同じ。たどる道はスコアで決めない。--hops の範囲で
+               ホップではなく検索の段: --step-to の後の -e / -P / -a / -v / -Q はすべて終点の式。--step-to 意味
+               は --step-to -e 意味 と同じ。--step-to '/RE/' は --step-to -P '/RE/' と同じ。たどる道はスコアで
+               決めない。--hops の範囲で
                たどり着いたユニットを 1 回のバッチで終点の式と照らす。開始と終点の式が正規表現だけなら何も送らない。
                --edges が無ければ単位は関数 (--unit=function) で、辺は呼び出し: 関数本体 (コメント・docstring・
                文字列は除く) の 名前( が、その名前の関数すべてにつながる。
@@ -533,11 +543,11 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                  # --summarize が行をツールに渡す所と、そこから呼ぶ関数のうちツールの失敗を扱うもの
                  sys1grep -e "--summarize が行をツールに渡している" --step-to "ツールの起動や応答が失敗したときの処理" sys1grep.mjs
                  # 正規表現だけなので何も送らない: main 自身 (hop 0) と、main から呼ばれる関数のうち raise を含むもの
-                 sys1grep -e '/^ *def main/' --step-to '/raise /' *.py
+                 sys1grep -P '/^ *def main/' --step-to -P '/raise /' *.py
                  # 逆向き: main から helper に届くか (--step-reverse-to は呼ばれる側から呼ぶ側へたどる)
-                 sys1grep -e '/^ *def helper/' --step-reverse-to '/^ *def main/' *.py
+                 sys1grep -P '/^ *def helper/' --step-reverse-to -P '/^ *def main/' *.py
                  # 開始からちょうど 1〜2 回の呼び出しで届く終点だけ
-                 sys1grep -e '/^ *def main/' --hops=1..2 --step-to '/raise /' *.py
+                 sys1grep -P '/^ *def main/' --hops=1..2 --step-to -P '/raise /' *.py
   --edges=FILE 呼び出しの代わりにたどる辺。1 行 1 本: FROM_FILE:LINE<TAB>FROM_NAME<TAB>TO_FILE:LINE<TAB>TO_NAME。
                行はそれを含むユニットを指す (--unit は zero 以外ならどれでもよい)。import、リンク、ログ ID など
                どんな関係でもよい。向きの無い関係は両向きに書く
@@ -623,10 +633,10 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                --summarize-prompt の TEXT より前に置くので TEXT で上書きできる。
                --rank (-l とは併用不可) か --summarize が要る (SYS1GREP_OPTS では要らない)。--summarize-format の後継
   --serve[=PORT]  検索せずに、127.0.0.1 で検索ページを出す (空いているポートを選んで表示、または PORT)。意味を
-               入れる欄 (-e -a -v -Q --step-to)、rank / summarize などのオプションをコントロールにし、結果は
+               入れる欄 (-e -P -a -v -Q --step-to)、rank / summarize などのオプションをコントロールにし、結果は
                カード (--rank --format=html)、いまのコントロールのコマンドラインをコピー用に表示する。検索のたびに
                ここで指定したオプションにコントロールの変更を足してこのプログラムを実行する。対象と -j・--chunk・-M・
-               --max-cost・-y・--edges・--template・API 設定は指定のまま。意味はページから来るので -e -a -v -Q --step-to と、
+               --max-cost・-y・--edges・--template・API 設定は指定のまま。意味はページから来るので -e -P -a -v -Q --step-to と、
                ページが置き換えるもの (-l -c -q -o -z -i --format --color --dry-run) は受け付けない。費用の確認を通すには
                -y (か高めの --max-cost) が要る。検索ごとに Jev へ 1 リクエスト。
                --suggest=Q:TEXT か --suggest=e:TEXT (--suggest TEXT でもよい。繰り返せる。TEXT だけなら質問) でおすすめ質問のボタンを指定する
@@ -761,8 +771,7 @@ if (process.stderr.isTTY && process.env.TERM !== 'dumb' && !opt.quiet && !dry &&
 
 // Expression: a list of AND terms joined by OR. Each literal is a meaning { kind:'m', text, not } or a
 // regex { kind:'r', re, names, count, not }, matched locally. A leading ! negates just that literal.
-// /pattern/flags (first and last char /, JS flags) is a regex term; anything else is a meaning.
-const RE_SHAPE = /^\/(.*)\/([dgimsuvy]*)$/s;
+// /pattern/flags (first and last char /, JS flags, RE_SHAPE above) is a regex term; anything else is a meaning.
 function compileRegex(pattern, flags) {
   let re, probe;
   try { re = new RegExp(pattern, flags); probe = new RegExp(`${pattern}|`, flags).exec(''); }
@@ -784,17 +793,22 @@ for (const tk of tokens) {
     role = 'end';
     continue;
   }
-  if (tk.kind !== 'option' || !['e', 'a', 'v', 'question'].includes(tk.name)) continue;
+  if (tk.kind !== 'option' || !['e', 'P', 'a', 'v', 'question'].includes(tk.name)) continue;
   const fresh = expr.at(-1)?.role !== role;
   if (tk.name === 'a' && (expr.length === 0 || fresh)) die(`-a needs a preceding -e${role === 'end' ? ` after ${stepFlag}` : ''}`);
-  const bang = tk.value.startsWith('!'); // per-literal negation: "!MEANING" / "!/re/"
+  // -P is always a regex term, never negated itself (a regex NOT is -v '/RE/').
+  if (tk.name === 'P' && tk.value.startsWith('!')) die(`-P '${tk.value}' is not allowed: negate a regex with -v '/RE/'`);
+  const bang = tk.name !== 'P' && tk.value.startsWith('!'); // per-literal negation: "!MEANING" / "!/re/"
   const bare = bang ? tk.value.slice(1) : tk.value;
   if (!bare.trim()) die(`${tk.name.length > 1 ? '--' : '-'}${tk.name}: MEANING must not be empty`);
   const not = bang !== (tk.name === 'v');
   const shape = tk.name !== 'question' && RE_SHAPE.exec(bare); // -Q is always a question, never a regex
+  // -e and -Q are always meanings now: a /RE/flags value there is refused, naming -P (the new regex option).
+  if (tk.name === 'e' && shape) die(`-e '${tk.value}' is no longer a regex: use ${bang ? `-v '${bare}'` : `-P '${bare}'`}`);
+  if (tk.name === 'P' && !shape) die(`-P '${tk.value}' must be a regex (/RE/flags)`);
   const lit = shape ? { kind: 'r', not, ...compileRegex(shape[1], shape[2]) }
     : { kind: 'm', not, text: tk.name === 'question' ? `the line answers: ${bare}` : bare, said: bare };
-  if (tk.name === 'e' || tk.name === 'question' || expr.length === 0 || fresh) expr.push(Object.assign([lit], { role }));
+  if (['e', 'P', 'question'].includes(tk.name) || expr.length === 0 || fresh) expr.push(Object.assign([lit], { role }));
   else expr.at(-1).push(lit);
 }
 if (multiStep && !expr.some(term => term.role === 'start')) die(`${stepFlag} needs an expression before it to start from: -e MEANING ${stepFlag} ...`);
@@ -999,10 +1013,10 @@ if (opt.format !== 'plain' && opt.summarize === undefined && (opt.rank === undef
 const termsSaid = positive => {
   const terms = [];
   for (const tk of tokens) {
-    if (tk.kind !== 'option' || !['e', 'a', 'v', 'question'].includes(tk.name)) continue;
-    const bang = tk.value.startsWith('!'), bare = bang ? tk.value.slice(1) : tk.value, not = bang !== (tk.name === 'v');
+    if (tk.kind !== 'option' || !['e', 'P', 'a', 'v', 'question'].includes(tk.name)) continue;
+    const bang = tk.name !== 'P' && tk.value.startsWith('!'), bare = bang ? tk.value.slice(1) : tk.value, not = bang !== (tk.name === 'v');
     const re = tk.name !== 'question' && RE_SHAPE.test(bare);
-    if (tk.name === 'e' || tk.name === 'question' || !terms.length) terms.push([]);
+    if (['e', 'P', 'question'].includes(tk.name) || !terms.length) terms.push([]);
     if (!positive || !(not || re)) terms.at(-1).push(`${not ? 'not ' : ''}${tk.name === 'question' ? `answers to "${bare}"` : re ? bare : `"${bare}"`}`);
   }
   return terms.filter(t => t.length).map(t => t.join(' and ')).join(', or ');
