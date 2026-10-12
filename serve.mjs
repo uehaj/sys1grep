@@ -6,6 +6,7 @@ import { parseArgs, parseEnv } from 'node:util';
 import { randomBytes } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { FIELDS, maskOpts, maskUrl, readSettings, writeSettings } from './settings.mjs';
 import { OPTIONS, REVERSE_REMOVED, fill, parseOpts } from './options.mjs';
 
@@ -287,15 +288,22 @@ const fromQuery = (sp, init) => { // null when a value is out of range
   return p.x.length ? p : { ...p, x: init.x };
 };
 
+// The bundled sample corpus (#237): shipped in the package next to serve.mjs, so `npx @uehaj/sys1grep --serve`
+// with no target has something every example button can find, wherever it is run from.
+const DEMO_DIR = fileURLToPath(new URL('examples/', import.meta.url));
+
 // What every search reads (#216), shown on the page and never taken from it: the launch's own targets, or with none
 // what sys1grep falls back to. none: that fallback, in words. cwd: what a relative target is relative to. -g (at
 // launch or from Details) reads git log instead; the page shows that in place of these as -g goes on and off.
+// demo/demoDir: no target, no -r, no git sys1grep -- the bundled corpus stands in for stdin (#237); the server
+// searches DEMO_DIR itself (serve(), below), never shown or alterable from the page.
 const targetsOf = (launch, after) => {
   const { values: o, positionals } = parseArgs({ args: launch.map(a => fill(a, 'x')), options: OPTIONS, strict: false, allowPositionals: true, allowNegative: true });
   const list = [...positionals, ...after.slice(1)], cwd = process.cwd();
   if (list.length) return { list, cwd };
-  return { list, cwd, none: globalThis.SYS1GREP_GIT ? 'every file git tracks (git sys1grep)'
-    : o.r ? '. (this folder, recursively: -r)' : 'stdin, which --serve leaves empty: start it with a file or folder to search' };
+  if (globalThis.SYS1GREP_GIT) return { list, cwd, none: 'every file git tracks (git sys1grep)' };
+  if (o.r) return { list, cwd, none: '. (this folder, recursively: -r)' };
+  return { list, cwd, none: 'demo corpus (bundled): examples/', demo: true, demoDir: DEMO_DIR };
 };
 
 export function serve(argv) {
@@ -327,8 +335,11 @@ export function serve(argv) {
   }
   const tpl = launch.some(a => a.startsWith('--template')) ? [] : ['--template=search'];
   const { SYS1GREP_SUMMARIZE, ...searchEnv } = process.env; // set by the user, it would turn every search into a summary
+  // Demo mode (#237) adds -r DEMO_DIR to what each search actually runs, never to launch/LAUNCH: the copy-command box
+  // and the client script show the command the person typed, not sys1grep's own bundled path.
+  const execLaunch = targets.demo ? [...launch, '-r', targets.demoDir] : launch;
   const run = (args, signal, input = '', env = searchEnv) => new Promise(resolve => {
-    const child = execFile(process.execPath, [script, ...launch, ...secret, ...args, ...after], { signal, env, maxBuffer: 1 << 28 },
+    const child = execFile(process.execPath, [script, ...execLaunch, ...secret, ...args, ...after], { signal, env, maxBuffer: 1 << 28 },
       (e, out, err) => resolve({ code: e ? (typeof e.code === 'number' ? e.code : 2) : 0, out, err }));
     child.stdin.on('error', () => {});
     child.stdin.end(input); // no targets means stdin: an empty one, not a hang

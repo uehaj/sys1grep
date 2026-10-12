@@ -1861,6 +1861,38 @@ eq "$(node -p "fs=require('fs'); fs.existsSync('$HS') ? JSON.stringify(JSON.pars
 rm -f "$HS"
 eq "$(curl -s "${BASE}results?k=$K&x=e:cat&x=S:&x=e:owl&rank=jev&dedup=always" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); j.error || 'ok'")" "ok" "--serve: --step-to drops rank and dedup"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
+
+section 'serve: demo corpus (#237)'
+# --serve with no target (not -r, not git sys1grep) searches the bundled examples/ instead of stdin, and says so
+# plainly. The query strings below come straight from serve.mjs's own EXAMPLES, not a copy of their regexes, so a
+# change to an example or to the corpus shows up here instead of silently drifting apart.
+node -e 'import("../serve.mjs").then(({ EXAMPLES }) => {
+  const lines = EXAMPLES.filter(e => e.x.some(f => f[0] === "S")).map(e => {
+    const params = e.x.map(f => ["x", f]);
+    if (e.hops) params.push(["hops", e.hops]);
+    if (e.reverse) params.push(["reverse", "1"]);
+    if (e.include) params.push(["include", e.include]);
+    return params.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
+  });
+  require("fs").writeFileSync(process.argv[1], lines.join("\n") + "\n");
+}, e => { console.error(e); process.exit(1); })' "$tmp/step.qs"
+[ "$(wc -l <"$tmp/step.qs" | tr -d ' ')" -ge 4 ] || fail "--serve: demo corpus: expected at least 4 multi-step examples, got $(wc -l <"$tmp/step.qs")"
+$E SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= node ../sys1grep.mjs --serve >"$tmp/serve-demo.url" 2>/dev/null &
+serve=$!
+i=0; while [ ! -s "$tmp/serve-demo.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (no target) did not start"; sleep 0.05; done
+U=$(cat "$tmp/serve-demo.url"); BASE=${U%%\?*} K=${U#*k=}
+eq "$(curl -s "$U" | grep -o '<li class="note">[^<]*</li>')" '<li class="note">demo corpus (bundled): examples/</li>' "--serve: no target, Target says it searches the bundled corpus"
+i=0
+while IFS= read -r qs; do
+  i=$((i + 1))
+  [ -n "$qs" ] || continue
+  out=$(curl -s "${BASE}results?k=$K&$qs")
+  txt=$(printf '%s' "$out" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); j.text ?? JSON.stringify(j)")
+  case $txt in *examples/app.*) ;; *) fail "--serve: demo corpus: multi-step example #$i found nothing in the corpus: $txt" ;; esac
+done <"$tmp/step.qs"
+eq "$i" "4" "--serve: demo corpus: every multi-step example checked"
+kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
+
 section 'serve: launch options'
 # launch values the page must carry: -g unchecked, a summary instruction, the key kept out of the page
 $E SYS1GREP_SUMMARIZE=stdin SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve -n --dedup=always --summarize=cat --summarize-prompt=hello --suggest 'Q:why is it slow' --suggest=e:disk\ full --suggest=plain --sys1-api-key=SECRETKEY123 "$F" >"$tmp/serve2.url" 2>/dev/null &
@@ -2204,8 +2236,8 @@ eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=" | node -pe "JSON.parse(require
 cat dog" "--serve --serve=PORT: searches still run"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 section 'serve: targets display'
-# #216: with no target the Target section says what a search reads instead: stdin (left empty), or . with -r; -g
-# shows git log in its place
+# #216/#237: with no target the Target section says what a search reads instead: the bundled demo corpus, or . with
+# -r; -g shows git log in its place
 for launch in '' -r -g; do
   $E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve $launch >"$tmp/serve6.url" 2>/dev/null &
   serve=$!
@@ -2217,7 +2249,7 @@ for launch in '' -r -g; do
   case $launch in
     -r) eq "$(cat "$tmp/target.txt")" ". (this folder, recursively: -r)" "--serve -r, no target: Target says ." ;;
     -g) eq "$(cat "$tmp/target.html")" "1" "--serve -g: Target shows git log, not the files" ;;
-    *) eq "$(cat "$tmp/target.txt")" "stdin, which --serve leaves empty: start it with a file or folder to search" "--serve, no target: Target says stdin" ;;
+    *) eq "$(cat "$tmp/target.txt")" "demo corpus (bundled): examples/" "--serve, no target: Target says the bundled demo corpus" ;;
   esac
 done
 # six targets, one after --: five shown, the rest in a "+N more" fold; a name is shown as text, never as markup

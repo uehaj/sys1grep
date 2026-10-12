@@ -6,6 +6,12 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 ## [Unreleased]
 
 ### Added
+- `--serve`: a small sample corpus now ships in the package (`examples/`: logs, support tickets, prose in English
+  and Japanese, and a `.js`/`.py` pair with a call chain, tens of KB total), so every example button has something
+  to find (#237). With no target on the command line (not `-r`, not `git sys1grep`), `--serve` searches that
+  bundled corpus instead of reading empty stdin; Target says so plainly (`demo corpus (bundled): examples/`). Any
+  target given on the command line replaces it, as before. The corpus never shows in the copy-command box or the
+  page's own script: only the search `--serve` actually runs gets the extra `-r` and its path.
 - `--serve`: Details now has `-A`/`-B` (lines of context, each side, like `-C`), `-j` (concurrent requests) and
   `--max-cost` (the cost guard), and `-o` shown only when the unit is a sentence (#234, #211 item 10, decided).
   `-A`/`-B`/`-o` go inert during a multi-step walk, like `-C`/`--dedup` already do; `-j`/`--max-cost` still apply
