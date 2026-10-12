@@ -1567,6 +1567,9 @@ eq "$(stat chat)" "null" "still nothing POSTed to the HTTP summarizer"
 out=$($O --dry-run --summarize="$base/v1" --max-filesize 100K -e '/cat/' "$tmp/big.txt" 2>&1)
 echo "$out" | grep -q -- "$tmp/big.txt: skipped, .* is over --max-filesize=100K" || fail "--dry-run shows the file being skipped: $out"
 reset
+
+# needs the $tmp/g50 repository built in 'git sys1grep / -i (interactive)': OFFLINE_ONLY='git sys1grep' runs both
+section 'git sys1grep: <tree> in --verbose / -i / --summarize'
 # #90 with #50: the settings name what git sys1grep searches instead of the working tree, the per-file lines name
 # the <tree>: / index copy, -i's preview shows both, and --summarize pipes the <tree>: prefixes
 GSM="$PWD/../git-sys1grep.mjs"
