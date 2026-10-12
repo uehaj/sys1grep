@@ -1932,11 +1932,16 @@ hint-level: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
 hint-t: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
 hint-T: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
 hint-C: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-A: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-B: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
 hint-autoscope: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
 hint-n: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
 hint-p: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
 hint-dedup: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
 hint-unit: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-o: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-j: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-maxcost: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
 hint-include: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
 hint-exclude: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
 hint-changed: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
@@ -2010,12 +2015,12 @@ saved; the next search uses it: url \"\" SYS1GREP_URL in the environment wins ov
 the x closes the dialog and returns focus to the gear: open=false, focused=true, body scroll restored=true
 reopening clears the previous save message: sst=\"\", body scroll locked=true
 a backdrop click closes the dialog: open=false
-hints start closed: step:false/closed edges:false/closed rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed
-tapping the rank \"?\" opens only it: step:false/closed edges:false/closed rank:true/open summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed
+hints start closed: step:false/closed edges:false/closed rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed A:false/closed B:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed o:false/closed j:false/closed maxcost:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed
+tapping the rank \"?\" opens only it: step:false/closed edges:false/closed rank:true/open summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed A:false/closed B:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed o:false/closed j:false/closed maxcost:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed
 the \"?\" it opened keeps focus: true
-Esc closes it and blurs the icon (no lingering :focus-visible): step:false/closed edges:false/closed rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed, focus dropped=true
-tapping a second \"?\" closes the first: step:false/closed edges:true/open rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed
-a tap elsewhere closes it: step:false/closed edges:false/closed rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed
+Esc closes it and blurs the icon (no lingering :focus-visible): step:false/closed edges:false/closed rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed A:false/closed B:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed o:false/closed j:false/closed maxcost:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed, focus dropped=true
+tapping a second \"?\" closes the first: step:false/closed edges:true/open rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed A:false/closed B:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed o:false/closed j:false/closed maxcost:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed
+a tap elsewhere closes it: step:false/closed edges:false/closed rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed A:false/closed B:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed o:false/closed j:false/closed maxcost:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed
 an icon on the left half: left-aligned to it: left=auto right=0 transform=translateX(344px)
 an icon on the right half: right-aligned to it: left=auto right=0
 nudged in to the 16px margin: left left=auto right=0 transform=translateX(356px), right left=auto right=0 transform=translateX(-22px)
