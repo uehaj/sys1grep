@@ -18,23 +18,38 @@ checks what only a real browser shows, and costs a server start and a few second
 Never with the real `HOME` (#206: the settings dialog's Save writes `~/.config/sys1grep/settings.json`, and a run
 once left its dummy model and key there).
 
-```sh
-export HOME=$(mktemp -d)                        # a scratch HOME for the --serve process (#206)
+An agent whose Bash tool does not keep shell state between calls (true of a Claude Code agent: each call is its own
+process) cannot rely on `export`, `$fake`/`$serve` variables, or background jobs surviving past the call that started
+them. Write everything to files under `workdir/serve-check/` instead, and start both processes with `nohup` so they
+outlive the call:
 
+```sh
+mkdir -p workdir/serve-check
 node .claude/skills/serve-check/fixture.mjs workdir/serve-check   # writes workdir/serve-check/target/{fixture.txt,fixture.jsx}
 
-node tests/fake-jev.mjs > workdir/serve-check/fake.port 2>workdir/serve-check/fake.log & fake=$!
-while [ ! -s workdir/serve-check/fake.port ]; do sleep 0.05; done
+H=$(mktemp -d); echo "$H" > workdir/serve-check/home.path         # a scratch HOME for the --serve process (#206)
+
+env -u SYS1GREP_API_KEY HOME="$H" nohup node tests/fake-jev.mjs > workdir/serve-check/fake.port 2> workdir/serve-check/fake.log &
+echo $! > workdir/serve-check/fake.pid
+# next call: confirm it's alive before using it
+#   ps -p $(cat workdir/serve-check/fake.pid); cat workdir/serve-check/fake.port
 base="http://127.0.0.1:$(cat workdir/serve-check/fake.port)"
 
-SYS1GREP_URL=$base/v1 SYS1GREP_SUMMARIZER=$base/v1 SYS1GREP_SUMMARIZER_MODEL=fake \
-  node sys1grep.mjs --serve -r workdir/serve-check/target > workdir/serve-check/serve.url 2>workdir/serve-check/serve.log & serve=$!
-while [ ! -s workdir/serve-check/serve.url ]; do sleep 0.05; done
+H=$(cat workdir/serve-check/home.path)
+env -u SYS1GREP_API_KEY HOME="$H" SYS1GREP_URL=$base/v1 SYS1GREP_SUMMARIZER=$base/v1 SYS1GREP_SUMMARIZER_MODEL=fake \
+  nohup node sys1grep.mjs --serve -r workdir/serve-check/target > workdir/serve-check/serve.url 2> workdir/serve-check/serve.log &
+echo $! > workdir/serve-check/serve.pid
+# next call: ps -p $(cat workdir/serve-check/serve.pid); cat workdir/serve-check/serve.url
 U=$(cat workdir/serve-check/serve.url)   # http://127.0.0.1:PORT/?k=TOKEN
 
-# always, even on failure:
-kill $serve $fake 2>/dev/null
+# always, even on failure, once both PID files exist:
+kill $(cat workdir/serve-check/serve.pid) $(cat workdir/serve-check/fake.pid) 2>/dev/null
+# then confirm: ps aux | grep -E 'fake-jev|--serve' | grep -v grep   (nothing left)
 ```
+
+In a shell that does keep state across these lines in one call (a human terminal, or `perl -e 'alarm 120; exec
+@ARGV' sh -c '...'` run as a single command), the original `export HOME=$(mktemp -d)` / `$fake`/`$serve` form works
+too; the file-based form above is the one to use when each shell call is its own process.
 
 Pick a free port by not passing one (`--serve` with no `=PORT` picks one itself and prints it, same as the line
 above). `-r workdir/serve-check/target` is required: a folder target without `-r` is refused (#222).
@@ -92,7 +107,9 @@ of the repo root or the searched target.
 Run every item even after one fails; the verdict is pass only if every item passed. Evidence is a screenshot (or
 the matching snapshot) and, for a search, the match count the page shows.
 
-1. The page loads: no console error, no failed request (`playwright-cli console` / `network`).
+1. The page loads: no console error, no failed request (`playwright-cli console` / `network`), other than a
+   `/favicon.ico` 404 — that's the browser chrome asking for an icon the page doesn't serve, not an application
+   error; ignore it, don't count it as a failure.
 2. Sections and Target are right: "Target" shows `workdir/serve-check/target` (#216), the two language buttons
    (`EN`, `日本語`) are there.
 3. One example per kind runs and shows matches: a meaning, a question (`-Q`), `-v`, `--dedup` (matches print as
@@ -103,8 +120,12 @@ the matching snapshot) and, for a search, the match count the page shows.
 4. Both languages: click `日本語`, click an example, confirm it fills with the Japanese text and that the exact
    command shown matches the kind of search EN did (not necessarily the same example).
 5. Search, Stop, Estimate cost, Copy each do something observable: Search shows results, Stop (clicked mid-search,
-   or verify it's enabled only while running and disabled otherwise), Estimate cost shows a dry-run estimate and no
-   results, Copy puts the `#cmd` text on the clipboard.
+   or verify it's enabled only while running and disabled otherwise — against the fake this can finish too fast to
+   catch mid-flight; disabled at rest before and after a search, plus reading `busy()` in `serve.mjs`, is enough),
+   Estimate cost shows a dry-run estimate and no results, Copy puts the `#cmd` text on the clipboard (headless
+   Chromium refuses `navigator.clipboard.readText()` until the page is granted clipboard permissions: run
+   `playwright-cli run-code "async page => await page.context().grantPermissions(['clipboard-read','clipboard-write'])"`
+   once, then `playwright-cli eval "navigator.clipboard.readText()"` after clicking Copy).
 6. The command line shown (`#cmd`) equals what ran: copy it (it starts with `sys1grep`, not `node sys1grep.mjs`),
    run `env SYS1GREP_URL=... node sys1grep.mjs` followed by everything after that first word, against the same
    fake and target, and compare its match count to the page's.
@@ -112,8 +133,11 @@ the matching snapshot) and, for a search, the match count the page shows.
    fake's `/chat/completions` stand-in answers with the request's own text upper-cased, so a visible all-caps
    answer confirms the request reached it, not just that something rendered).
 8. The settings dialog (gear icon) opens, Save writes into the scratch `HOME` (never the real one — check this
-   `HOME`'s `~/.config/sys1grep/settings.json`, not the real user's), closes, and every `?` hint's tooltip stays
-   inside the viewport at every width below.
+   `HOME`'s `~/.config/sys1grep/settings.json`, not the real user's; `stat` both, never `cat`). Save does not close
+   the dialog by itself — it stays open so more fields can be changed; click the `×` (Close) to close it, or click
+   outside it. Every `?` hint's tooltip stays inside the viewport at every width below (a tooltip is a `<small
+   role="tooltip">`, not a native title; check with `el.boundingBox()` against the viewport width rather than a
+   screenshot alone).
 9. Widths 1280, 800, and 375 (mobile, #214), light and dark (`prefers-color-scheme`, emulated via
    `page.emulateMedia`): no clipped tooltip, no horizontal scrollbar, the docked/inline results panel still
    readable.
