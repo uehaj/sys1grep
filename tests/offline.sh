@@ -125,9 +125,11 @@ eq "$($J -n -e cat -a '!dog' "$F" | nums)" "1 " "-a '!X' is -v X"
 code 2 "-a first" -- $J -a cat "$F"
 code 2 "empty meaning" -- $J -e '' "$F"
 code 2 "no meaning" -- $J -n "$F"
-# #238: -e and -Q are always meanings; a /RE/flags value is refused, naming -P
-eq "$($J -e '/cat/' "$F" 2>&1 >/dev/null | head -1)" "sys1grep: -e '/cat/' is no longer a regex: use -P '/cat/'" "-e '/regex/' is refused, naming -P"
-eq "$($J -e '!/cat/' "$F" 2>&1 >/dev/null | head -1)" "sys1grep: -e '!/cat/' is no longer a regex: use -v '/cat/'" "-e '!/regex/' is refused, naming -v"
+# #238: -e is always a meaning now; a /RE/flags value there is refused, naming -P. -Q is unchanged (always a
+# question, never a regex, no refusal).
+eq "$($J -e '/cat/' "$F" 2>&1 >/dev/null | head -1)" "sys1grep: -e '/cat/' is no longer a regex: use -P '/cat/'; for the text itself, add a leading space" "-e '/regex/' is refused, naming -P"
+eq "$($J -e '!/cat/' "$F" 2>&1 >/dev/null | head -1)" "sys1grep: -e '!/cat/' is no longer a regex: use -v '/cat/'; for the text itself, add a leading space" "-e '!/regex/' is refused, naming -v"
+code 1 "-e ' /RE/' (leading space): the documented escape, sent as a meaning (exit 1, no match), not refused (exit 2)" -- $J -e ' /cat/' "$F"
 eq "$($J -Q '/cat/' "$F" | nums)" "" "-Q is always a question, never a regex"
 # -P: a regex term, OR'd like -e; -a/-v AND/AND NOT onto it; never negated itself
 eq "$($J -n -P '/cat/' "$F" | nums)" "1 4 " "-P"
@@ -619,6 +621,9 @@ printf '%s\n' 'function main() {' '  // --step start: parse(x) here is a comment
 eq "$($J -P '/^function main/' --step-to 'raised here' "$C" 2>/dev/null | tr '\n' '|')" "0 $C-1-main|  1 $C-16-check|    2 $C:19:fail|" "--step-to: the path, through the shortcut"
 eq "$($J -P '/^function main/' --step-to 'raised here' "$C" 2>&1 >/dev/null)" "sys1grep: walk: 1 at hop 0, 2 at hop 1, 3 at hop 2; stopped: no new unit" "--step-to: units per hop, and why the walk stopped"
 reset; $J -P '/^function main/' --step-to '/throw/' "$C" >/dev/null 2>&1; eq "$(stat count)" "0" "--step-to: regex-only ends send nothing"
+# a bare !/RE/ end (unchanged by #238) is --step-to -v '/RE/': -v is "not" at the front, and -P itself never takes a leading !
+reset; $J -P '/^function main/' --step-to '!/throw/' "$C" >/dev/null 2>&1; eq "$(stat count)" "0" "--step-to: a bare !/RE/ end is still a negated regex, no request"
+eq "$($J -P '/^function main/' --step-to '!/throw/' "$C" 2>/dev/null | tr '\n' '|')" "$($J -P '/^function main/' --step-to -v '/throw/' "$C" 2>/dev/null | tr '\n' '|')" "--step-to '!/RE/' is --step-to -v '/RE/'"
 reset; $J -P '/^function main/' --step-to 'raised here' "$C" >/dev/null 2>&1; eq "$(stat count)" "1" "--step-to: the ends in one request"
 eq "$($J -P '/^function fail/' --step-to 'raised here' "$C" 2>/dev/null)" "0 $C:19:fail" "--step-to: hop 0, a start that is an end"
 eq "$($J --hops=2 -P '/^function main/' --step-to '/./' "$C" 2>/dev/null | grep -c ':')" "3" "--hops=N: exactly N"

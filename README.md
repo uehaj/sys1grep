@@ -139,10 +139,12 @@ both the bill and the wait. A line is sent only if some term's regexes all hold 
 regex holds for every line), so with `-P '/re/' -a A -e B` a line without `re` is still sent, asked `B`
 only. A query of regex terms alone sends nothing, even with `--unit=sentence-by-jev`: the rules alone
 then decide where wrapped lines join. `-P '!/RE/'` is not allowed; negate a regex with `-v '/RE/'`
-instead. `-e` and `-Q` never read their value as a regex: a `/RE/flags`-shaped value there is refused,
-with a hint naming `-P`, so `-e '/etc 以下のファイルを変更している'` (no closing `/`) is unaffected,
-and a meaning for `-a`/`-v` that really starts and ends with `/` can still be written with a leading
-space to dodge the regex reading.
+instead. `-e` never reads its value as a regex: a `/RE/flags`-shaped value there is refused, with a
+hint naming `-P` (e.g. `-e '/catch/' is no longer a regex: use -P '/catch/'`). `-Q` is unaffected: it
+was already always a question, never a regex, so `-e '/etc 以下のファイルを変更している'` (no closing
+`/`) still goes through as a meaning, unrefused. A meaning for `-e`/`-a`/`-v` that really starts and
+ends with `/` can still be written with a leading space to dodge the regex reading (`-e ' /cat/'`
+sends the text `" /cat/"`, not a refusal).
 
 ```sh
 $ ./sys1grep -P '/ERROR|FATAL/' app.log                               # no requests at all
@@ -1082,7 +1084,8 @@ The API key and endpoint are read the same way as on the command line (`SYS1GREP
 usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION|-P /RE/FLAGS [-a MEANING] [-v MEANING]... [FILE...]
 
   -e MEANING   lines matching this meaning (several -e are OR'd); MEANING is always sent to Jev, never
-               read as a regex — a /RE/flags-shaped value is refused, with a hint naming -P
+               read as a regex — a /RE/flags-shaped value is refused, with a hint naming -P. A meaning
+               that really starts and ends with / gets through with a leading space (-e ' /cat/')
   -P '/RE/FLAGS' a regex term, OR'd like -e; matched locally, no request; -a/-v after it AND/AND NOT
                onto it, same as after -e; -P '!/RE/' is not allowed, negate with -v '/RE/'
   -Q, --question QUESTION  lines that answer QUESTION, not lines asking it; the same as

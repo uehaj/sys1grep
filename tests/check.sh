@@ -151,7 +151,7 @@ if $NOKEY $NJ -P '!/ERROR/' fixture.txt >/dev/null 2>&1; then exit 1; elif [ $? 
 # a regex with no closing / is still a meaning: with no key this errors on "SYS1GREP_API_KEY is not set", a real regex term wouldn't
 $NOKEY $NJ -e '/etc 以下のファイルを変更している' fixture.txt 2>&1 >/dev/null | grep -qx 'sys1grep: SYS1GREP_API_KEY is not set. Export it or put it in ~/.config/sys1grep/settings.json as "key"'
 # -e itself refuses a /RE/FLAGS value, naming -P
-$NOKEY $NJ -e '/catch/' fixture.txt 2>&1 >/dev/null | grep -qx "sys1grep: -e '/catch/' is no longer a regex: use -P '/catch/'"
+$NOKEY $NJ -e '/catch/' fixture.txt 2>&1 >/dev/null | grep -qx "sys1grep: -e '/catch/' is no longer a regex: use -P '/catch/'; for the text itself, add a leading space"
 # an invalid pattern exits 2, one line, like grep
 if $NOKEY $NJ -P '/(/' fixture.txt >/dev/null 2>&1; then exit 1; elif [ $? -ne 2 ]; then exit 1; fi
 [ "$($NOKEY $NJ -P '/(/' fixture.txt 2>&1 | wc -l | tr -d ' ')" = "1" ]

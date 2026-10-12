@@ -96,8 +96,13 @@ const openStep = args => {
     const value = m[2] ?? (i + 1 < args.length && !isOption(args[i + 1]) ? args[++i] : undefined);
     if (value !== undefined && !value.trim()) die(`${m[1]}: MEANING must not be empty`);
     // A bare end/start expression right after --step-to / --step-reverse-to is -e MEANING, or -P '/RE/' when it is
-    // shaped like a regex (-e no longer accepts one): --step-to '/raise /' is --step-to -P '/raise /'.
-    out.push(m[1], ...(value === undefined ? [] : [`${RE_SHAPE.test(value) ? '-P' : '-e'}${value}`]));
+    // shaped like a regex (-e no longer accepts one): --step-to '/raise /' is --step-to -P '/raise /'. A bare
+    // !/RE/ is --step-to -v '/RE/' (-P never takes a leading !, and -v is already "not" at the front); a bare
+    // !MEANING is still -e !MEANING, -e's own per-literal negation.
+    const bang = value !== undefined && value.startsWith('!');
+    const bare = bang ? value.slice(1) : value;
+    const isRe = value !== undefined && RE_SHAPE.test(bare);
+    out.push(m[1], ...(value === undefined ? [] : [`${isRe ? (bang ? '-v' : '-P') : '-e'}${isRe ? bare : value}`]));
   }
   return out;
 };
@@ -140,7 +145,8 @@ grep by meaning, powered by Jev (TypeSafe System One). Reads stdin when FILE is 
 As git sys1grep, FILE arguments are pathspecs and every tracked file is searched, like git grep.
 
   -e MEANING   lines matching this meaning (several -e are OR'd). Always a meaning: a value shaped
-               /RE/FLAGS is refused, naming -P (e.g. -e '/catch/' is no longer a regex: use -P '/catch/')
+               /RE/FLAGS is refused, naming -P (e.g. -e '/catch/' is no longer a regex: use -P '/catch/').
+               A meaning that really starts and ends with / gets through with a leading space (-e ' /cat/')
   -Q, --question QUESTION  lines that answer QUESTION, not lines asking it; the same as
                -e "the line answers: QUESTION". "why the job failed" matches "the disk was full",
                "whether the server is down" matches a denial too. Combines with -e / -a / -v / ! like -e.
@@ -417,7 +423,8 @@ jev (TypeSafe System One) で意味的にマッチする行を探す grep。FILE
 git sys1grep として呼ぶと git grep と同じく FILE は pathspec になり、追跡中のファイルを全部探す。
 
   -e MEANING   この意味に合う行 (複数指定は OR)。常に意味として扱う: /RE/FLAGS の形の値は
-               拒否し、-P を案内する (例: -e '/catch/' is no longer a regex: use -P '/catch/')
+               拒否し、-P を案内する (例: -e '/catch/' is no longer a regex: use -P '/catch/')。
+               本当に / で始まり / で終わる意味は、先頭にスペースを置けば通る (-e ' /cat/')
   -Q, --question QUESTION  QUESTION に答えている行 (尋ねている行ではない)。-e "the line answers: QUESTION"
                と同じ。「ジョブはなぜ失敗したか」は「ディスクが満杯だった」に一致し、「サーバが落ちているか」は
                否定の答えにも一致する。-e / -a / -v / ! とは -e と同じように組み合わせられる。常に質問で、
@@ -795,16 +802,17 @@ for (const tk of tokens) {
   }
   if (tk.kind !== 'option' || !['e', 'P', 'a', 'v', 'question'].includes(tk.name)) continue;
   const fresh = expr.at(-1)?.role !== role;
-  if (tk.name === 'a' && (expr.length === 0 || fresh)) die(`-a needs a preceding -e${role === 'end' ? ` after ${stepFlag}` : ''}`);
+  if (tk.name === 'a' && (expr.length === 0 || fresh)) die(`-a needs a preceding -e/-P${role === 'end' ? ` after ${stepFlag}` : ''}`);
   // -P is always a regex term, never negated itself (a regex NOT is -v '/RE/').
   if (tk.name === 'P' && tk.value.startsWith('!')) die(`-P '${tk.value}' is not allowed: negate a regex with -v '/RE/'`);
   const bang = tk.name !== 'P' && tk.value.startsWith('!'); // per-literal negation: "!MEANING" / "!/re/"
   const bare = bang ? tk.value.slice(1) : tk.value;
   if (!bare.trim()) die(`${tk.name.length > 1 ? '--' : '-'}${tk.name}: MEANING must not be empty`);
   const not = bang !== (tk.name === 'v');
-  const shape = tk.name !== 'question' && RE_SHAPE.exec(bare); // -Q is always a question, never a regex
-  // -e and -Q are always meanings now: a /RE/flags value there is refused, naming -P (the new regex option).
-  if (tk.name === 'e' && shape) die(`-e '${tk.value}' is no longer a regex: use ${bang ? `-v '${bare}'` : `-P '${bare}'`}`);
+  const shape = tk.name !== 'question' && RE_SHAPE.exec(bare); // -Q is always a question, never a regex (unchanged by #238)
+  // -e is always a meaning now: a /RE/flags value there is refused, naming -P (the new regex option). A real
+  // meaning that looks like /RE/flags still gets through with a leading space (" /cat/"), which breaks the shape.
+  if (tk.name === 'e' && shape) die(`-e '${tk.value}' is no longer a regex: use ${bang ? `-v '${bare}'` : `-P '${bare}'`}; for the text itself, add a leading space`);
   if (tk.name === 'P' && !shape) die(`-P '${tk.value}' must be a regex (/RE/flags)`);
   const lit = shape ? { kind: 'r', not, ...compileRegex(shape[1], shape[2]) }
     : { kind: 'm', not, text: tk.name === 'question' ? `the line answers: ${bare}` : bare, said: bare };
@@ -813,7 +821,7 @@ for (const tk of tokens) {
 }
 if (multiStep && !expr.some(term => term.role === 'start')) die(`${stepFlag} needs an expression before it to start from: -e MEANING ${stepFlag} ...`);
 if (multiStep && !expr.some(term => term.role === 'end')) die(`${stepFlag} needs an expression: ${stepFlag} MEANING, ${stepFlag} '/RE/', or ${stepFlag} -e ...`);
-if (!expr.length) die('no -e MEANING or -Q QUESTION given');
+if (!expr.length) die("no -e MEANING, -Q QUESTION, or -P '/RE/' given");
 // What a run judges first: the whole expression, or with --step-to the start expression; the end expression
 // is judged later, on the units the walk reaches.
 const starting = multiStep ? expr.filter(term => term.role === 'start') : expr;

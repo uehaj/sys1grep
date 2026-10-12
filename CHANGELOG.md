@@ -254,10 +254,13 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   `-z` / `--null-data` stay, as `--unit=zero`, and still combine with the sentence units to split each record into
   sentences.
 - `--unit=sentence-by-*` colors the matching sentence bold yellow instead of bold red, so a regex match inside it stands out.
-- **Breaking:** `-e` and `-Q` no longer accept a `/RE/flags` value ([#238](https://github.com/uehaj/sys1grep/issues/238)):
-  a regex-shaped value there is now refused with an error naming the new option. A regex term now goes through
-  `-P '/RE/flags'`, which OR's like `-e` and takes `-a`/`-v` AND / AND NOT onto it the same way; `-P` does not
-  accept a leading `!`, negate it with `-v '/RE/'` instead.
+- **Breaking:** `-e` no longer accepts a `/RE/flags` value ([#238](https://github.com/uehaj/sys1grep/issues/238)):
+  a regex-shaped value there is now refused with an error naming the new option (a real meaning that looks like
+  `/.../` still gets through with a leading space). `-Q` is unchanged: it was already always a question, never a
+  regex. A regex term now goes through `-P '/RE/flags'`, which OR's like `-e` and takes `-a`/`-v` AND / AND NOT
+  onto it the same way; `-P` does not accept a leading `!`, negate it with `-v '/RE/'` instead. One combination is
+  no longer expressible as a single `-e`: `-e A -e '!/B/'` (`A or not /B/`) now needs `-P '/B/'`'s negation spelled
+  through `-v`, which cannot stand as its own OR term the way a bang-negated `-e` could.
 
 ### Renamed
 `semgrep` collided with the trademarked static-analysis tool [Semgrep](https://semgrep.dev/) (#93).
