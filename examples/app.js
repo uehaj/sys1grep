@@ -41,9 +41,7 @@ function readSettingsFile() {
 function tryOptionalStep() {
   try {
     riskyStep();
-  } catch (err) {
-    // ignored: this step is optional and failing it is not fatal
-  }
+  } catch (err) {} // ignored: this step is optional and failing it is not fatal
 }
 
 function riskyStep() {
