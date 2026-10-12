@@ -1951,27 +1951,27 @@ a label with a \"?\" no longer also carries a duplicate title=: step ok, rank ok
 first start row: 3 children (select, input, delete)
 the first start field is a question (-Q) by default: ok
 steps hidden: -P '/def main/'
-x=e:/def main/ hops=0.. reverse=0 -> 1 lines
+x=P:/def main/ hops=0.. reverse=0 -> 1 lines
 target: files shown, git log hidden
 -g on, target: files hidden, git log shown
 -g off, target: files shown, git log hidden
 off, start+: steps hidden: -P '/def main/' -a /helper/
-x=e:/def main/|a:/helper/ hops=0.. reverse=0 -> 1 lines
+x=P:/def main/|a:/helper/ hops=0.. reverse=0 -> 1 lines
 on, starts kept: steps shown: -P '/def main/' -a /helper/ --step-to
 on, 2 starts + 2 ends: steps shown: -P '/def main/' -a /helper/ --step-to -P '/raise /' -P '/sys\\.exit/'
-x=e:/def main/|a:/helper/|S:|e:/raise /|e:/sys\\.exit/ hops=0.. reverse=0 -> 2 lines
+x=P:/def main/|a:/helper/|S:|P:/raise /|P:/sys\\.exit/ hops=0.. reverse=0 -> 2 lines
 delete names: remove start condition 1 | remove start condition 2 | remove end condition 1 | remove end condition 2 | remove end condition 3
 steps shown: -P '/def main/' --step-to
 steps shown: -P '/def main/' --step-to -P '/raise /' --hops=1..2
-x=e:/def main/|S:|e:/raise / hops=1..2 reverse=0 -> 2 lines
+x=P:/def main/|S:|P:/raise / hops=1..2 reverse=0 -> 2 lines
 addend + reverse: steps shown: -P '/def main/' --step-reverse-to -P '/raise /' -P '/sys\\.exit/' --hops=1..2
-x=e:/def main/|S:|e:/raise /|e:/sys\\.exit/ hops=1..2 reverse=1 -> 1 lines
+x=P:/def main/|S:|P:/raise /|P:/sys\\.exit/ hops=1..2 reverse=1 -> 1 lines
 steps hidden: -P '/def main/'
-x=e:/def main/ hops=1..2 reverse=0 -> 1 lines
+x=P:/def main/ hops=1..2 reverse=0 -> 1 lines
 steps shown: -P '/def main/' --step-to -P '/raise /' --hops=1..2
 on true, 2 ends, steps shown: -P '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --step-to -P '/throw |raise /' -P '/process\\.exit\\(|sys\\.exit\\(/' --include='*.mjs' --include='*.cjs' --include='*.js' --include='*.jsx' --include='*.ts' --include='*.tsx' --include='*.py'
 on true, 1 ends, steps shown: -P '/throw (e|err|error)\\b|^ *raise\$/m' --step-reverse-to -P '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --include='*.mjs' --include='*.cjs' --include='*.js' --include='*.jsx' --include='*.ts' --include='*.tsx' --include='*.py'
-x=e:/throw (e|err|error)\\b|^ *raise\$/m|S:|e:/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/ hops=0.. reverse=1 -> 1 lines
+x=P:/throw (e|err|error)\\b|^ *raise\$/m|S:|P:/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/ hops=0.. reverse=1 -> 1 lines
 empty end: Enter an end (--step-to)., 0 sent
 groups: [] b b b b b b b b b b b [multi-step] b b b b
 pressing every example sends 0
@@ -2028,7 +2028,7 @@ a field changed since: \"The results on screen are from before the fields or opt
 the field back as it was: \"Summarize the results on screen as they are?\" [OK / Not now] (lang en)
 multi-step on: no question
 OK: no question; sent /summarize with the results on screen as they are, 1 request(s) in all; summary pane shown: \"SUMMARY\\n\"
-x=e:/def main/ hops=0.. reverse=1 -> 1 lines
+x=P:/def main/ hops=0.. reverse=1 -> 1 lines
 Search with summarize on: 2 request(s), 1 POST(s) /summarize with the results on screen as they are; summary pane shown: \"SUMMARY\\n\"
 x=e:helper hops=0.. reverse=1 -> 0 lines
 Search with summarize on, rank on: 2 request(s), 1 POST(s) /summarize with the cards' text as they are; summary pane shown: \"SUMMARY\\n\"" "--serve: the sections, the target, the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs; EN / 日本語), the settings dialog, and the hint tooltips"
@@ -2044,7 +2044,7 @@ import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { EXAMPLES, toArgv, initOf } from '../serve.mjs';
 for (const [where, cwd] of [['repo', '..'], ['python', process.argv.at(-1)]])
-  for (const e of EXAMPLES.filter(e => e.x.every(f => f === 'S:' || /^[eav]:\/.*\/[dgimsuvy]*\$/.test(f)))) {
+  for (const e of EXAMPLES.filter(e => e.x.every(f => f === 'S:' || /^[eavP]:\/.*\/[dgimsuvy]*\$/.test(f)))) {
     const r = spawnSync('node', [resolve('../sys1grep.mjs'), '-r', ...toArgv(e, initOf([])), '.'], { cwd, encoding: 'utf8' });
     const other = [...r.stdout.matchAll(/^ *\\d+ (\\S+?)[:-]\\d+[:-]/gm)].map(m => m[1]).find(f => !/\\.(mjs|cjs|js|jsx|ts|tsx|py)\$/.test(f));
     console.log(where + ': ' + e.h + ': ' + (r.status === 0 && /^ +[1-9]\\d* /m.test(r.stdout) ? 'walks' : 'no walk, exit ' + r.status) + (other ? ', through ' + other : ''));
