@@ -363,7 +363,7 @@ export function serve(argv) {
     const args = toArgv({ ...p, summarize: false }, init);
     if (kind === 'dry') args.push('--dry-run', '--no-summarize');
     else if (!step && (p.rank ?? init.rank)) args.push('--format=html', ...tpl);
-    const { code, out, err } = await run([`--color=${kind === 'results' ? 'always' : 'never'}`, ...args], signal, '', searchEnv, p.g ?? init.g);
+    const { code, out, err } = await run([`--color=${kind === 'results' ? 'always' : 'never'}`, ...args], signal, '', searchEnv, step ? init.g : p.g ?? init.g);
     if (code > 1) return { error: err.trim() || `exit ${code}` };
     if (code === 1 && !out) return { none: true, note: err.trim() };
     return kind === 'results' && !step && (p.rank ?? init.rank) ? { html: out.replace('</head>', '<style>.bar{display:none}</style></head>') } : { text: out };
@@ -534,7 +534,7 @@ Default: from a function to the functions it calls. reverse (--step-reverse-to):
 <input type="text" name="summarize-prompt" placeholder="summary instruction" style="display:none;flex:1;min-width:160px">
 </div>
 <div class="row ask" id="ask" role="group" aria-labelledby="askq" hidden><span id="askq"></span><button type="button" id="ask-ok">OK</button><button type="button" id="ask-no">Not now</button></div>
-<div class="row"><pre id="cmd" title="the command line for the fields and controls as they are now; pasted in a terminal it runs the same search. The API key is never in it"></pre><button type="button" id="copy" title="copy the command line to the clipboard">Copy</button>${targets.demo ? '<span class="note" id="cmd-demo-note">here it searches the bundled <code>examples/</code>; pasted elsewhere it reads stdin instead &mdash; add a file, a folder, or -r DIR</span>' : ''}</div>
+<div class="row"><pre id="cmd" title="the command line for the fields and controls as they are now; pasted in a terminal it runs the same search. The API key is never in it"></pre><button type="button" id="copy" title="copy the command line to the clipboard">Copy</button>${targets.demo ? '<span class="note" id="cmd-demo-note">here it searches the bundled <code>examples/</code>; pasted elsewhere it reads stdin instead &mdash; add a file or -r DIR</span>' : ''}</div>
 </section>
 <details id="d"><summary id="ds" title="詳細: the other options; a dot means one differs from its launch value">Details</summary><div class="grid">
 ${hg('level', '<label>level <select name="level"><option>loose</option><option>normal</option><option>strict</option></select></label>', 'how strict a match must be (--level): loose takes more lines, strict fewer')}

@@ -1893,6 +1893,12 @@ while IFS= read -r qs; do
   case $txt in *examples/app.*) ;; *) fail "--serve: demo corpus: multi-step example #$i found nothing in the corpus: $txt" ;; esac
 done <"$tmp/step.qs"
 eq "$i" "4" "--serve: demo corpus: every multi-step example checked"
+# a walk never sends Details' -g (toArgv's nostep), so a g=1 left checked during a walk must not drop the demo's -r either
+while IFS= read -r qs; do
+  [ -n "$qs" ] || continue
+  txt=$(curl -s "${BASE}results?k=$K&$qs&g=1" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); j.text ?? JSON.stringify(j)")
+  case $txt in *examples/app.*) ;; *) fail "--serve: demo corpus: a multi-step example with Details -g left on found nothing: $txt" ;; esac
+done <"$tmp/step.qs"
 # the Details -g toggle must not fight the demo corpus's own -r: a per-search g=1 drops the -r DEMO_DIR this run
 # would otherwise add (serve.mjs's run(), the gitlog parameter), not send -g and -r together (sys1grep refuses that
 # outright: "-g searches commits, not files: it cannot be combined with -r")
