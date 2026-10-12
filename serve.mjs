@@ -295,14 +295,19 @@ const DEMO_DIR = fileURLToPath(new URL('examples/', import.meta.url));
 // What every search reads (#216), shown on the page and never taken from it: the launch's own targets, or with none
 // what sys1grep falls back to. none: that fallback, in words. cwd: what a relative target is relative to. -g (at
 // launch or from Details) reads git log instead; the page shows that in place of these as -g goes on and off.
-// demo/demoDir: no target, no -r, no git sys1grep -- the bundled corpus stands in for stdin (#237); the server
-// searches DEMO_DIR itself (serve(), below), never shown or alterable from the page.
-const targetsOf = (launch, after) => {
+// demo/demoDir: no target, and -r / -g / git sys1grep all off -- the bundled corpus stands in for stdin (#237); the
+// server adds it to the search it actually runs (serve(), below), never shown or alterable from the page.
+// probe: #222's SYS1GREP_PROBE answer ({r,g,git}, or null if it failed), which resolves SYS1GREP_OPTS and
+// settings.json opts the same way a real search would, not just this launch's own argv; o.r/o.gitlog (parsed from
+// launch alone) are the fallback only when the probe itself could not be asked.
+const targetsOf = (launch, after, probe) => {
   const { values: o, positionals } = parseArgs({ args: launch.map(a => fill(a, 'x')), options: OPTIONS, strict: false, allowPositionals: true, allowNegative: true });
   const list = [...positionals, ...after.slice(1)], cwd = process.cwd();
   if (list.length) return { list, cwd };
-  if (globalThis.SYS1GREP_GIT) return { list, cwd, none: 'every file git tracks (git sys1grep)' };
-  if (o.r) return { list, cwd, none: '. (this folder, recursively: -r)' };
+  const git = probe ? probe.git : globalThis.SYS1GREP_GIT, r = probe ? probe.r : !!o.r, g = probe ? probe.g : !!o.gitlog;
+  if (git) return { list, cwd, none: 'every file git tracks (git sys1grep)' };
+  if (r) return { list, cwd, none: '. (this folder, recursively: -r)' };
+  if (g) return { list, cwd, none: "git log's commits, not files (-g)" };
   return { list, cwd, none: 'demo corpus (bundled): examples/', demo: true, demoDir: DEMO_DIR };
 };
 
@@ -317,28 +322,35 @@ export function serve(argv) {
   const bad = launch.find(a => REFUSED_LAUNCH.test(a));
   if (bad) throw new Error(`--serve: ${bad.split('=')[0]} is not for --serve (the page sets the meaning and shows the results as html)`);
   if (unitAt(launch) === 'zero') throw new Error("--serve: --unit=zero is not for --serve (it is -z's output shape, already refused there)");
-  const init = { ...initOf(launch), 'summarize-prompt': prompt ?? '' }, targets = targetsOf(launch, after);
+  const init = { ...initOf(launch), 'summarize-prompt': prompt ?? '' };
   const secret = key === undefined ? [] : [`--sys1-api-key=${key}`];
   const cli = { url: lift(launch, 'sys1-url')[1], model: lift(launch, 'sys1-model')[1], key };
   const token = randomBytes(16).toString('hex');
   const script = process.argv[1];
+  // #222/#237: whether -r / -g / git sys1grep are in effect, asked of sys1grep itself (SYS1GREP_PROBE) so SYS1GREP_OPTS,
+  // settings.json opts and a later --no-r all count, as a real search would resolve them, not just this launch's own
+  // argv. Used both to refuse a bare directory target without -r (below) and to decide the demo corpus (targetsOf).
+  const probe = (() => {
+    const { stdout } = spawnSync(process.execPath, [script, ...launch], { input: '', encoding: 'utf8', timeout: 10_000, env: { ...process.env, SYS1GREP_PROBE: 'recursive' } });
+    try { return JSON.parse(stdout); } catch { return null; }
+  })();
+  const targets = targetsOf(launch, after, probe);
   // #222: a folder searched without -r fails every search ("Is a directory (use -r)"), so refuse it before listening.
-  // Whether -r is in effect is asked of sys1grep itself (SYS1GREP_PROBE), so -r from SYS1GREP_OPTS or settings.json
-  // opts, a later --no-r, -g and git sys1grep all count as they do in a search.
   const dir = targets.list.find(t => statSync(t, { throwIfNoEntry: false })?.isDirectory());
   if (dir) {
-    const { stdout } = spawnSync(process.execPath, [script, ...launch], { input: '', encoding: 'utf8', timeout: 10_000, env: { ...process.env, SYS1GREP_PROBE: 'recursive' } });
-    let p;
-    try { p = JSON.parse(stdout); } catch { console.error('sys1grep: --serve: could not check whether -r is in effect'); }
+    if (!probe) console.error('sys1grep: --serve: could not check whether -r is in effect');
     const sh = a => (/^[\w@%+=:,./-]+$/.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`);
-    if (p && !p.r && !p.g && !p.git) throw new Error(`--serve: ${dir} is a directory: add -r to search it (${process.env.npm_lifecycle_event === 'serve' ? 'npm run serve --' : 'sys1grep --serve'} -r ${dir.startsWith('-') ? '-- ' : ''}${sh(dir)})`);
+    if (probe && !probe.r && !probe.g && !probe.git) throw new Error(`--serve: ${dir} is a directory: add -r to search it (${process.env.npm_lifecycle_event === 'serve' ? 'npm run serve --' : 'sys1grep --serve'} -r ${dir.startsWith('-') ? '-- ' : ''}${sh(dir)})`);
   }
   const tpl = launch.some(a => a.startsWith('--template')) ? [] : ['--template=search'];
   const { SYS1GREP_SUMMARIZE, ...searchEnv } = process.env; // set by the user, it would turn every search into a summary
-  // Demo mode (#237) adds -r DEMO_DIR to what each search actually runs, never to launch/LAUNCH: the copy-command box
-  // and the client script show the command the person typed, not sys1grep's own bundled path.
-  const execLaunch = targets.demo ? [...launch, '-r', targets.demoDir] : launch;
-  const run = (args, signal, input = '', env = searchEnv) => new Promise(resolve => {
+  // Demo mode (#237) adds -r DEMO_DIR to what a search actually runs, never to launch/LAUNCH (the copy-command box and
+  // the client script keep showing the command as typed, not sys1grep's own bundled path -- the page's "reads the
+  // bundled examples/" note next to Copy says so). Only when that search is not itself reading git log: gitlog is
+  // this search's own effective -g (the launch's, or a per-search Details toggle, whichever toArgv would send) --
+  // -g never needs a target, and sys1grep refuses -g together with -r outright.
+  const run = (args, signal, input = '', env = searchEnv, gitlog = false) => new Promise(resolve => {
+    const execLaunch = targets.demo && !gitlog ? [...launch, '-r', targets.demoDir] : launch;
     const child = execFile(process.execPath, [script, ...execLaunch, ...secret, ...args, ...after], { signal, env, maxBuffer: 1 << 28 },
       (e, out, err) => resolve({ code: e ? (typeof e.code === 'number' ? e.code : 2) : 0, out, err }));
     child.stdin.on('error', () => {});
@@ -351,7 +363,7 @@ export function serve(argv) {
     const args = toArgv({ ...p, summarize: false }, init);
     if (kind === 'dry') args.push('--dry-run', '--no-summarize');
     else if (!step && (p.rank ?? init.rank)) args.push('--format=html', ...tpl);
-    const { code, out, err } = await run([`--color=${kind === 'results' ? 'always' : 'never'}`, ...args], signal);
+    const { code, out, err } = await run([`--color=${kind === 'results' ? 'always' : 'never'}`, ...args], signal, '', searchEnv, p.g ?? init.g);
     if (code > 1) return { error: err.trim() || `exit ${code}` };
     if (code === 1 && !out) return { none: true, note: err.trim() };
     return kind === 'results' && !step && (p.rank ?? init.rank) ? { html: out.replace('</head>', '<style>.bar{display:none}</style></head>') } : { text: out };
@@ -406,7 +418,7 @@ export function serve(argv) {
       if (!text.trim()) return answer(400, { error: 'no results to summarize' });
       const ac = new AbortController();
       res.on('close', () => ac.abort());
-      const { code, out, err } = await run(['--color=never', ...toArgv({ ...p, summarize: true }, init), '--format=plain'], ac.signal, text, { ...searchEnv, SYS1GREP_SUMMARIZE: 'stdin' });
+      const { code, out, err } = await run(['--color=never', ...toArgv({ ...p, summarize: true }, init), '--format=plain'], ac.signal, text, { ...searchEnv, SYS1GREP_SUMMARIZE: 'stdin' }, p.g ?? init.g);
       return answer(200, code ? { error: err.trim() || `exit ${code}` } : { text: out });
     }
     const kind = url.pathname.slice(1);
@@ -522,7 +534,7 @@ Default: from a function to the functions it calls. reverse (--step-reverse-to):
 <input type="text" name="summarize-prompt" placeholder="summary instruction" style="display:none;flex:1;min-width:160px">
 </div>
 <div class="row ask" id="ask" role="group" aria-labelledby="askq" hidden><span id="askq"></span><button type="button" id="ask-ok">OK</button><button type="button" id="ask-no">Not now</button></div>
-<div class="row"><pre id="cmd" title="the command line for the fields and controls as they are now; pasted in a terminal it runs the same search. The API key is never in it"></pre><button type="button" id="copy" title="copy the command line to the clipboard">Copy</button></div>
+<div class="row"><pre id="cmd" title="the command line for the fields and controls as they are now; pasted in a terminal it runs the same search. The API key is never in it"></pre><button type="button" id="copy" title="copy the command line to the clipboard">Copy</button>${targets.demo ? '<span class="note" id="cmd-demo-note">here it searches the bundled <code>examples/</code>; pasted elsewhere it reads stdin instead &mdash; add a file, a folder, or -r DIR</span>' : ''}</div>
 </section>
 <details id="d"><summary id="ds" title="詳細: the other options; a dot means one differs from its launch value">Details</summary><div class="grid">
 ${hg('level', '<label>level <select name="level"><option>loose</option><option>normal</option><option>strict</option></select></label>', 'how strict a match must be (--level): loose takes more lines, strict fewer')}

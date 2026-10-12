@@ -1695,6 +1695,7 @@ eq "$(curl -s -o /dev/null -w '%{http_code}' "$BASE")" "404" "--serve: the page 
 # #216: the Target section shows the launch's targets; the page has no way to send one, and a query naming another
 # file is ignored (only the known fields count), so a search reads the launch's targets and nothing else
 eq "$(curl -s "$U" | grep -o '<ul class="targets"[^>]*><li><code>[^<]*</code></li></ul>' | sed 's/.*<code>//; s/<.*//')" "$F" "--serve: Target shows the launch's target"
+eq "$(curl -s "$U" | grep -c 'id="cmd-demo-note"')" "0" "--serve: a real target, no demo note next to Copy"
 printf 'a cat elsewhere\n' >"$tmp/other.txt"
 eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=&file=$tmp/other.txt&target=$tmp/other.txt" | grep -c elsewhere)" "0" "--serve: a target in the query is not searched"
 [ "$(curl -s "$BASE" | grep -c "$K")" = 0 ] || fail "--serve: a page fetched without the token never carries it"
@@ -1882,6 +1883,7 @@ serve=$!
 i=0; while [ ! -s "$tmp/serve-demo.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (no target) did not start"; sleep 0.05; done
 U=$(cat "$tmp/serve-demo.url"); BASE=${U%%\?*} K=${U#*k=}
 eq "$(curl -s "$U" | grep -o '<li class="note">[^<]*</li>')" '<li class="note">demo corpus (bundled): examples/</li>' "--serve: no target, Target says it searches the bundled corpus"
+eq "$(curl -s "$U" | grep -c 'id="cmd-demo-note"')" "1" "--serve: no target, the copy-command box notes the pasted command reads stdin instead"
 i=0
 while IFS= read -r qs; do
   i=$((i + 1))
@@ -1891,6 +1893,27 @@ while IFS= read -r qs; do
   case $txt in *examples/app.*) ;; *) fail "--serve: demo corpus: multi-step example #$i found nothing in the corpus: $txt" ;; esac
 done <"$tmp/step.qs"
 eq "$i" "4" "--serve: demo corpus: every multi-step example checked"
+# the Details -g toggle must not fight the demo corpus's own -r: a per-search g=1 drops the -r DEMO_DIR this run
+# would otherwise add (serve.mjs's run(), the gitlog parameter), not send -g and -r together (sys1grep refuses that
+# outright: "-g searches commits, not files: it cannot be combined with -r")
+got=$(curl -s "${BASE}results?k=$K&x=e:cat&rank=&g=1")
+errtxt=$(printf '%s' "$got" | node -pe "JSON.parse(require('fs').readFileSync(0)).error ?? ''")
+case $errtxt in *'cannot be combined with -r'*) fail "--serve: no target, Details -g=1: still conflicts with the demo corpus's -r: $errtxt" ;; esac
+kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
+# a bare --serve -g (launch-level, not a per-search toggle) hits the same wall if demo ignores it; it must not
+$E SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= node ../sys1grep.mjs --serve -g >"$tmp/serve-demo-g.url" 2>/dev/null &
+serve=$!
+i=0; while [ ! -s "$tmp/serve-demo-g.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve -g did not start"; sleep 0.05; done
+U=$(cat "$tmp/serve-demo-g.url"); BASE=${U%%\?*} K=${U#*k=}
+got=$(curl -s "${BASE}results?k=$K&x=e:cat&rank=")
+errtxt=$(printf '%s' "$got" | node -pe "JSON.parse(require('fs').readFileSync(0)).error ?? ''")
+case $errtxt in *'cannot be combined with -r'*) fail "--serve -g at launch: demo still adds -r: $errtxt" ;; esac
+kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
+# SYS1GREP_OPTS=-r (not the launch argv) must also turn the demo corpus off: targetsOf's probe, not a bare o.r parse
+$E SYS1GREP_OPTS=-r SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= node ../sys1grep.mjs --serve >"$tmp/serve-demo-opts.url" 2>/dev/null &
+serve=$!
+i=0; while [ ! -s "$tmp/serve-demo-opts.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (SYS1GREP_OPTS=-r) did not start"; sleep 0.05; done
+eq "$(curl -s "$(cat "$tmp/serve-demo-opts.url")" | grep -o '<li class="note">[^<]*</li>')" '<li class="note">. (this folder, recursively: -r)</li>' "--serve: SYS1GREP_OPTS=-r, no launch -r: Target says ., not the demo corpus"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 
 section 'serve: launch options'
