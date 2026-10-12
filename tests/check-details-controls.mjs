@@ -1,7 +1,7 @@
 // #234: -A/-B/-o/-j/--max-cost, the new Details controls. -A/-B/-o are nostep (go inert during a multi-step walk,
 // like C/dedup already do); -o is also sentenceOnly (hidden, and never sent, unless the unit is a sentence); -j and
 // --max-cost apply in a walk too (sys1grep.mjs's own multi-step conflict list does not name them).
-import { toArgv, initOf } from '../serve.mjs';
+import { toArgv, initOf, costRetryOf } from '../serve.mjs';
 const noLaunch = initOf([]);
 const tuning = toArgv({ x: ['e:a'], unit: 'sentence-by-jev', A: '2', B: '1', o: true, j: '4', 'max-cost': '0.5' }, noLaunch);
 const lineUnit = toArgv({ x: ['e:a'], unit: 'line', A: '2', B: '1', o: true, j: '4', 'max-cost': '0.5' }, noLaunch);
@@ -12,3 +12,17 @@ console.log([
   stepped.some(a => a === '-A' || a === '-B' || a === '-o'), // nostep: inert during a walk
   stepped.includes('-j') && stepped.includes('4') && stepped.some(a => a.startsWith('--max-cost=')), // not nostep
 ].join(' '));
+
+// #234 review: costRetryOf must anchor on the guard's own "about N input tokens, ~$X.XX" line, not the first "$"
+// anywhere in stderr -- a meaning or a scope line earlier in it can carry one (here, a meaning literally containing
+// "$100", pinning the regex against the exact failure the review found). And no bump in a multi-step walk, even
+// over the very same stderr, since a retry there would really spend the start side's cost (sys1grep.mjs) for a
+// button that may not even appear a second time.
+const err = 'sys1grep: scope: "charges over $100" (from "charges over $100")\n'
+  + "sys1grep: about 811 input tokens, ~$0.03 at TypeSafe's list price  (--max-cost 0)\n"
+  + 'sys1grep: large input needs a terminal to confirm on (-y, or a higher --max-cost, lets it through)';
+console.log([
+  costRetryOf({ x: ['e:a'] }, err), // the real estimate's bump, not 100.01 from the meaning's own "$100"
+  costRetryOf({ x: ['e:a', 'S:', 'e:b'] }, err), // null: a multi-step walk gets no button
+  costRetryOf({ x: ['e:a'] }, 'sys1grep: some other error'), // null: not this refusal at all
+].map(x => x ?? 'null').join(' '));

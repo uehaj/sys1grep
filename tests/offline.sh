@@ -1968,6 +1968,9 @@ a label with a \"?\" no longer also carries a duplicate title=: step ok, rank ok
 --hops keeps its own title= (not a duplicate): ok
 first start row: 3 children (select, input, delete)
 the first start field is a question (-Q) by default: ok
+-o hidden by default (unit: line): true
+-o shown with a sentence unit: true
+-o hidden again once the unit is not a sentence: true
 steps hidden: -P '/def main/'
 x=P:/def main/ hops=0.. reverse=0 -> 1 lines
 target: files shown, git log hidden
@@ -2167,7 +2170,8 @@ eq "$(curl -s "${BASE}results?k=$K&x=e:main&rank=&n=1&unit=line" | node -pe "JSO
 eq "$(curl -s "${BASE}results?k=$K&x=e:main&rank=&n=1&unit=function" | node -pe "JSON.parse(require('fs').readFileSync(0)).text" | sed "s/$(printf '\033')\[[0-9;]*m//g" | tr '\n' '|')" "1:def main():|2:  helper()||" "--serve: the control accepts function explicitly too (the whole function, same as the launch default)"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 eq "$(node check-unit-control.mjs)" "function false true false" "--serve toArgv: a launch --unit=function is not overridden in step mode, a non-step pick still sends --unit, a step-mode pick is inert"
-eq "$(node check-details-controls.mjs)" "-e a -A 2 -B 1 --unit=sentence-by-jev -o -j 4 --max-cost=0.5 false false true" "--serve toArgv: -A/-B/-o/-j/--max-cost all reach the command with a sentence unit; -o is sentenceOnly so unit=line omits it outright; a walk leaves -A/-B/-o inert but still sends -j/--max-cost"
+eq "$(node check-details-controls.mjs)" "-e a -A 2 -B 1 --unit=sentence-by-jev -o -j 4 --max-cost=0.5 false false true
+0.04 null null" "--serve toArgv: -A/-B/-o/-j/--max-cost all reach the command with a sentence unit; -o is sentenceOnly so unit=line omits it outright; a walk leaves -A/-B/-o inert but still sends -j/--max-cost; costRetryOf anchors on the guard's own line (not a meaning's own \"\$100\") and gives no bump in a multi-step walk"
 section 'serve: cost guard (--max-cost)'
 # #234 (Q1, measured 2026-10-12): a search over --max-cost is refused at once (--serve has no /dev/tty to ask on),
 # naming -y and --max-cost, neither of which the page can set; Details' own --max-cost control (above) lets a later
@@ -2181,6 +2185,12 @@ eq "$(printf '%s' "$GOT" | node -pe "/needs a terminal to confirm on/.test(JSON.
 eq "$(printf '%s' "$GOT" | node -pe "/~\\\$[0-9.]+/.test(JSON.parse(require('fs').readFileSync(0)).error)")" "true" "--serve: the refusal already carries the estimate (the same price --dry-run would show)"
 eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=&max-cost=1" | node -pe "JSON.parse(require('fs').readFileSync(0)).text")" "cat
 cat dog" "--serve: Details' --max-cost control clears the guard for a later search"
+# #234 review item 3: the button itself had no test (+0.01 could become -0.01 and CI would stay green). Drives the
+# real page's own script against this same server: the button names the guard's own price, clicking it is exactly
+# one more request carrying --max-cost at that price, and that request succeeds.
+eq "$(HOME="$tmp" node check-cost-retry.mjs "$U")" "button text: Search anyway (--max-cost 0.01); matches the expected shape: true
+clicking it sent 1 more request(s), with --max-cost=0.01 (named: 0.01)
+the rerun's own result: ok, text on screen" "--serve: the cost guard's \"Search anyway\" button"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 section 'serve: --serve=PORT'
 # two --serve (npm run serve adds one): the last one's port is used and neither reaches the child

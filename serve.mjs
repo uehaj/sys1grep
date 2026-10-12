@@ -215,6 +215,23 @@ export const toArgv = (p, init) => {
   if (sum && v('summarize-prompt')) out.push(`--summarize-prompt=${v('summarize-prompt')}`);
   return out;
 };
+// #234 (Q1, measured 2026-10-12): a search over --max-cost is refused at once, naming -y and --max-cost, neither of
+// which the page can set. The refusal already carries the same estimate --dry-run would show (sys1grep.mjs prices it
+// the same way for both), so this reads the price out of the error instead of firing a second --dry-run request:
+// the bump a "Search anyway" button would use, or null when there is none. Exported (like toArgv/initOf) so it is
+// both stringified into the client script and directly testable with no DOM.
+// The price must come from the guard's own line (sys1grep.mjs's askToContinue), anchored on "about N input tokens,
+// ~$X.XX": a bare /\$([\d.]+)/ over the whole stderr can match a $ earlier in it first -- auto-scope's own "scope:
+// ..." line, or a skipped file's name, can carry one (#234 review).
+// No bump in a multi-step walk (#234 review): the first refusal only prices the start side, a retry really sends
+// it (sentRequests/sentBytes, sys1grep.mjs), and the end side's guard then compares the cumulative cost and can
+// refuse again with no button of its own, after spending the start's cost for nothing. Details' --max-cost field
+// (also #234, applies in a walk) is the way there instead.
+export const costRetryOf = (p, error) => {
+  if ((p.x ?? []).some(f => f[0] === 'S')) return null;
+  const price = /needs a terminal to confirm on/.test(error ?? '') && /about [\d,]+ input tokens, ~\$([\d.]+)/.exec(error)?.[1];
+  return price ? (Math.round((Number(price) + 0.01) * 100) / 100).toFixed(2) : null;
+};
 // The launch's values, from the command line (what parseArgs cannot place is left at the default).
 export const initOf = launch => {
   const fill = { '--rank': '--rank=jev', '--summarize': '--summarize=x', '--dedup': '--dedup=always', '--no-rank': '--rank=\0', '--no-summarize': '--summarize=\0' };
@@ -524,6 +541,7 @@ ${hg('changed', '<label>--changed-within <input name="changed-within" placeholde
 <script>
 const CONTROLS = ${json(CONTROLS)}, INIT = ${json(init)}, LAUNCH = ${json(launch)}, AFTER = ${json(after)}, TOKEN = ${json(token)}, EXAMPLES = ${json(EXAMPLES)}, SUGGEST = ${json(suggest)};
 const toArgv = ${toArgv};
+const costRetryOf = ${costRetryOf};
 const quote = (s, force) => (!force && /^[\\w@%+=:,./-]+$/.test(s) ? s : "'" + s.replace(/'/g, "'\\\\''") + "'");
 const shown = argv => argv.map((t, i) => (/^-[eavQP]$/.test(argv[i - 1] ?? '') ? quote(t, t[0] === '-') : /^--[a-z-]+=/.test(t) ? t.replace(/=([\\s\\S]*)/, (_, v) => '=' + quote(v)) : quote(t)));
 const f = document.getElementById('f'), fields = document.getElementById('fields'), cmd = document.getElementById('cmd');
@@ -627,15 +645,12 @@ document.getElementById('stop').onclick = () => {
   ctl.abort(); gen++; running = 0; busy(false);
   for (const el of [document.getElementById('left'), document.getElementById('right')]) if (!el.hidden && /\.\.\.$/.test(el.textContent)) el.textContent = 'stopped';
 };
-// #234 (Q1, measured 2026-10-12): a search over --max-cost is refused at once, naming -y and --max-cost, neither of
-// which the page can set. The refusal already carries the same estimate --dry-run would show (sys1grep.mjs prices it
-// the same way for both), so this reads the price out of the error instead of firing a second --dry-run request, and
-// offers a button that reruns this one search, once, with --max-cost just above it -- not a change to the Details
-// field, so the next search still uses what was there before.
+// costRetryOf (shared, above): the bump a "Search anyway" button should use, or null for none (no match, or a
+// multi-step walk). Offers a button that reruns this one search, once, with --max-cost at that bump -- not a
+// change to the Details field, so the next search still uses what was there before.
 const addCostRetry = (j, p, into) => {
-  const price = /needs a terminal to confirm on/.test(j.error ?? '') && /\$([\d.]+)/.exec(j.error)?.[1];
-  if (!price) return;
-  const bump = (Math.round((Number(price) + 0.01) * 100) / 100).toFixed(2);
+  const bump = costRetryOf(p, j.error);
+  if (!bump) return;
   const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Search anyway (--max-cost ' + bump + ')';
   b.onclick = () => {
     if (running) return;

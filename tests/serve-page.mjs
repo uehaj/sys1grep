@@ -185,6 +185,14 @@ const search = async () => {
 const state = () => `steps ${!byId.steps ? 'missing' : byId.steps.hidden ? 'hidden' : 'shown'}: ${byId.cmd.textContent.replace(/^sys1grep \S+ /, '')}`;
 
 console.log(`the first start field is a question (-Q) by default: ${byId.fields.children[0].firstChild.value === 'Q' ? 'ok' : 'FAIL'}`);
+// #234 review: -o is shown only with a sentence unit (owner, #211 item 10); hg-o is hidden by default (unit: line)
+// and un-hides for sentence-by-jev / sentence-by-rule, then hides again once the unit picks away from a sentence.
+console.log(`-o hidden by default (unit: line): ${byId['hg-o'].hidden}`);
+elements.unit.value = 'sentence-by-jev'; fire();
+console.log(`-o shown with a sentence unit: ${!byId['hg-o'].hidden}`);
+elements.unit.value = 'function'; fire();
+console.log(`-o hidden again once the unit is not a sentence: ${byId['hg-o'].hidden}`);
+elements.unit.value = 'line'; fire();
 byId.fields.children[0].firstChild.value = 'P'; // the walk below starts from a regex: -P, not -Q (never a regex) or -e (no longer one)
 byId.fields.children[0].children[1].value = '/def main/';
 fire();
