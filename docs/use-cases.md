@@ -80,7 +80,7 @@ Cost and time: $0.0107 and 2.2 s (Linux); $0.0053 and 1.8 s (Apache).
 
 ```sh
 curl -sO https://raw.githubusercontent.com/logpai/loghub/master/OpenSSH/OpenSSH_2k.log
-sys1grep -p -e '/Invalid user (?<u>\S+) from/' \
+sys1grep -p -P '/Invalid user (?<u>\S+) from/' \
   -a '「$<u>」は人の名前（個人のアカウント）であり、admin や oracle のような役割・製品のアカウント名ではない' OpenSSH_2k.log
 ```
 
@@ -251,7 +251,7 @@ Cost and time: $0.0010 and 0.5 s.
 ### Which `catch` blocks swallow the error?
 
 ```sh
-sys1grep -n -p -e '/catch/' -a "the error is ignored" sys1grep.mjs serve.mjs
+sys1grep -n -p -P '/catch/' -a "the error is ignored" sys1grep.mjs serve.mjs
 ```
 
 Data: this repository's `sys1grep.mjs` (2,574 lines) and `serve.mjs` (284 lines); 33 lines hold `catch`.
@@ -284,7 +284,7 @@ Cost and time: $0.0001 and 0.4 s.
 
 ```sh
 cd "$(python3 -c 'import sysconfig; print(sysconfig.get_paths()["stdlib"])')"
-sys1grep -r -n -p -e '/#.*\b(TODO|XXX|FIXME)\b/' -a "a TODO that describes a known bug, not a wish" email http asyncio json urllib
+sys1grep -r -n -p -P '/#.*\b(TODO|XXX|FIXME)\b/' -a "a TODO that describes a known bug, not a wish" email http asyncio json urllib
 ```
 
 Data: five packages of the Python 3.13.3 standard library, 36,952 lines, 63 of them comments with TODO, XXX or

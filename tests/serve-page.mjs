@@ -185,7 +185,7 @@ const search = async () => {
 const state = () => `steps ${!byId.steps ? 'missing' : byId.steps.hidden ? 'hidden' : 'shown'}: ${byId.cmd.textContent.replace(/^sys1grep \S+ /, '')}`;
 
 console.log(`the first start field is a question (-Q) by default: ${byId.fields.children[0].firstChild.value === 'Q' ? 'ok' : 'FAIL'}`);
-byId.fields.children[0].firstChild.value = 'e'; // the walk below starts from a regex, which -Q is never
+byId.fields.children[0].firstChild.value = 'P'; // the walk below starts from a regex: -P, not -Q (never a regex) or -e (no longer one)
 byId.fields.children[0].children[1].value = '/def main/';
 fire();
 console.log(state());
@@ -211,8 +211,10 @@ fire();
 console.log(`on, starts kept: ${state()}`);
 // on: start "+" and end "+" each add to their own group; the command carries the starts before --step-to, ends after
 document.getElementById('addend').onclick();
+byId.ends.children[0].firstChild.value = 'P';
 byId.ends.children[0].children[1].value = '/raise /';
 document.getElementById('addend').onclick();
+byId.ends.children[1].firstChild.value = 'P';
 byId.ends.children[1].children[1].value = '/sys\\.exit/';
 fire();
 console.log(`on, 2 starts + 2 ends: ${state()}`);
@@ -228,13 +230,14 @@ fire();
 byId.step.checked = true;
 fire();
 console.log(state());
-byId.ends.children[0].children[1].value = '/raise /';
+byId.ends.children[0].children[1].value = '/raise /'; // kind is still -P, set above and untouched by the reset
 elements.hops.value = '1..2';
 fire();
 console.log(state());
 console.log(await search());
 // on: --hops, reverse (--step-reverse-to) and a second end (added with "+", not an example) all reach the command together
 document.getElementById('addend').onclick();
+byId.ends.children[1].firstChild.value = 'P';
 byId.ends.children[1].children[1].value = '/sys\\.exit/';
 elements.reverse.checked = true;
 fire();
@@ -371,7 +374,7 @@ console.log(`no request carried a target: ${TARGETS.length && sent.length && sen
 // search says the results are older; OK posts the text on screen to /summarize and sends no search.
 const askState = () => (byId.ask.hidden ? 'no question' : `"${byId.askq.textContent}" [${byId['ask-ok'].textContent} / ${byId['ask-no'].textContent}] (lang ${byId.ask.lang})`);
 const tick = on => { elements.summarize.checked = on; for (const fn of elements.summarize.ls.change ?? []) fn(); fire(); };
-const startOn = v => { byId.fields.children[0].firstChild.value = 'e'; byId.fields.children[0].children[1].value = v; fire(); };
+const startOn = v => { byId.fields.children[0].firstChild.value = /^\/.*\/[a-z]*$/.test(v) ? 'P' : 'e'; byId.fields.children[0].children[1].value = v; fire(); };
 byId.step.checked = false;
 startOn('/zzzz/');
 await search();

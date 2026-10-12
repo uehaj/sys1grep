@@ -125,6 +125,19 @@ eq "$($J -n -e cat -a '!dog' "$F" | nums)" "1 " "-a '!X' is -v X"
 code 2 "-a first" -- $J -a cat "$F"
 code 2 "empty meaning" -- $J -e '' "$F"
 code 2 "no meaning" -- $J -n "$F"
+# #238: -e is always a meaning now; a /RE/flags value there is refused, naming -P. -Q is unchanged (always a
+# question, never a regex, no refusal).
+eq "$($J -e '/cat/' "$F" 2>&1 >/dev/null | head -1)" "sys1grep: -e '/cat/' is no longer a regex: use -P '/cat/'; for the text itself, add a leading space" "-e '/regex/' is refused, naming -P"
+eq "$($J -e '!/cat/' "$F" 2>&1 >/dev/null | head -1)" "sys1grep: -e '!/cat/' is no longer a regex: use -v '/cat/'; for the text itself, add a leading space" "-e '!/regex/' is refused, naming -v"
+code 1 "-e ' /RE/' (leading space): the documented escape, sent as a meaning (exit 1, no match), not refused (exit 2)" -- $J -e ' /cat/' "$F"
+eq "$($J -Q '/cat/' "$F" | nums)" "" "-Q is always a question, never a regex"
+# -P: a regex term, OR'd like -e; -a/-v AND/AND NOT onto it; never negated itself
+eq "$($J -n -P '/cat/' "$F" | nums)" "1 4 " "-P"
+eq "$($J -n -P '/cat/' -P '/dog/' "$F" | nums)" "1 2 4 " "-P -P is OR"
+eq "$($J -n -P '/cat/' -a dog "$F" | nums)" "4 " "-a is AND onto -P"
+eq "$($J -n -P '/cat/' -v dog "$F" | nums)" "1 " "-v is AND NOT onto -P"
+eq "$($J -P '!/cat/' "$F" 2>&1 >/dev/null | head -1)" "sys1grep: -P '!/cat/' is not allowed: negate a regex with -v '/RE/'" "-P '!/regex/' is refused"
+eq "$($J -P cat "$F" 2>&1 >/dev/null | head -1)" "sys1grep: -P 'cat' must be a regex (/RE/flags)" "-P needs a /RE/flags value"
 
 section '-Q (the line answers)'
 # -Q X is -e "the line answers: X", sent once when both are given
@@ -207,7 +220,7 @@ printf 'import x from "y";\n\nfunction a() {\n  return 1;\n}\n\nfunction b() {\n
 eq "$($J --unit=function -e slow "$tmp/fn.js" 2>&1 >/dev/null || true)" "sys1grep: no function reached 0.5 for \"slow\"; the highest was 0.20 ($tmp/fn.js:7). -p -t 0 shows every probability" "no-match hint: a function's first line"
 code 1 "no-match hint, exit" -- $J -e bird "$F"
 eq "$($J -q -e bird "$F" 2>&1 || true)" "" "no-match hint: silent under -q"
-eq "$($J -e '/zebra/' "$F" 2>&1 || true)" "" "no-match hint: silent when nothing was sent"
+eq "$($J -P '/zebra/' "$F" 2>&1 || true)" "" "no-match hint: silent when nothing was sent"
 eq "$($J -e cat -a '/zebra/' "$F" 2>&1 || true)" "" "no-match hint: silent when the regex left nothing to send"
 code 2 "-t above 1" -- $J -t 1.5 -e cat "$F"
 
@@ -227,20 +240,20 @@ case $($J -n --color -e cat "$F") in *"$esc"*) fail "--color (auto) colors a pip
 case $($J -n -e cat "$F") in *"$esc"*) fail "default colors a pipe" ;; esac
 code 2 "--color=bogus" -- $J --color=bogus -e cat "$F"
 # regex matches in grep's match color (bold red), every one on the line, only for terms that held; sentences bold yellow
-eq "$($J --color=always -e '/a/' "$F" | sed -n 3p)" "the line ${esc}[01;31ma${esc}[0mnswers: owl" "--color: a regex match"
-eq "$($J --color=always -e '/o/' "$F" | tail -1)" "${esc}[01;31mo${esc}[0mwl" "--color: a regex match, not the meaning"
-eq "$($J --color=always -e '/dog/' -a cat "$F")" "cat ${esc}[01;31mdog${esc}[0m" "--color: a regex beside a meaning"
-eq "$($J --color=always -e '/dog/' -a zebra -e cat "$F" | tail -1)" "cat dog" "--color: no color from a term that did not hold"
+eq "$($J --color=always -P '/a/' "$F" | sed -n 3p)" "the line ${esc}[01;31ma${esc}[0mnswers: owl" "--color: a regex match"
+eq "$($J --color=always -P '/o/' "$F" | tail -1)" "${esc}[01;31mo${esc}[0mwl" "--color: a regex match, not the meaning"
+eq "$($J --color=always -P '/dog/' -a cat "$F")" "cat ${esc}[01;31mdog${esc}[0m" "--color: a regex beside a meaning"
+eq "$($J --color=always -P '/dog/' -a zebra -e cat "$F" | tail -1)" "cat dog" "--color: no color from a term that did not hold"
 eq "$($J --color=always -e cat -v '/dog/' "$F")" "cat" "--color: no color from a negated regex"
 printf 'The cat sat. A dog ran.\n' >"$tmp/s.txt"
 eq "$($J --unit=sentence-by-rule --color=always -e cat -a '/sat/' "$tmp/s.txt")" "${esc}[01;33mThe cat ${esc}[0m${esc}[01;31msat${esc}[0m${esc}[01;33m.${esc}[0m A dog ran." "--unit=sentence-by-* --color: the sentence yellow, the regex red"
 eq "$($J --unit=sentence-by-rule -o --color=always -e cat -a '/sat/' "$tmp/s.txt")" "The cat ${esc}[01;31msat${esc}[0m." "--unit=sentence-by-* -o: the sentence, its regex red"
 # -o without --unit=sentence-by-*: each regex match on a line of its own (grep -o), no context; a meaning-only line whole
-eq "$($J -o -n -e '/a/' "$F" | tr '\n' '|')" "1:a|4:a|7:a|" "-o: regex matches"
-eq "$($J -o -n -e '/o/' -a '/owl/' "$F" | tr '\n' '|')" "7:owl|8:owl|" "-o: overlapping matches print once, the longest"
+eq "$($J -o -n -P '/a/' "$F" | tr '\n' '|')" "1:a|4:a|7:a|" "-o: regex matches"
+eq "$($J -o -n -P '/o/' -a '/owl/' "$F" | tr '\n' '|')" "7:owl|8:owl|" "-o: overlapping matches print once, the longest"
 eq "$($J -o -n -e cat "$F" | tr '\n' '|')" "1:cat|4:cat dog|" "-o: a meaning-only line prints whole"
-printf 'ABcYZde\n' >"$tmp/o.txt"; eq "$($J -o -e '/AB/' -e '/B.{5}/' -e '/YZ/' "$tmp/o.txt" | tr '\n' '|')" "AB|YZ|" "-o: a skipped overlap does not hide a later match"
-eq "$($J -o -n -A 1 -e '/cat/' "$F" | tr '\n' '|')" "1:cat|4:cat|" "-o: no context"
+printf 'ABcYZde\n' >"$tmp/o.txt"; eq "$($J -o -P '/AB/' -P '/B.{5}/' -P '/YZ/' "$tmp/o.txt" | tr '\n' '|')" "AB|YZ|" "-o: a skipped overlap does not hide a later match"
+eq "$($J -o -n -A 1 -P '/cat/' "$F" | tr '\n' '|')" "1:cat|4:cat|" "-o: no context"
 
 section '--chunk'
 # --chunk: lines per request (7 lines are sent; the blank one is not)
@@ -279,12 +292,12 @@ eq "$($J --verbose -e cat "$F" 2>&1 >/dev/null | tail -1)" "2 of 8 lines matched
 eq "$($JN --verbose -e cat "$F" 2>&1 >/dev/null | tail -1)" "2 of 8 lines matched; 7 sent to Jev in 1 request, 1 input token, ~\$0.000000 at TypeSafe's list price" "summary line, a non-local custom URL"
 printf 'cat @nousage\ndog\n' >"$tmp/nu.txt"
 eq "$($J --verbose -c -e cat "$tmp/nu.txt" 2>&1 >/dev/null | tail -1)" "1 of 2 lines matched; 2 sent to Jev in 1 request, 0 input tokens" "summary line: an endpoint that reports no usage shows no price"
-eq "$($J --verbose -e /cat/ "$F" 2>&1 >/dev/null | tail -1)" "2 of 8 lines matched; nothing sent" "summary line, regex only"
+eq "$($J --verbose -P /cat/ "$F" 2>&1 >/dev/null | tail -1)" "2 of 8 lines matched; nothing sent" "summary line, regex only"
 # stderr whose reader quit: what cannot be said is dropped (as console.error drops it) and the exit status stands
-( $J --verbose -e /cat/ "$F" 2>&1 >/dev/null && r=0 || r=$?; echo $r >"$tmp/rc" ) | true; eq "$(cat "$tmp/rc")" "0" "--verbose with stderr closed"
-eq "$($J --verbose -e /dog/ -a cat "$F" 2>&1 >/dev/null | tail -1)" "1 of 8 lines matched; 2 sent to Jev in 1 request, 1 input token, ~\$0.000000 (local URL, free)" "summary line counts the lines a regex left out"
+( $J --verbose -P /cat/ "$F" 2>&1 >/dev/null && r=0 || r=$?; echo $r >"$tmp/rc" ) | true; eq "$(cat "$tmp/rc")" "0" "--verbose with stderr closed"
+eq "$($J --verbose -P /dog/ -a cat "$F" 2>&1 >/dev/null | tail -1)" "1 of 8 lines matched; 2 sent to Jev in 1 request, 1 input token, ~\$0.000000 (local URL, free)" "summary line counts the lines a regex left out"
 $J --verbose --dedup -e cat "$F" 2>&1 >/dev/null | tail -1 | grep -Eq '^2 of 8 lines matched; [0-9]+ sent to Jev \([0-9]+ folded by --dedup, ~-?[0-9]+ input tokens / ~\$-?[0-9]+\.[0-9]{6} saved, -?[0-9]+%\) in 2 requests, 2 input tokens, ~\$[0-9]+\.[0-9]{6} \(local URL, free\)$' || fail "summary line with --dedup"
-$J --dry-run -e /dog/ -a cat "$F" | tail -1 | grep -q ', 2 of 8 lines to send,' || fail "--dry-run counts the lines a regex left out"
+$J --dry-run -P /dog/ -a cat "$F" | tail -1 | grep -q ', 2 of 8 lines to send,' || fail "--dry-run counts the lines a regex left out"
 
 section '-j'
 # -j: requests in flight at once (each takes 30ms at the fake)
@@ -309,19 +322,19 @@ code 2 "-q no match and an unreadable file" -- $J -q -e zebra "$F" "$tmp/none"
 reset; $J -q --chunk 1 -j 1 -e cat "$F"; eq "$(stat count)" "1" "-q stops after the first match"
 reset; $J -q --chunk 1 -j 1 -e zebra "$F" || true; eq "$(stat count)" "7" "-q without a match sends every line"
 reset; $J -q -v cat "$F"; eq "$(stat count)" "0" "-q, a bare -v matches the blank line before any request"
-reset; $J -q -e '/dog/' -e zebra "$F"; eq "$(stat count)" "0" "-q, a regex term matches before any request"
-reset; $J -q --chunk 1 -j 1 -e '/cat/' -a cat "$F"; eq "$(stat count)" "1" "-q stops at the first regex-guarded match"
+reset; $J -q -P '/dog/' -e zebra "$F"; eq "$(stat count)" "0" "-q, a regex term matches before any request"
+reset; $J -q --chunk 1 -j 1 -P '/cat/' -a cat "$F"; eq "$(stat count)" "1" "-q stops at the first regex-guarded match"
 code 1 "-Q is never a regex" -- $J -q -Q '/cat/' "$F"
 
 section '--dedup: regex terms'
 # --dedup with regex terms (#25). The fake scores the pre-question 0.05, so every kind folds; each meaning costs 5 questions.
 printf '%s\n' 'cat 03:12 at 03:12' 'cat 03:12 at 14:40' >"$tmp/cap"
-reset; eq "$($J -n --dedup -e '/ at (?<t>\d\d:\d\d)/' -a 'cat $<t>' "$tmp/cap" | nums)" "1 " "--dedup: a referenced capture splits a template"
+reset; eq "$($J -n --dedup -P '/ at (?<t>\d\d:\d\d)/' -a 'cat $<t>' "$tmp/cap" | nums)" "1 " "--dedup: a referenced capture splits a template"
 eq "$(stat asked)" "7" "--dedup: one pre-question for the unexpanded meaning, one question per capture value"
 printf '%s\n' 'usage 95% cat' 'usage 10% cat' >"$tmp/use"
-reset; eq "$($J -n --dedup -e '/usage 9\d%/' -e dog "$tmp/use" | nums)" "1 " "--dedup: a regex term is matched per line, not per template"
+reset; eq "$($J -n --dedup -P '/usage 9\d%/' -e dog "$tmp/use" | nums)" "1 " "--dedup: a regex term is matched per line, not per template"
 eq "$(stat asked)" "6" "--dedup: those two lines are still one group for the meaning"
-reset; eq "$($J -c --dedup -e '/cat/' "$F")" "2" "--dedup, regex terms only"
+reset; eq "$($J -c --dedup -P '/cat/' "$F")" "2" "--dedup, regex terms only"
 eq "$(stat count)" "0" "--dedup, regex terms only: no requests, no pre-question"
 
 section '--dedup: auto/always/never'
@@ -388,7 +401,7 @@ same3 "two files" -n -e Failed "$S1" dedup/app-ja.txt
 same3 "-v" -n -e sshd -v Accepted "$S1"
 same3 "-e -e" -n -e Failed -e 'Out of memory' "$S1"
 same3 "-a" -n -e sshd -a Failed "$S1"
-same3 "a regex term" -n -e '/port 4\d+/' -a Failed "$S1"
+same3 "a regex term" -n -P '/port 4\d+/' -a Failed "$S1"
 same3 "-Q" -n -Q 'a login' -e Accepted "$S1"
 ref=$($J --dedup=never -n -e Failed <"$S1")
 for m in auto always; do eq "$($J --dedup=$m -n -e Failed <"$S1")" "$ref" "--dedup=$m prints what never prints: stdin"; done
@@ -483,6 +496,7 @@ eq "$(ws '{"opts":"-n"}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sy
 eq "$(ws '{"key":5}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: key must be a string" "settings.json: a wrong type, no value shown"
 eq "$(ws '[]' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: not a JSON object" "settings.json: not an object"
 eq "$(ws '{"opts":["-e","x"]}' $ES SYS1GREP_URL=$base/v1 node ../sys1grep.mjs -e cat "$F" 2>&1 | head -1)" "sys1grep: settings.json opts: -e is not allowed (meanings go on the command line)" "settings.json opts: the SYS1GREP_OPTS rules"
+eq "$(ws '{"opts":["-P","/x/"]}' $ES SYS1GREP_URL=$base/v1 node ../sys1grep.mjs -e cat "$F" 2>&1 | head -1)" "sys1grep: settings.json opts: -P is not allowed (a regex goes on the command line)" "settings.json opts: -P is not allowed either"
 # a key in a file others can read: a warning, no value
 out=$(mkdir -p "$tmp/.config/sys1grep"; printf '{"key":"sekrit9"}' >"$HS"; chmod 644 "$HS"; $J -e cat "$F" 2>&1 >/dev/null; rm -f "$HS")
 eq "$out" "sys1grep: warning: ~/.config/sys1grep/settings.json holds a key and others can read it; chmod 600 ~/.config/sys1grep/settings.json" "settings.json readable by others"
@@ -518,7 +532,7 @@ eq "$(printf '%s' "$err" | grep -c "$(printf '\033')")" "0" "an error body loses
 printf 'x @err\ncat\n' >"$tmp/errthen"
 code 0 "-q: a later match wins over a failed request" -- $J -q --chunk 1 -j 1 -e cat "$tmp/errthen"
 code 2 "without -q a failed request is still an error" -- $J --chunk 1 -j 1 -e cat "$tmp/errthen"
-reset; $J -q --dedup -e '/cat/' -e zebra "$F"; eq "$(stat count)" "0" "-q decides a regex match before --dedup's pre-question"
+reset; $J -q --dedup -P '/cat/' -e zebra "$F"; eq "$(stat count)" "0" "-q decides a regex match before --dedup's pre-question"
 # a directory without -r, or one that can't be read, is reported and the rest is still searched (grep)
 mkdir -p "$tmp/d" "$tmp/r/sub"; printf 'cat\n' >"$tmp/r/a.txt"; chmod 000 "$tmp/r/sub"
 code 2 "a directory without -r" -- $J -e cat "$tmp/d" "$F"
@@ -577,23 +591,23 @@ section '--unit=function / --step-to'
 # --unit=function (#114): the fake matches the meaning in one line, and the whole function prints
 printf 'import x from "y";\n\nasync function retry(url) {\n  for (;;) {\n    await sleep(100); // backoff\n  }\n}\n\nconst parse = (s) => {\n  return s;\n};\n' >"$tmp/net.js"
 eq "$($J --unit=function -n -e backoff "$tmp/net.js" | tr '\n' '|')" "3:async function retry(url) {|4:  for (;;) {|5:    await sleep(100); // backoff|6:  }|7:}|" "--unit=function: the function's lines, no trailing blank"
-eq "$($J --unit=function -n -e '/import/' "$tmp/net.js" | nums)" "1 " "--unit=function: lines before the first function are one unit"
+eq "$($J --unit=function -n -P '/import/' "$tmp/net.js" | nums)" "1 " "--unit=function: lines before the first function are one unit"
 printf 'def a():\n    pass\nclass B:\n    def m(self):\n        return 2\n' >"$tmp/m.py"
-eq "$($J --unit=function -n -e '/return/' "$tmp/m.py" | nums)" "4 5 " "--unit=function: a nested def in Python"
+eq "$($J --unit=function -n -P '/return/' "$tmp/m.py" | nums)" "4 5 " "--unit=function: a nested def in Python"
 printf 'def a():\n    pass\n@retry(times=3)\ndef b():\n    request()\n' >"$tmp/d.py"
-eq "$($J --unit=function -n -e '/retry/' "$tmp/d.py" | nums)" "3 4 5 " "--unit=function: a decorator starts its def"
+eq "$($J --unit=function -n -P '/retry/' "$tmp/d.py" | nums)" "3 4 5 " "--unit=function: a decorator starts its def"
 printf 'def a():\n    pass\n@cache\n@retry(\n    times=3,\n)\ndef b():\n    request()\ndef c():\n    pass\n' >"$tmp/d2.py"
-eq "$($J --unit=function -n -e '/times/' "$tmp/d2.py" | nums)" "3 4 5 6 7 8 " "--unit=function: stacked decorators over several lines stay with their def"
+eq "$($J --unit=function -n -P '/times/' "$tmp/d2.py" | nums)" "3 4 5 6 7 8 " "--unit=function: stacked decorators over several lines stay with their def"
 printf '@wrap(\nfunction () {}\n)\nclass C {}\nclass D {}\n' >"$tmp/d.ts"
-eq "$($J --unit=function -n -e '/wrap/' "$tmp/d.ts" | nums)" "1 2 3 4 " "--unit=function: a function in a decorator's arguments does not close it"
+eq "$($J --unit=function -n -P '/wrap/' "$tmp/d.ts" | nums)" "1 2 3 4 " "--unit=function: a function in a decorator's arguments does not close it"
 printf '@tag("(")\ndef a():\n    pass\ndef b():\n    target()\n' >"$tmp/d3.py"
-eq "$($J --unit=function -n -e '/target/' "$tmp/d3.py" | nums)" "4 5 " "--unit=function: a bracket in a decorator's string does not count"
+eq "$($J --unit=function -n -P '/target/' "$tmp/d3.py" | nums)" "4 5 " "--unit=function: a bracket in a decorator's string does not count"
 printf 'function a() {}\nexport const b: () => number = () => 2;\n' >"$tmp/a.ts"
-eq "$($J --unit=function -n -e '/=> 2/' "$tmp/a.ts" | nums)" "2 " "--unit=function: an arrow function with a type annotation"
+eq "$($J --unit=function -n -P '/=> 2/' "$tmp/a.ts" | nums)" "2 " "--unit=function: an arrow function with a type annotation"
 printf 'function a() {}\nconst $ = () => 2;\n' >"$tmp/d.js"
-eq "$($J --unit=function -n -e '/=> 2/' "$tmp/d.js" | nums)" "2 " "--unit=function: \$ is a name"
-eq "$(printf 'intro\n@tag\nnext\n  body\n' | $J --unit=function -n -e '/next/' | nums)" "3 4 " "--unit=function: an @ line joins its def only where the rule takes it as a funcname"
-eq "$(printf 'intro\n== one\nalpha\n== two\nbeta\n' | $J --unit=function -n -e '/beta/' | nums)" "5 " "--unit=function: no attribute, git's default rule"
+eq "$($J --unit=function -n -P '/=> 2/' "$tmp/d.js" | nums)" "2 " "--unit=function: \$ is a name"
+eq "$(printf 'intro\n@tag\nnext\n  body\n' | $J --unit=function -n -P '/next/' | nums)" "3 4 " "--unit=function: an @ line joins its def only where the rule takes it as a funcname"
+eq "$(printf 'intro\n== one\nalpha\n== two\nbeta\n' | $J --unit=function -n -P '/beta/' | nums)" "5 " "--unit=function: no attribute, git's default rule"
 reset; $J --unit=function -e backoff "$tmp/net.js" >/dev/null; eq "$(stat count)" "1" "--unit=function: one request for three functions"
 
 # Multi-step matching (#163): main calls load and check, load calls parse and read, parse calls fail and check,
@@ -604,36 +618,39 @@ printf '%s\n' 'function main() {' '  // --step start: parse(x) here is a comment
   'function parse(s) {' "  if (!s) fail('empty');" '  return check(s);' '}' \
   'function check(s) {' "  return s.length > 0 || fail('short');" '}' 'function fail(why) {' '  throw new Error(why); // raised here' '}' >"$C"
 # 1 main / 6 load / 9 read / 12 parse / 16 check / 19 fail
-eq "$($J -e '/^function main/' --step-to 'raised here' "$C" 2>/dev/null | tr '\n' '|')" "0 $C-1-main|  1 $C-16-check|    2 $C:19:fail|" "--step-to: the path, through the shortcut"
-eq "$($J -e '/^function main/' --step-to 'raised here' "$C" 2>&1 >/dev/null)" "sys1grep: walk: 1 at hop 0, 2 at hop 1, 3 at hop 2; stopped: no new unit" "--step-to: units per hop, and why the walk stopped"
-reset; $J -e '/^function main/' --step-to '/throw/' "$C" >/dev/null 2>&1; eq "$(stat count)" "0" "--step-to: regex-only ends send nothing"
-reset; $J -e '/^function main/' --step-to 'raised here' "$C" >/dev/null 2>&1; eq "$(stat count)" "1" "--step-to: the ends in one request"
-eq "$($J -e '/^function fail/' --step-to 'raised here' "$C" 2>/dev/null)" "0 $C:19:fail" "--step-to: hop 0, a start that is an end"
-eq "$($J --hops=2 -e '/^function main/' --step-to '/./' "$C" 2>/dev/null | grep -c ':')" "3" "--hops=N: exactly N"
-eq "$($J --hops=1..2 -e '/^function main/' --step-to '/./' "$C" 2>/dev/null | grep -c ':')" "5" "--hops=M..N: both ends included"
-eq "$($J --hops=2.. -e '/^function main/' --step-to '/./' "$C" 2>/dev/null | grep -c ':')" "3" "--hops=M..: no upper bound"
-eq "$($J --hops=1 -e '/^function main/' --step-to '/./' "$C" 2>&1 >/dev/null)" "sys1grep: walk: 1 at hop 0, 2 at hop 1; stopped: --hops=1" "--hops stops the walk, and says so"
-code 1 "--hops=3: fail is 2 hops away by the shortcut" -- $J --hops=3 -e '/^function main/' --step-to 'raised here' "$C"
-eq "$($J -e '/^function fail/' --step-reverse-to '/^function main/' "$C" 2>/dev/null | tr '\n' '|')" "0 $C-19-fail|  1 $C-16-check|    2 $C:1:main|" "--step-reverse-to: callee to caller"
-eq "$($J -e '/^function fail/' --step-reverse-to='/^function main/' "$C" 2>/dev/null | tail -1)" "    2 $C:1:main" "--step-reverse-to=X"
-eq "$($J --hops=1 -e '/^function fail/' --step-reverse-to '/./' "$C" 2>/dev/null | tr '\n' '|')" "0 $C-19-fail|  1 $C:12:parse|  1 $C:16:check|" "--step-reverse-to with --hops: fail's two callers"
+eq "$($J -P '/^function main/' --step-to 'raised here' "$C" 2>/dev/null | tr '\n' '|')" "0 $C-1-main|  1 $C-16-check|    2 $C:19:fail|" "--step-to: the path, through the shortcut"
+eq "$($J -P '/^function main/' --step-to 'raised here' "$C" 2>&1 >/dev/null)" "sys1grep: walk: 1 at hop 0, 2 at hop 1, 3 at hop 2; stopped: no new unit" "--step-to: units per hop, and why the walk stopped"
+reset; $J -P '/^function main/' --step-to '/throw/' "$C" >/dev/null 2>&1; eq "$(stat count)" "0" "--step-to: regex-only ends send nothing"
+# a bare !/RE/ end (unchanged by #238) is --step-to -v '/RE/': -v is "not" at the front, and -P itself never takes a leading !
+reset; $J -P '/^function main/' --step-to '!/throw/' "$C" >/dev/null 2>&1; eq "$(stat count)" "0" "--step-to: a bare !/RE/ end is still a negated regex, no request"
+eq "$($J -P '/^function main/' --step-to '!/throw/' "$C" 2>/dev/null | tr '\n' '|')" "$($J -P '/^function main/' --step-to -v '/throw/' "$C" 2>/dev/null | tr '\n' '|')" "--step-to '!/RE/' is --step-to -v '/RE/'"
+reset; $J -P '/^function main/' --step-to 'raised here' "$C" >/dev/null 2>&1; eq "$(stat count)" "1" "--step-to: the ends in one request"
+eq "$($J -P '/^function fail/' --step-to 'raised here' "$C" 2>/dev/null)" "0 $C:19:fail" "--step-to: hop 0, a start that is an end"
+eq "$($J --hops=2 -P '/^function main/' --step-to '/./' "$C" 2>/dev/null | grep -c ':')" "3" "--hops=N: exactly N"
+eq "$($J --hops=1..2 -P '/^function main/' --step-to '/./' "$C" 2>/dev/null | grep -c ':')" "5" "--hops=M..N: both ends included"
+eq "$($J --hops=2.. -P '/^function main/' --step-to '/./' "$C" 2>/dev/null | grep -c ':')" "3" "--hops=M..: no upper bound"
+eq "$($J --hops=1 -P '/^function main/' --step-to '/./' "$C" 2>&1 >/dev/null)" "sys1grep: walk: 1 at hop 0, 2 at hop 1; stopped: --hops=1" "--hops stops the walk, and says so"
+code 1 "--hops=3: fail is 2 hops away by the shortcut" -- $J --hops=3 -P '/^function main/' --step-to 'raised here' "$C"
+eq "$($J -P '/^function fail/' --step-reverse-to '/^function main/' "$C" 2>/dev/null | tr '\n' '|')" "0 $C-19-fail|  1 $C-16-check|    2 $C:1:main|" "--step-reverse-to: callee to caller"
+eq "$($J -P '/^function fail/' --step-reverse-to='/^function main/' "$C" 2>/dev/null | tail -1)" "    2 $C:1:main" "--step-reverse-to=X"
+eq "$($J --hops=1 -P '/^function fail/' --step-reverse-to '/./' "$C" 2>/dev/null | tr '\n' '|')" "0 $C-19-fail|  1 $C:12:parse|  1 $C:16:check|" "--step-reverse-to with --hops: fail's two callers"
 for o in --reverse --no-reverse; do
-  code 2 "$o is gone" -- $J $o -e '/^function fail/' --step-to '/^function main/' "$C"
-  eq "$($J $o -e '/^function fail/' --step-to '/^function main/' "$C" 2>&1)" "sys1grep: --reverse was replaced by --step-reverse-to" "$o: says what replaced it"
+  code 2 "$o is gone" -- $J $o -P '/^function fail/' --step-to '/^function main/' "$C"
+  eq "$($J $o -P '/^function fail/' --step-to '/^function main/' "$C" 2>&1)" "sys1grep: --reverse was replaced by --step-reverse-to" "$o: says what replaced it"
 done
-eq "$($E SYS1GREP_URL=$base/v1 SYS1GREP_OPTS=--reverse node ../sys1grep.mjs -e '/^function fail/' --step-to '/./' "$C" 2>&1 | head -1)" "sys1grep: SYS1GREP_OPTS: --reverse was replaced by --step-reverse-to" "--reverse in SYS1GREP_OPTS: says what replaced it"
+eq "$($E SYS1GREP_URL=$base/v1 SYS1GREP_OPTS=--reverse node ../sys1grep.mjs -P '/^function fail/' --step-to '/./' "$C" 2>&1 | head -1)" "sys1grep: SYS1GREP_OPTS: --reverse was replaced by --step-reverse-to" "--reverse in SYS1GREP_OPTS: says what replaced it"
 code 2 "--step-reverse-to in SYS1GREP_OPTS" -- $E SYS1GREP_URL=$base/v1 SYS1GREP_OPTS=--step-reverse-to node ../sys1grep.mjs -e a "$C"
-eq "$($J -e '/^function fail/' --step-to '/./' --step-reverse-to '/./' "$C" 2>&1 | head -1)" "sys1grep: --step-to and --step-reverse-to cannot be combined: a step walks one way" "--step-to with --step-reverse-to"
-eq "$($J -e '/^function fail/' --step-reverse-to '/./' --step-reverse-to '/./' "$C" 2>&1 | head -1)" "sys1grep: --step-reverse-to cannot be given twice: only one step is supported" "--step-reverse-to given twice"
-eq "$($J -e '/^function fail/' --step-reverse-to '/./' -c "$C" 2>&1 | head -1)" "sys1grep: --step-reverse-to cannot be combined with -c: it prints paths, not lines" "--step-reverse-to: refusals name it"
-eq "$($J -p -e '/^function main/' --step-to -e 'fail(' -v short "$C" 2>/dev/null | tr '\n' '|')" \
+eq "$($J -P '/^function fail/' --step-to '/./' --step-reverse-to '/./' "$C" 2>&1 | head -1)" "sys1grep: --step-to and --step-reverse-to cannot be combined: a step walks one way" "--step-to with --step-reverse-to"
+eq "$($J -P '/^function fail/' --step-reverse-to '/./' --step-reverse-to '/./' "$C" 2>&1 | head -1)" "sys1grep: --step-reverse-to cannot be given twice: only one step is supported" "--step-reverse-to given twice"
+eq "$($J -P '/^function fail/' --step-reverse-to '/./' -c "$C" 2>&1 | head -1)" "sys1grep: --step-reverse-to cannot be combined with -c: it prints paths, not lines" "--step-reverse-to: refusals name it"
+eq "$($J -p -P '/^function main/' --step-to -e 'fail(' -v short "$C" 2>/dev/null | tr '\n' '|')" \
   "0 $C-1-main	[0.05 0.05]|  1 $C-6-load	[0.05 0.05]|    2 $C:12:parse	[0.90 0.05]|  1 $C-16-check	[0.90 0.90]|    2 $C:19:fail	[0.90 0.05]|" \
   "--step-to -e -v: compound end, - for a unit on the way, -p its --step-to scores"
 eq "$($J -e 'a comment' -a '/load/' -v zebra --step-to 'raised here' "$C" 2>/dev/null | head -1)" "0 $C-1-main" "-e -a -v: compound start"
 eq "$($J -e 'a comment' --step-to='raised here' "$C" 2>/dev/null | head -1)" "0 $C-1-main" "--step-to=X"
-eq "$($J -e '/^function main/' --step-to '--step start' "$C" 2>/dev/null | head -1)" "0 $C:1:main" "--step-to X: X may start with --"
+eq "$($J -P '/^function main/' --step-to '--step start' "$C" 2>/dev/null | head -1)" "0 $C:1:main" "--step-to X: X may start with --"
 eq "$($J -e '--step start' --step-to 'raised here' "$C" 2>/dev/null | head -1)" "0 $C-1-main" "-e X: X may start with --, if it has a space"
-code 1 "--step-to '-v X' is a meaning, not -v" -- $J -e '/^function main/' --step-to '-v raised' "$C"
+code 1 "--step-to '-v X' is a meaning, not -v" -- $J -P '/^function main/' --step-to '-v raised' "$C"
 code 1 "no start" -- $J -e zebra --step-to 'raised here' "$C"
 eq "$($J -e zebra --step-to 'raised here' "$C" 2>&1)" "sys1grep: walk: no unit matched the start expression" "no start: says so"
 eq "$($J -q -e 'a comment' --step-to 'raised here' "$C" 2>&1)" "" "-q: prints nothing"
@@ -643,9 +660,9 @@ code 1 "-q: no end" -- $J -q -e 'a comment' --step-to zebra "$C"
 printf '%s\n' 'def load(fp):' '    """Calls nothing: decode() is only in the docstring."""' '    return loads(fp.read())' '' \
   'def loads(s):' '    # raw_decode(s) in a comment is no call' '    return decode(s)' '' \
   '@cache' 'def decode(s):' '    return raw_decode(s)' '' 'def raw_decode(s):' '    if not s:' '        raise ValueError("bad input")' '    return decode(s[1:])' >"$tmp/dec.py"
-eq "$($J -e '/def load\b/' --step-to 'bad input' "$tmp/dec.py" 2>/dev/null | tr '\n' '|')" \
+eq "$($J -P '/def load\b/' --step-to 'bad input' "$tmp/dec.py" 2>/dev/null | tr '\n' '|')" \
   "0 $tmp/dec.py-1-load|  1 $tmp/dec.py-5-loads|    2 $tmp/dec.py-9-decode|      3 $tmp/dec.py:13:raw_decode|" "Python: a cycle ends, comments and docstrings hold no call"
-eq "$($J -e '/def raw_decode/' --step-reverse-to '/./' "$tmp/dec.py" 2>/dev/null | sed 's/.*://' | tr '\n' ' ')" "raw_decode decode loads load " "--step-reverse-to in Python, through the decorator"
+eq "$($J -P '/def raw_decode/' --step-reverse-to '/./' "$tmp/dec.py" 2>/dev/null | sed 's/.*://' | tr '\n' ' ')" "raw_decode decode loads load " "--step-reverse-to in Python, through the decorator"
 # --edges: any relation between lines, named in the file; a line not searched is counted
 printf 'alpha\nbeta\ngamma\ndelta\n' >"$tmp/e.txt"
 printf '%s\t%s\t%s\t%s\n' "$tmp/e.txt:1" A "$tmp/e.txt:3" C "$tmp/e.txt:3" C "$tmp/e.txt:4" D "$tmp/e.txt:9" X "$tmp/e.txt:1" A >"$tmp/edges.tsv"
@@ -663,7 +680,7 @@ code 0 "--max-cost: each alone under it" -- $JN -e 'a comment' --step-to 'raised
 # --dry-run: every answer is 0, so it walks from every unit the start expression could hold for, a bound
 out=$($J --dry-run -e 'a comment' --step-to 'raised here' "$C")
 case $out in *'walk (a bound: every unit the start expression could hold for starts): 6 at hop 0; stopped: no new unit'*'[step-to]'*'dry run: 2 requests, 6 of 6 functions'*) ;; *) fail "--dry-run bound: $out" ;; esac
-eq "$($J --dry-run -e '/^function main/' --step-to 'raised here' "$C" | grep -c '^sys1grep: request')" "1" "--dry-run: a regex start walks for real"
+eq "$($J --dry-run -P '/^function main/' --step-to 'raised here' "$C" | grep -c '^sys1grep: request')" "1" "--dry-run: a regex start walks for real"
 eq "$($J --dry-run -e 'a comment' --step-reverse-to 'raised here' "$C" | grep -c '^sys1grep: request [0-9]* \[step-reverse-to\]')" "1" "--dry-run: the end's request names --step-reverse-to"
 # refused, or wrong
 for o in -z -o -c -l '-A 1' '-C 1' --rank --summarize=claude --dedup=always --unit=line --hops=2..1 --hops=x; do
@@ -678,14 +695,14 @@ eq "$($J -e a --step-to= "$C" 2>&1 | head -1)" "sys1grep: --step-to: MEANING mus
 code 2 "--step-to with nothing" -- $J -e a "$C" --step-to
 code 2 "--hops without --step-to" -- $J --hops=2 -e a "$C"
 code 2 "--step-to in SYS1GREP_OPTS" -- $E SYS1GREP_URL=$base/v1 SYS1GREP_OPTS=--step-to node ../sys1grep.mjs -e a "$C"
-code 0 "--dedup in SYS1GREP_OPTS gives way" -- $E SYS1GREP_URL=$base/v1 SYS1GREP_OPTS=--dedup=auto node ../sys1grep.mjs -e '/^function main/' --step-to '/throw/' "$C"
+code 0 "--dedup in SYS1GREP_OPTS gives way" -- $E SYS1GREP_URL=$base/v1 SYS1GREP_OPTS=--dedup=auto node ../sys1grep.mjs -P '/^function main/' --step-to '/throw/' "$C"
 # A call in a string, or after a // or # in a string, is read right; a template literal's ${...} is code
 printf '%s\n' 'function a() {' "  fetch('http://h/'); b(\`\${c()} d()\`); // e()" "  const s = 'f()';" '}' 'function b() {}' 'function c() {}' 'function d() {}' 'function e() {}' 'function f() {}' >"$tmp/s.js"
-eq "$($J --hops=0..1 -e '/^function a/' --step-to '/./' "$tmp/s.js" 2>/dev/null | sed 's/.*://' | tr '\n' ' ')" "a b c " "JS: strings and comments hold no call, \${...} does"
+eq "$($J --hops=0..1 -P '/^function a/' --step-to '/./' "$tmp/s.js" 2>/dev/null | sed 's/.*://' | tr '\n' ' ')" "a b c " "JS: strings and comments hold no call, \${...} does"
 printf '%s\n' 'function a() {' "  n = (s.match(/\`'[/]/g) ?? []).length / 2;" '  b(); return /x/.test(s) && c();' '}' 'function b() {}' 'function c() {}' >"$tmp/r.js"
-eq "$($J --hops=0..1 -e '/^function a/' --step-to '/./' "$tmp/r.js" 2>/dev/null | sed 's/.*://' | tr '\n' ' ')" "a b c " "JS: a regex literal holding \` ' or / is no template, string or end"
+eq "$($J --hops=0..1 -P '/^function a/' --step-to '/./' "$tmp/r.js" 2>/dev/null | sed 's/.*://' | tr '\n' ' ')" "a b c " "JS: a regex literal holding \` ' or / is no template, string or end"
 printf '%s\n' 'def a():' '    s = "#"; b()' "    t = 'c()'  # d()" 'def b(): pass' 'def c(): pass' 'def d(): pass' >"$tmp/s.py"
-eq "$($J --hops=0..1 -e '/^def a/' --step-to '/./' "$tmp/s.py" 2>/dev/null | sed 's/.*://' | tr '\n' ' ')" "a b " "Python: a # in a string is no comment"
+eq "$($J --hops=0..1 -P '/^def a/' --step-to '/./' "$tmp/s.py" 2>/dev/null | sed 's/.*://' | tr '\n' ' ')" "a b " "Python: a # in a string is no comment"
 $J --unit=function --dry-run -e backoff "$tmp/net.js" 2>&1 | grep -q "net.js: 3 functions, 3 to send" || fail "--unit=function: --dry-run counts functions"
 $J --unit=function --dry-run -e x "$F" | grep -q '^sys1grep: options: .*--unit=function, .*-M 8000, ' || fail "--unit=function: -M defaults to 8000"
 code 2 "--unit=function -z" -- $J --unit=function -z -e cat "$F"
@@ -694,20 +711,20 @@ code 2 "--unit=function -o" -- $J --unit=function -o -e cat "$F"
 JF="$E SYS1GREP_URL=$base/v1 node $PWD/../sys1grep.mjs" FG="$tmp/fn-git"; mkdir -p "$FG" && git -C "$FG" init -q && printf '*.txt diff=notes\n' >"$FG/.gitattributes"
 printf 'intro\n== one\nalpha\n== two\nbeta\n' >"$FG/a.txt"
 git -C "$FG" config diff.notes.xfuncname '^==[[:space:]]'
-eq "$(cd "$FG" && $JF --unit=function -n -e '/beta/' a.txt | nums)" "4 5 " "--unit=function: xfuncname from git config, POSIX class"
-eq "$(cd "$FG" && $JF --unit=function -n -e '/beta/' a.txt /etc/hosts | grep a.txt | cut -d: -f2 | tr '\n' ' ')" "4 5 " "--unit=function: a file outside the repository keeps the others' attributes"
+eq "$(cd "$FG" && $JF --unit=function -n -P '/beta/' a.txt | nums)" "4 5 " "--unit=function: xfuncname from git config, POSIX class"
+eq "$(cd "$FG" && $JF --unit=function -n -P '/beta/' a.txt /etc/hosts | grep a.txt | cut -d: -f2 | tr '\n' ' ')" "4 5 " "--unit=function: a file outside the repository keeps the others' attributes"
 git -C "$FG" config diff.notes.xfuncname '^==[[:nope:]]'
-eq "$(cd "$FG" && $JF --unit=function -n -e '/beta/' a.txt 2>&1 | head -1)" "sys1grep: diff.notes.xfuncname: unknown class [:nope:]; using sys1grep's own rule" "--unit=function: an unknown POSIX class warns"
+eq "$(cd "$FG" && $JF --unit=function -n -P '/beta/' a.txt 2>&1 | head -1)" "sys1grep: diff.notes.xfuncname: unknown class [:nope:]; using sys1grep's own rule" "--unit=function: an unknown POSIX class warns"
 git -C "$FG" config --unset diff.notes.xfuncname; git -C "$FG" config diff.notes.funcname '^==\( \)'
-eq "$(cd "$FG" && $JF --unit=function -n -e '/beta/' a.txt | nums)" "4 5 " "--unit=function: funcname is a BRE"
+eq "$(cd "$FG" && $JF --unit=function -n -P '/beta/' a.txt | nums)" "4 5 " "--unit=function: funcname is a BRE"
 printf '@one\n body1\n@two\n body2\n' >"$FG/b.txt"; git -C "$FG" config diff.notes.funcname '^@'
-eq "$(cd "$FG" && $JF --unit=function -n -e '/body1/' b.txt | nums)" "1 2 " "--unit=function: an @ rule from git config is not a decorator"
+eq "$(cd "$FG" && $JF --unit=function -n -P '/body1/' b.txt | nums)" "1 2 " "--unit=function: an @ rule from git config is not a decorator"
 git -C "$FG" config --unset diff.notes.funcname
 git -C "$FG" config diff.notes.xfuncname '^==('
-eq "$(cd "$FG" && $JF --unit=function -n -e '/beta/' a.txt 2>&1 | tr '\n' '|')" "sys1grep: diff.notes.xfuncname: Invalid regular expression: /^==(/: Unterminated group; using sys1grep's own rule|5:beta|" "--unit=function: a bad xfuncname warns and falls back"
+eq "$(cd "$FG" && $JF --unit=function -n -P '/beta/' a.txt 2>&1 | tr '\n' '|')" "sys1grep: diff.notes.xfuncname: Invalid regular expression: /^==(/: Unterminated group; using sys1grep's own rule|5:beta|" "--unit=function: a bad xfuncname warns and falls back"
 # --unit=sentence-by-jev with regex terms only asks nothing: the rules join the lines
 printf '猫がいる\n犬もいる\n' >"$tmp/ja"   # unpunctuated Japanese: the breaks --unit=sentence-by-jev would ask about
-reset; $J --unit=sentence-by-jev -c -e '/猫/' "$tmp/ja" >/dev/null; eq "$(stat count)" "0" "--unit=sentence-by-jev with regex terms only sends nothing"
+reset; $J --unit=sentence-by-jev -c -P '/猫/' "$tmp/ja" >/dev/null; eq "$(stat count)" "0" "--unit=sentence-by-jev with regex terms only sends nothing"
 
 section 'git sys1grep / -i (interactive)'
 # git sys1grep: tracked files only, pathspecs relative to the current directory, never stdin
@@ -902,9 +919,9 @@ eq "$(gs g_staged)" "staged.txt " "git scope: staged"
 eq "$(gs g_untracked)" "untr.txt " "git scope: untracked"
 # No meaning to scope (a regex-only search, or negated meanings only): auto-scope runs no git of its own (#105)
 mkdir -p "$tmp/gitwrap"; printf '#!/bin/sh\necho "$*" >>"%s"\nexec %s "$@"\n' "$tmp/git.log" "$(command -v git)" >"$tmp/gitwrap/git"; chmod +x "$tmp/gitwrap/git"
-: >"$tmp/git.log"; PATH="$tmp/gitwrap:$PATH" $JI -r -c -e '/cat/' "$G" >/dev/null
+: >"$tmp/git.log"; PATH="$tmp/gitwrap:$PATH" $JI -r -c -P '/cat/' "$G" >/dev/null
 eq "$(grep -c shortlog "$tmp/git.log" || true)" "0" "auto-scope: no git for a regex-only search"
-: >"$tmp/git.log"; PATH="$tmp/gitwrap:$PATH" $JI -r -c -e '/cat/' -v 'a dog' "$G" >/dev/null
+: >"$tmp/git.log"; PATH="$tmp/gitwrap:$PATH" $JI -r -c -P '/cat/' -v 'a dog' "$G" >/dev/null
 eq "$(grep -c shortlog "$tmp/git.log" || true)" "0" "auto-scope: no git for negated meanings only"
 : >"$tmp/git.log"; PATH="$tmp/gitwrap:$PATH" $JI -r -c -e cat "$G" >/dev/null
 [ "$(grep -c shortlog "$tmp/git.log")" -ge 1 ] || fail "auto-scope: git asked when a meaning can scope"
@@ -1143,9 +1160,9 @@ printf 'function a() {\n  cat 1\n}\nfunction a() {\n  cat 2\n}\n' >"$tmp/ddf.js"
 $SM --summarize --dedup --unit=function -n -e cat "$tmp/ddf.js" >/dev/null
 eq "$(tr '\n' '|' <"$tmp/sum.in")" "1:function a() {   (×2 like it)|2:  cat 1|3:}|" "--summarize --dedup --unit=function: the representative's lines, the count once"
 # (big.txt is in the shared setup: the option-provenance section, far below, needs it too.)
-rm -f "$tmp/sum.in"; code 2 "--summarize over 200 KB" -- $SM --summarize -e '/cat/' "$tmp/big.txt"
+rm -f "$tmp/sum.in"; code 2 "--summarize over 200 KB" -- $SM --summarize -P '/cat/' "$tmp/big.txt"
 [ ! -e "$tmp/sum.in" ] || fail "--summarize over 200 KB runs the summarizer"
-$SM --summarize -e '/cat/' "$tmp/big.txt" 2>&1 >/dev/null | grep -q '^sys1grep: --summarize: 3000 matching lines (2[0-9][0-9] KB) are more than the 200 KB to summarize; narrow the expression or add --dedup=always$' || fail "--summarize over 200 KB: the message: $($SM --summarize -e '/cat/' "$tmp/big.txt" 2>&1 >/dev/null)"
+$SM --summarize -P '/cat/' "$tmp/big.txt" 2>&1 >/dev/null | grep -q '^sys1grep: --summarize: 3000 matching lines (2[0-9][0-9] KB) are more than the 200 KB to summarize; narrow the expression or add --dedup=always$' || fail "--summarize over 200 KB: the message: $($SM --summarize -P '/cat/' "$tmp/big.txt" 2>&1 >/dev/null)"
 # 300 templates (told apart by letters, which --dedup never folds), 10 lines each: 300 representatives, about 240 KB
 node -e "for (let i = 0; i < 3000; i++) console.log('cat ' + [...String(i % 300)].map(d => 'ghijklmnop'[d]).join('') + ' ' + 'x'.repeat(800) + ' ' + i)" >"$tmp/bigdd.txt"
 $SM --summarize --dedup --chunk 100 -e cat "$tmp/bigdd.txt" 2>&1 >/dev/null | grep -q '^sys1grep: --summarize: 3000 matching lines as 300 representatives ([0-9]* KB) are more than the 200 KB to summarize; narrow the expression$' || fail "--summarize --dedup over 200 KB: $($SM --summarize --dedup --chunk 100 -e cat "$tmp/bigdd.txt" 2>&1 >/dev/null)"
@@ -1172,7 +1189,7 @@ eq "$($J --rank --dedup -e cat "$tmp/dd.txt" | tr '\n' '|')" "1.|cat 1   (×3 li
 $SM --summarize --rank -n -e cat "$tmp/rk.txt" >/dev/null
 eq "$(tr '\n' '|' <"$tmp/sum.in")" "1.|1:cat @0.6 @r0.9||2.|7:cat @0.7||3.|5:cat @0.8 @r0.3|" "--summarize --rank: the summarizer gets the ranked results"
 for o in -c -o -q; do code 2 "--rank with $o" -- $J --rank $o -e cat "$tmp/rk.txt"; done
-code 2 "--rank, regex only" -- $J --rank -e /cat/ "$tmp/rk.txt"
+code 2 "--rank, regex only" -- $J --rank -P /cat/ "$tmp/rk.txt"
 code 2 "--rank, negated meanings only" -- $J --rank -v cat "$tmp/rk.txt"
 code 2 "--rank=nope" -- $J --rank=nope -e cat "$tmp/rk.txt"
 eq "$($E SYS1GREP_URL=$base/v1 SYS1GREP_OPTS=--rank=match node ../sys1grep.mjs -n -e cat "$tmp/rk.txt" | head -1)" "1." "--rank in SYS1GREP_OPTS"
@@ -1457,7 +1474,7 @@ section '--verbose/--dry-run: option provenance'
 reset
 eq "$($J -n -e cat "$F" 2>&1 >/dev/null)" "" "no settings lines without --verbose or --dry-run"
 hostport=$(echo "$base" | sed 's#^[a-z]*://##')
-out=$($E node ../sys1grep.mjs --dry-run -e /cat/ "$F")
+out=$($E node ../sys1grep.mjs --dry-run -P /cat/ "$F")
 echo "$out" | grep -qx 'sys1grep: endpoint api.typesafe.ai/v1/systemone (default), model jev-latest (default)' || fail "endpoint/model default: $out"
 echo "$out" | grep -qx 'sys1grep: options: --level normal = -t 0.5 -T 0.5, --chunk 30, -j 8, scope on, -M 2000, --max-filesize 10M, --max-cost 1' || fail "options, all defaults: $out"
 echo "$out" | grep -q '^sys1grep: key: ' && fail "no key line with regex-only meanings (nothing is ever sent): $out"
@@ -1559,12 +1576,12 @@ case "$out" in *'[y/N]'*) fail "-i asks nothing more once the only target is ski
 echo "$out" | grep -q 'rc=1' || fail "-i on a skipped-only run: exit 1 (no match), not asked: $out"
 # #125 review (item 2): an oversized file is skipped before it ever reaches Jev or the summarizer; nothing matched,
 # so the summarizer (#98's own 200 KB limit included) is never invoked either, no terminal needed, -y unaffected
-reset; code 1 "an oversized file with --summarize: no match, no terminal needed" -- sh -c "$O --summarize='$base/v1' --max-filesize 100K -e '/cat/' '$tmp/big.txt' </dev/null"
+reset; code 1 "an oversized file with --summarize: no match, no terminal needed" -- sh -c "$O --summarize='$base/v1' --max-filesize 100K -P '/cat/' '$tmp/big.txt' </dev/null"
 eq "$(stat chat)" "null" "a skipped file never reaches the HTTP summarizer"
-$O --summarize="$base/v1" --max-filesize 100K -e '/cat/' "$tmp/big.txt" </dev/null 2>&1 >/dev/null | grep -q -- "$tmp/big.txt: skipped, .* is over --max-filesize=100K" || fail "the skip message, not the summarizer's own limit"
-reset; code 1 "-y does not un-skip it either" -- $O -y --summarize="$base/v1" --max-filesize 100K -e '/cat/' "$tmp/big.txt"
+$O --summarize="$base/v1" --max-filesize 100K -P '/cat/' "$tmp/big.txt" </dev/null 2>&1 >/dev/null | grep -q -- "$tmp/big.txt: skipped, .* is over --max-filesize=100K" || fail "the skip message, not the summarizer's own limit"
+reset; code 1 "-y does not un-skip it either" -- $O -y --summarize="$base/v1" --max-filesize 100K -P '/cat/' "$tmp/big.txt"
 eq "$(stat chat)" "null" "still nothing POSTed to the HTTP summarizer"
-out=$($O --dry-run --summarize="$base/v1" --max-filesize 100K -e '/cat/' "$tmp/big.txt" 2>&1)
+out=$($O --dry-run --summarize="$base/v1" --max-filesize 100K -P '/cat/' "$tmp/big.txt" 2>&1)
 echo "$out" | grep -q -- "$tmp/big.txt: skipped, .* is over --max-filesize=100K" || fail "--dry-run shows the file being skipped: $out"
 reset
 
@@ -1612,7 +1629,7 @@ case $out in *'summarizingwithclaude'*'033[KSUMMARY'*) ;; *) fail "spinner while
 # --help: exit 0, Japanese by locale, lists the options
 code 0 "--help" -- $E LANG=C node ../sys1grep.mjs --help
 eq "$($E LANG=C node ../sys1grep.mjs -h | head -1 | cut -c1-15)" "usage: sys1grep" "-h"
-for o in '-Q, --question' '-q, --quiet' '--level=LEVEL' '--chunk=LINES' '-j N' '--color' '--sys1-api-key' '--dry-run' '--verbose' '-H, --with-filename' '--no-filename' '--summarize' '--summarize-prompt' '--format' '-M' '--max-filesize' '--max-cost' '-y, --yes' '--rank' '--no-rank' '--no-summarize' '--step-to' '--edges=FILE' '--step-reverse-to' '--hops=' '--template=NAME' '--install-templates' '--serve'; do
+for o in '-Q, --question' '-P /RE/FLAGS' '-q, --quiet' '--level=LEVEL' '--chunk=LINES' '-j N' '--color' '--sys1-api-key' '--dry-run' '--verbose' '-H, --with-filename' '--no-filename' '--summarize' '--summarize-prompt' '--format' '-M' '--max-filesize' '--max-cost' '-y, --yes' '--rank' '--no-rank' '--no-summarize' '--step-to' '--edges=FILE' '--step-reverse-to' '--hops=' '--template=NAME' '--install-templates' '--serve'; do
   $E LANG=C node ../sys1grep.mjs --help | grep -q -- "$o" || fail "--help lacks $o"
 done
 $E LANG=C node ../sys1grep.mjs --help | grep -q 'grep by meaning' || fail "--help in English"
@@ -1629,13 +1646,13 @@ seq 1 5000 | sed 's/^/row /' >"$B/a.txt"; seq 1 5001 | sed 's/^/row /' >"$B/b.tx
 (cd "$B" && git init -q && git add a.txt b.txt)
 W="^sys1grep: sending 10,001 of 10,001 lines from 2 files (~[0-9.]*[KM]* input tokens, ~\\\$[0-9.]* at TypeSafe's list price); the term \"owl\" has no regex to narrow it. Add -a '/RE/' to it, or --include / --changed-within, or --dry-run to see the requests\$"
 eq "$($JIN -r --chunk 1000 -e owl "$B" 2>&1 >/dev/null | grep -c "$W" || true)" "1" "large send: a regex-free term warns"
-eq "$($JIN -r --chunk 1000 -e '/zzz/' -e owl "$B" 2>&1 >/dev/null | grep -c "$W" || true)" "1" "large send: a regex in another OR term does not narrow this one"
+eq "$($JIN -r --chunk 1000 -P '/zzz/' -e owl "$B" 2>&1 >/dev/null | grep -c "$W" || true)" "1" "large send: a regex in another OR term does not narrow this one"
 eq "$(cd "$B" && $GS --chunk 1000 -e owl 2>&1 >/dev/null | grep -c '^sys1grep: sending 10,001 of 10,001 lines' || true)" "1" "large send: git sys1grep warns too"
-eq "$($JI -r --chunk 1000 -e '/row/' -a owl "$B" 2>&1 >/dev/null | grep -c '^sys1grep: sending' || true)" "0" "large send: a regex in the same term narrows it, even one every line matches"
-eq "$($JIN -r --chunk 1000 -e '!/zzz/' -a owl "$B" 2>&1 >/dev/null | grep -c "$W" || true)" "1" "large send: a negated regex does not narrow its term"
+eq "$($JI -r --chunk 1000 -P '/row/' -a owl "$B" 2>&1 >/dev/null | grep -c '^sys1grep: sending' || true)" "0" "large send: a regex in the same term narrows it, even one every line matches"
+eq "$($JIN -r --chunk 1000 -v '/zzz/' -a owl "$B" 2>&1 >/dev/null | grep -c "$W" || true)" "1" "large send: a negated regex does not narrow its term"
 eq "$($JIN -r -y --chunk 1000 -e owl "$B" 2>&1 >/dev/null | grep -c "$W" || true)" "1" "large send: -y does not silence it"
 awk -v B="$B" 'BEGIN { for (i = 1; i <= 5000; i++) printf "%s/a.txt:1\tS\t%s/a.txt:%d\tR\n", B, B, i; for (i = 1; i <= 5001; i++) printf "%s/a.txt:1\tS\t%s/b.txt:%d\tR\n", B, B, i }' >"$tmp/big-edges.tsv"
-eq "$($JI -r --chunk 1000 --edges="$tmp/big-edges.tsv" -e '/^row 1$/' --step-to owl "$B" 2>&1 >/dev/null | grep -c '^sys1grep: sending 10,001 of 10,001 lines' || true)" "1" "large send: --step-to checks the end's requests"
+eq "$($JI -r --chunk 1000 --edges="$tmp/big-edges.tsv" -P '/^row 1$/' --step-to owl "$B" 2>&1 >/dev/null | grep -c '^sys1grep: sending 10,001 of 10,001 lines' || true)" "1" "large send: --step-to checks the end's requests"
 eq "$($JI -r --chunk 1000 -q -e owl "$B" 2>&1 | grep -c '^sys1grep: sending' || true)" "0" "large send: -q is silent"
 eq "$($JI -r --dry-run -e owl "$B" 2>&1 | grep -c '^sys1grep: sending' || true)" "0" "large send: --dry-run shows its own totals"
 eq "$($JI -r -e owl "$P" 2>&1 >/dev/null | grep -c '^sys1grep: sending' || true)" "0" "large send: a small tree is silent"
@@ -1649,8 +1666,8 @@ code 0 "--version with no key" -- $E node ../sys1grep.mjs --version
 $E LANG=ja_JP.UTF-8 node ../sys1grep.mjs --help | grep -q '何も表示せず' || fail "--help in Japanese"
 $E LANG=C LC_MESSAGES=ja_JP.UTF-8 node ../sys1grep.mjs --help | grep -q '何も表示せず' || fail "LC_MESSAGES"
 $E LANG=ja_JP.UTF-8 node ../sys1grep.mjs --help | grep -q '多段階マッチング' || fail "--help in Japanese: --step-to"
-$E LANG=C node ../sys1grep.mjs --help | grep -qF "sys1grep -e '/^ *def helper/' --step-reverse-to '/^ *def main/' *.py" || fail "--help: --step-to examples"
-$E LANG=ja_JP.UTF-8 node ../sys1grep.mjs --help | grep -qF "sys1grep -e '/^ *def main/' --hops=1..2 --step-to '/raise /' *.py" || fail "--help in Japanese: --step-to examples"
+$E LANG=C node ../sys1grep.mjs --help | grep -qF "sys1grep -P '/^ *def helper/' --step-reverse-to -P '/^ *def main/' *.py" || fail "--help: --step-to examples"
+$E LANG=ja_JP.UTF-8 node ../sys1grep.mjs --help | grep -qF "sys1grep -P '/^ *def main/' --hops=1..2 --step-to -P '/raise /' *.py" || fail "--help in Japanese: --step-to examples"
 $E LANG=C node ../sys1grep.mjs --help | grep -qF "sys1grep [OPTION]... -e START1 [-e START2]... --step-to END1 [-e END2]... [FILE...]" || fail "--help: --step-to usage names both sides"
 $E LANG=ja_JP.UTF-8 node ../sys1grep.mjs --help | grep -qF "sys1grep [OPTION]... -e START1 [-e START2]... --step-to END1 [-e END2]... [FILE...]" || fail "--help in Japanese: --step-to usage names both sides"
 section '--format=html'
@@ -1661,7 +1678,7 @@ eq "$($J --rank=match --format=html -e cat "$tmp/sent.txt" | grep -c '<mark>cat 
 eq "$($J --rank=match --format=html -e cat "$tmp/sent.txt" | grep -c 'cat &lt;b&gt;x$')" "1" "html marks: the line stays unmarked and escaped"
 printf 'a cat 12\nplain cat\ndog\n' >"$tmp/mk.txt"
 eq "$($J --rank=match --format=html -e cat -a '/[0-9]+/' "$tmp/mk.txt" | grep -o 'a cat <mark>12</mark>')" "a cat <mark>12</mark>" "html marks: the regex match only"
-eq "$($J --rank=match --format=html -n -C1 -e '/dog/' -e cat "$tmp/mk.txt" | grep -c '^2:<mark>plain cat</mark>')" "1" "html marks: a meaning matches the whole line"
+eq "$($J --rank=match --format=html -n -C1 -P '/dog/' -e cat "$tmp/mk.txt" | grep -c '^2:<mark>plain cat</mark>')" "1" "html marks: a meaning matches the whole line"
 eq "$($J --rank=match --format=html -n -e cat -v dog -C1 "$tmp/mk.txt" | grep -c '3-dog\|3:dog')" "1" "html marks: a context line is unmarked"
 eq "$($J --rank=match --format=html --color=never -e cat "$tmp/mk.txt" | grep -c '<mark>')" "0" "html marks: --color=never"
 section 'serve: page'
@@ -1938,28 +1955,28 @@ a label with a \"?\" no longer also carries a duplicate title=: step ok, rank ok
 --hops keeps its own title= (not a duplicate): ok
 first start row: 3 children (select, input, delete)
 the first start field is a question (-Q) by default: ok
-steps hidden: -e '/def main/'
-x=e:/def main/ hops=0.. reverse=0 -> 1 lines
+steps hidden: -P '/def main/'
+x=P:/def main/ hops=0.. reverse=0 -> 1 lines
 target: files shown, git log hidden
 -g on, target: files hidden, git log shown
 -g off, target: files shown, git log hidden
-off, start+: steps hidden: -e '/def main/' -a /helper/
-x=e:/def main/|a:/helper/ hops=0.. reverse=0 -> 1 lines
-on, starts kept: steps shown: -e '/def main/' -a /helper/ --step-to
-on, 2 starts + 2 ends: steps shown: -e '/def main/' -a /helper/ --step-to -e '/raise /' -e '/sys\\.exit/'
-x=e:/def main/|a:/helper/|S:|e:/raise /|e:/sys\\.exit/ hops=0.. reverse=0 -> 2 lines
+off, start+: steps hidden: -P '/def main/' -a /helper/
+x=P:/def main/|a:/helper/ hops=0.. reverse=0 -> 1 lines
+on, starts kept: steps shown: -P '/def main/' -a /helper/ --step-to
+on, 2 starts + 2 ends: steps shown: -P '/def main/' -a /helper/ --step-to -P '/raise /' -P '/sys\\.exit/'
+x=P:/def main/|a:/helper/|S:|P:/raise /|P:/sys\\.exit/ hops=0.. reverse=0 -> 2 lines
 delete names: remove start condition 1 | remove start condition 2 | remove end condition 1 | remove end condition 2 | remove end condition 3
-steps shown: -e '/def main/' --step-to
-steps shown: -e '/def main/' --step-to -e '/raise /' --hops=1..2
-x=e:/def main/|S:|e:/raise / hops=1..2 reverse=0 -> 2 lines
-addend + reverse: steps shown: -e '/def main/' --step-reverse-to -e '/raise /' -e '/sys\\.exit/' --hops=1..2
-x=e:/def main/|S:|e:/raise /|e:/sys\\.exit/ hops=1..2 reverse=1 -> 1 lines
-steps hidden: -e '/def main/'
-x=e:/def main/ hops=1..2 reverse=0 -> 1 lines
-steps shown: -e '/def main/' --step-to -e '/raise /' --hops=1..2
-on true, 2 ends, steps shown: -e '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --step-to -e '/throw |raise /' -e '/process\\.exit\\(|sys\\.exit\\(/' --include='*.mjs' --include='*.cjs' --include='*.js' --include='*.jsx' --include='*.ts' --include='*.tsx' --include='*.py'
-on true, 1 ends, steps shown: -e '/throw (e|err|error)\\b|^ *raise\$/m' --step-reverse-to -e '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --include='*.mjs' --include='*.cjs' --include='*.js' --include='*.jsx' --include='*.ts' --include='*.tsx' --include='*.py'
-x=e:/throw (e|err|error)\\b|^ *raise\$/m|S:|e:/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/ hops=0.. reverse=1 -> 1 lines
+steps shown: -P '/def main/' --step-to
+steps shown: -P '/def main/' --step-to -P '/raise /' --hops=1..2
+x=P:/def main/|S:|P:/raise / hops=1..2 reverse=0 -> 2 lines
+addend + reverse: steps shown: -P '/def main/' --step-reverse-to -P '/raise /' -P '/sys\\.exit/' --hops=1..2
+x=P:/def main/|S:|P:/raise /|P:/sys\\.exit/ hops=1..2 reverse=1 -> 1 lines
+steps hidden: -P '/def main/'
+x=P:/def main/ hops=1..2 reverse=0 -> 1 lines
+steps shown: -P '/def main/' --step-to -P '/raise /' --hops=1..2
+on true, 2 ends, steps shown: -P '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --step-to -P '/throw |raise /' -P '/process\\.exit\\(|sys\\.exit\\(/' --include='*.mjs' --include='*.cjs' --include='*.js' --include='*.jsx' --include='*.ts' --include='*.tsx' --include='*.py'
+on true, 1 ends, steps shown: -P '/throw (e|err|error)\\b|^ *raise\$/m' --step-reverse-to -P '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --include='*.mjs' --include='*.cjs' --include='*.js' --include='*.jsx' --include='*.ts' --include='*.tsx' --include='*.py'
+x=P:/throw (e|err|error)\\b|^ *raise\$/m|S:|P:/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/ hops=0.. reverse=1 -> 1 lines
 empty end: Enter an end (--step-to)., 0 sent
 groups: [] b b b b b b b b b b b [multi-step] b b b b
 pressing every example sends 0
@@ -1972,19 +1989,19 @@ where an API key is read: steps hidden: -e 'an API key or token is read from the
 a request is retried: steps hidden: -e 'a failed request is retried' -n -> ok
 either meaning, with scores (-p): steps hidden: -e 'customer is asking for a refund' -e 'delivery address change request' -n -p -> ok
 exclude with -v: steps hidden: -e 'network or remote connection failure' -v 'a retry is happening or was attempted' -n -> ok
-regex and meaning together: steps hidden: -e /catch/ -a 'the error is ignored' -n -p -> ok
+regex and meaning together: steps hidden: -P /catch/ -a 'the error is ignored' -n -p -> ok
 stricter (--level strict): steps hidden: -e 'a security risk or dangerous destructive operation' --level=strict -n -> ok
 one line per template (--dedup): steps hidden: -e 'a request failed' --dedup=always -n -> ok
 one sentence at a time: steps hidden: -e 'the author admits they made a mistake' --unit=sentence-by-jev -n -> ok
-calls that throw or raise: steps shown: -e '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --step-to -e '/throw |raise /' --include='*.mjs' --include='*.cjs' --include='*.js' --include='*.jsx' --include='*.ts' --include='*.tsx' --include='*.py' -> ok
-1 to 2 calls away: steps shown: -e '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --step-to -e '/throw |raise /' --include='*.mjs' --include='*.cjs' --include='*.js' --include='*.jsx' --include='*.ts' --include='*.tsx' --include='*.py' --hops=1..2 -> ok
-what reaches it (--step-reverse-to): steps shown: -e '/throw (e|err|error)\\b|^ *raise\$/m' --step-reverse-to -e '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --include='*.mjs' --include='*.cjs' --include='*.js' --include='*.jsx' --include='*.ts' --include='*.tsx' --include='*.py' -> ok
-throw or exit (two ends): steps shown: -e '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --step-to -e '/throw |raise /' -e '/process\\.exit\\(|sys\\.exit\\(/' --include='*.mjs' --include='*.cjs' --include='*.js' --include='*.jsx' --include='*.ts' --include='*.tsx' --include='*.py' -> ok
+calls that throw or raise: steps shown: -P '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --step-to -P '/throw |raise /' --include='*.mjs' --include='*.cjs' --include='*.js' --include='*.jsx' --include='*.ts' --include='*.tsx' --include='*.py' -> ok
+1 to 2 calls away: steps shown: -P '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --step-to -P '/throw |raise /' --include='*.mjs' --include='*.cjs' --include='*.js' --include='*.jsx' --include='*.ts' --include='*.tsx' --include='*.py' --hops=1..2 -> ok
+what reaches it (--step-reverse-to): steps shown: -P '/throw (e|err|error)\\b|^ *raise\$/m' --step-reverse-to -P '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --include='*.mjs' --include='*.cjs' --include='*.js' --include='*.jsx' --include='*.ts' --include='*.tsx' --include='*.py' -> ok
+throw or exit (two ends): steps shown: -P '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --step-to -P '/throw |raise /' -P '/process\\.exit\\(|sys\\.exit\\(/' --include='*.mjs' --include='*.cjs' --include='*.js' --include='*.jsx' --include='*.ts' --include='*.tsx' --include='*.py' -> ok
 examples en: 15 buttons, \"disk full\" (lang none) .. \"throw or exit (two ends)\" (lang en), heading \"multi-step\" (lang en)
 examples ja: 15 buttons, \"disk full\" (lang none) .. \"throw または exit（終点が2つ）\" (lang ja), heading \"多段階\" (lang ja)
 言葉ではなく意味で: steps hidden: -e '顧客が怒っている、または不満を持っている' -n
 -v で除外: steps hidden: -e 'ネットワークまたはリモート接続の失敗' -v 'リトライが行われた、または試みられた' -n
-どこから呼ばれるか (--step-reverse-to): steps shown: -e '/throw (e|err|error)\\b|^ *raise\$/m' --step-reverse-to -e '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --include='*.mjs' --include='*.cjs' --include='*.js' --include='*.jsx' --include='*.ts' --include='*.tsx' --include='*.py'
+どこから呼ばれるか (--step-reverse-to): steps shown: -P '/throw (e|err|error)\\b|^ *raise\$/m' --step-reverse-to -P '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --include='*.mjs' --include='*.cjs' --include='*.js' --include='*.jsx' --include='*.ts' --include='*.tsx' --include='*.py'
 examples en: 15 buttons, \"disk full\" (lang none) .. \"throw or exit (two ends)\" (lang en), heading \"multi-step\" (lang en); 0 sent
 before delete: 1 start row(s)
 after delete: 1 start row(s), value \"\"
@@ -2016,7 +2033,7 @@ a field changed since: \"The results on screen are from before the fields or opt
 the field back as it was: \"Summarize the results on screen as they are?\" [OK / Not now] (lang en)
 multi-step on: no question
 OK: no question; sent /summarize with the results on screen as they are, 1 request(s) in all; summary pane shown: \"SUMMARY\\n\"
-x=e:/def main/ hops=0.. reverse=1 -> 1 lines
+x=P:/def main/ hops=0.. reverse=1 -> 1 lines
 Search with summarize on: 2 request(s), 1 POST(s) /summarize with the results on screen as they are; summary pane shown: \"SUMMARY\\n\"
 x=e:helper hops=0.. reverse=1 -> 0 lines
 Search with summarize on, rank on: 2 request(s), 1 POST(s) /summarize with the cards' text as they are; summary pane shown: \"SUMMARY\\n\"" "--serve: the sections, the target, the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs; EN / 日本語), the settings dialog, and the hint tooltips"
@@ -2032,7 +2049,7 @@ import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { EXAMPLES, toArgv, initOf } from '../serve.mjs';
 for (const [where, cwd] of [['repo', '..'], ['python', process.argv.at(-1)]])
-  for (const e of EXAMPLES.filter(e => e.x.every(f => f === 'S:' || /^[eav]:\/.*\/[dgimsuvy]*\$/.test(f)))) {
+  for (const e of EXAMPLES.filter(e => e.x.every(f => f === 'S:' || /^[eavP]:\/.*\/[dgimsuvy]*\$/.test(f)))) {
     const r = spawnSync('node', [resolve('../sys1grep.mjs'), '-r', ...toArgv(e, initOf([])), '.'], { cwd, encoding: 'utf8' });
     const other = [...r.stdout.matchAll(/^ *\\d+ (\\S+?)[:-]\\d+[:-]/gm)].map(m => m[1]).find(f => !/\\.(mjs|cjs|js|jsx|ts|tsx|py)\$/.test(f));
     console.log(where + ': ' + e.h + ': ' + (r.status === 0 && /^ +[1-9]\\d* /m.test(r.stdout) ? 'walks' : 'no walk, exit ' + r.status) + (other ? ', through ' + other : ''));
@@ -2177,6 +2194,7 @@ kill $serve 2>/dev/null; wait $serve 2>/dev/null || true; : >"$tmp/serve6.url"
 section 'serve: launch refusals'
 code 2 "--serve: --suggest without a value" -- $J --serve "$F" --suggest
 code 2 "--serve refuses -e" -- $J --serve -e cat "$F"
+code 2 "--serve refuses -P" -- $J --serve -P '/cat/' "$F"
 code 2 "--serve refuses --format" -- $J --serve --format=html "$F"
 code 2 "--serve refuses --step-to at launch" -- limit $J --serve --step-to cat "$F"
 code 2 "--serve refuses --step-reverse-to at launch" -- limit $J --serve --step-reverse-to cat "$F"

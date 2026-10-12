@@ -33,7 +33,7 @@ const settingsView = cli => {
 // to --r), which refuses a positional (a target, #196) and a meaning/expression on its own; DENY below refuses the
 // rest, by the canonical OPTIONS name parseOpts resolves a token to, however it was spelled (-r, --r, or inside a
 // cluster like -rC1 or -nr all resolve to "r").
-const REFUSED_LAUNCH = /^(-[eavQlcqoziHV]|-[eavQ].+|--(question|step-to|step-reverse-to|format|color|verbose|dry-run|interactive|help|version|install-templates|quiet|null-data)(=.*)?)$/;
+const REFUSED_LAUNCH = /^(-[eavQPlcqoziHV]|-[eavQP].+|--(question|step-to|step-reverse-to|format|color|verbose|dry-run|interactive|help|version|install-templates|quiet|null-data)(=.*)?)$/;
 // --unit=zero is -z by another name (options.mjs): REFUSED_LAUNCH's bare-token test cannot single it out from every
 // other --unit value, and --unit also takes its value split ("--unit zero"), so this follows parseArgs' own rule
 // (string option, no short form: the last --unit/--unit= wins) to find what --unit actually resolves to at launch.
@@ -47,7 +47,7 @@ const unitAt = launch => {
 };
 // l/c/quiet/o/z/interactive/with-filename/version/format/color/verbose/dry-run/help: the page's own replacements
 // for a search's output shape and tracing (REFUSED_LAUNCH's set, minus what parseOpts already refuses on its own:
-// e/a/v/question/step-to/install-templates). r: unlike at launch, there is no target field here to keep a bare -r
+// e/P/a/v/question/step-to/install-templates). r: unlike at launch, there is no target field here to keep a bare -r
 // (or a --serve started with no target, which then defaults to ".") in check. sys1-url/sys1-api-key: their own
 // fields.
 const DENY = new Set(['l', 'c', 'quiet', 'o', 'z', 'interactive', 'with-filename', 'version', 'format', 'color',
@@ -142,7 +142,7 @@ const CONTROLS = [
   { k: 'hops', flag: '--hops', re: '^[\\d.]*$', step: true, def: '0..' },
   { k: 'reverse', bool: true, step: true, def: false },
 ];
-const FIELD = /^[eavQS]:/; // an expression field: e:MEANING (-e), a, v, Q (-Q), S: (--step-to)
+const FIELD = /^[eavQPS]:/; // an expression field: e:MEANING (-e), a, v, Q (-Q), P:/RE/ (-P), S: (--step-to)
 // The example buttons: x as the page sends it, then the controls it sets (by k). Each fits a user's own project and also
 // has something to find when --serve is started on this repository (#224): the meaning ones in the corpora under tests/
 // or sys1grep's own code, the multi-step ones in its JavaScript (ENTRY and RETHROW take Python too; SRC keeps the walk
@@ -164,15 +164,15 @@ export const EXAMPLES = [
     xj: ['e:顧客が返金を求めている', 'e:配送先の変更依頼'], n: true, p: true },
   { h: 'exclude with -v', hj: '-v で除外', x: ['e:network or remote connection failure', 'v:a retry is happening or was attempted'],
     xj: ['e:ネットワークまたはリモート接続の失敗', 'v:リトライが行われた、または試みられた'], n: true },
-  { h: 'regex and meaning together', hj: '正規表現と意味を併用', x: ['e:/catch/', 'a:the error is ignored'], xj: ['e:/catch/', 'a:エラーが無視されている'], n: true, p: true },
+  { h: 'regex and meaning together', hj: '正規表現と意味を併用', x: ['P:/catch/', 'a:the error is ignored'], xj: ['P:/catch/', 'a:エラーが無視されている'], n: true, p: true },
   { h: 'stricter (--level strict)', hj: 'より厳密に (--level strict)', x: ['e:a security risk or dangerous destructive operation'],
     xj: ['e:セキュリティ上のリスク、または危険な破壊的操作'], level: 'strict', n: true },
   { h: 'one line per template (--dedup)', hj: 'テンプレートごとに1行 (--dedup)', x: ['e:a request failed'], xj: ['e:リクエストが失敗した'], dedup: 'always', n: true },
   { h: 'one sentence at a time', hj: '1文ずつ判定', x: ['e:the author admits they made a mistake'], xj: ['e:筆者が自分の間違いを認めている'], unit: 'sentence-by-jev', n: true },
-  { h: 'calls that throw or raise', hj: 'throw / raise に至る呼び出し', x: ['e:' + ENTRY, 'S:', 'e:/throw |raise /'], include: SRC },
-  { h: '1 to 2 calls away', hj: '1〜2 段先の呼び出し', x: ['e:' + ENTRY, 'S:', 'e:/throw |raise /'], hops: '1..2', include: SRC },
-  { h: 'what reaches it (--step-reverse-to)', hj: 'どこから呼ばれるか (--step-reverse-to)', x: ['e:' + RETHROW, 'S:', 'e:' + ENTRY], reverse: true, include: SRC },
-  { h: 'throw or exit (two ends)', hj: 'throw または exit（終点が2つ）', x: ['e:' + ENTRY, 'S:', 'e:/throw |raise /', 'e:/process\\.exit\\(|sys\\.exit\\(/'], include: SRC },
+  { h: 'calls that throw or raise', hj: 'throw / raise に至る呼び出し', x: ['P:' + ENTRY, 'S:', 'P:/throw |raise /'], include: SRC },
+  { h: '1 to 2 calls away', hj: '1〜2 段先の呼び出し', x: ['P:' + ENTRY, 'S:', 'P:/throw |raise /'], hops: '1..2', include: SRC },
+  { h: 'what reaches it (--step-reverse-to)', hj: 'どこから呼ばれるか (--step-reverse-to)', x: ['P:' + RETHROW, 'S:', 'P:' + ENTRY], reverse: true, include: SRC },
+  { h: 'throw or exit (two ends)', hj: 'throw または exit（終点が2つ）', x: ['P:' + ENTRY, 'S:', 'P:/throw |raise /', 'P:/process\\.exit\\(|sys\\.exit\\(/'], include: SRC },
 ];
 
 // p: the page's values (x: the fields, then one value per control and summarize / summarize-prompt); init: the launch's.
@@ -501,17 +501,18 @@ ${hg('changed', '<label>--changed-within <input name="changed-within" placeholde
 const CONTROLS = ${json(CONTROLS)}, INIT = ${json(init)}, LAUNCH = ${json(launch)}, AFTER = ${json(after)}, TOKEN = ${json(token)}, EXAMPLES = ${json(EXAMPLES)}, SUGGEST = ${json(suggest)};
 const toArgv = ${toArgv};
 const quote = (s, force) => (!force && /^[\\w@%+=:,./-]+$/.test(s) ? s : "'" + s.replace(/'/g, "'\\\\''") + "'");
-const shown = argv => argv.map((t, i) => (/^-[eavQ]$/.test(argv[i - 1] ?? '') ? quote(t, t[0] === '-') : /^--[a-z-]+=/.test(t) ? t.replace(/=([\\s\\S]*)/, (_, v) => '=' + quote(v)) : quote(t)));
+const shown = argv => argv.map((t, i) => (/^-[eavQP]$/.test(argv[i - 1] ?? '') ? quote(t, t[0] === '-') : /^--[a-z-]+=/.test(t) ? t.replace(/=([\\s\\S]*)/, (_, v) => '=' + quote(v)) : quote(t)));
 const f = document.getElementById('f'), fields = document.getElementById('fields'), cmd = document.getElementById('cmd');
 const step = document.getElementById('step'), steps = document.getElementById('steps'), ends = document.getElementById('ends');
 const ALL = [...CONTROLS, { k: 'summarize', bool: true }, { k: 'rank' }, { k: 'summarize-prompt' }];
 const setControls = v => { for (const c of ALL) { const el = f.elements[c.k], x = v[c.k] ?? INIT[c.k]; if (c.bool) el.checked = !!x; else el.value = x; } };
-const LABELS = { e: '-e meaning', a: '-a and', v: '-v and not', Q: '-Q question' };
+const LABELS = { e: '-e meaning', P: '-P regex', a: '-a and', v: '-v and not', Q: '-Q question' };
 // A close icon, not text, so the button's accessible name comes from aria-label alone, in every browser.
 const DEL_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>';
 const TIPS = {
-  Q: ['a question', 'the lines that answer this question, not the lines asking it, e.g. why did it fail. A question is never a regex: use -e for /regex/'],
-  e: ['a meaning (or /regex/)', 'lines that mean this, in any language; several -e are OR. e.g. an API key is read'],
+  Q: ['a question', 'the lines that answer this question, not the lines asking it, e.g. why did it fail. A question is never a regex: use -P for /regex/'],
+  e: ['a meaning', 'lines that mean this, in any language; several -e are OR. e.g. an API key is read. Always a meaning: use -P for /regex/'],
+  P: ['/regex/flags', 'a regex term, matched locally, no request; several -P are OR, like -e. e.g. /catch/'],
   a: ['and this meaning', 'AND onto the term before it: both must hold on the line'],
   v: ['and not this meaning', 'AND NOT onto the term before it: this must not hold (as the first field, a bare negation)'],
 };

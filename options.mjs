@@ -7,6 +7,7 @@ import { parseArgs } from 'node:util';
 
 export const OPTIONS = {
   e: { type: 'string', multiple: true },
+  P: { type: 'string', multiple: true }, // a regex term (/RE/flags), OR'd like -e; -a/-v after it AND/NOT onto it
   a: { type: 'string', multiple: true },
   v: { type: 'string', multiple: true },
   question: { type: 'string', multiple: true, short: 'Q' },
@@ -91,7 +92,8 @@ export function parseOpts(filledArgs) {
   const { tokens } = parseArgs({ args: filledArgs, options: OPTIONS, allowPositionals: true, allowNegative: true, tokens: true });
   const command = k => k.name === 'install-templates' || (k.name === 'template' && k.value === 'list');
   if (tokens.some(k => k.name === 'reverse')) throw new Error(REVERSE_REMOVED);
-  const bad = tokens.find(k => k.kind !== 'option' || ['e', 'a', 'v', 'question', 'step-to', 'step-reverse-to', 'cached', 'untracked'].includes(k.name) || command(k));
-  if (bad) throw new Error(bad.kind !== 'option' ? `'${bad.value ?? '--'}' is not an option` : command(bad) ? `${bad.rawName}${bad.value === undefined ? '' : `=${bad.value}`} is not allowed (it does something instead of searching)` : ['cached', 'untracked'].includes(bad.name) ? `--${bad.name} is not allowed (what is searched goes on the command line)` : `${bad.name.length > 1 ? '--' : '-'}${bad.name} is not allowed (${bad.name.startsWith('step-') ? 'expressions' : 'meanings'} go on the command line)`);
+  const bad = tokens.find(k => k.kind !== 'option' || ['e', 'P', 'a', 'v', 'question', 'step-to', 'step-reverse-to', 'cached', 'untracked'].includes(k.name) || command(k));
+  const reason = n => (n.startsWith('step-') ? 'expressions go on the command line' : n === 'P' ? 'a regex goes on the command line' : 'meanings go on the command line');
+  if (bad) throw new Error(bad.kind !== 'option' ? `'${bad.value ?? '--'}' is not an option` : command(bad) ? `${bad.rawName}${bad.value === undefined ? '' : `=${bad.value}`} is not allowed (it does something instead of searching)` : ['cached', 'untracked'].includes(bad.name) ? `--${bad.name} is not allowed (what is searched goes on the command line)` : `${bad.name.length > 1 ? '--' : '-'}${bad.name} is not allowed (${reason(bad.name)})`);
   return { tokens };
 }
