@@ -1695,6 +1695,7 @@ eq "$(curl -s -o /dev/null -w '%{http_code}' "$BASE")" "404" "--serve: the page 
 # #216: the Target section shows the launch's targets; the page has no way to send one, and a query naming another
 # file is ignored (only the known fields count), so a search reads the launch's targets and nothing else
 eq "$(curl -s "$U" | grep -o '<ul class="targets"[^>]*><li><code>[^<]*</code></li></ul>' | sed 's/.*<code>//; s/<.*//')" "$F" "--serve: Target shows the launch's target"
+eq "$(curl -s "$U" | grep -c 'id="cmd-demo-note"')" "0" "--serve: a real target, no demo note next to Copy"
 printf 'a cat elsewhere\n' >"$tmp/other.txt"
 eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=&file=$tmp/other.txt&target=$tmp/other.txt" | grep -c elsewhere)" "0" "--serve: a target in the query is not searched"
 [ "$(curl -s "$BASE" | grep -c "$K")" = 0 ] || fail "--serve: a page fetched without the token never carries it"
@@ -1861,6 +1862,66 @@ eq "$(node -p "fs=require('fs'); fs.existsSync('$HS') ? JSON.stringify(JSON.pars
 rm -f "$HS"
 eq "$(curl -s "${BASE}results?k=$K&x=e:cat&x=S:&x=e:owl&rank=jev&dedup=always" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); j.error || 'ok'")" "ok" "--serve: --step-to drops rank and dedup"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
+
+section 'serve: demo corpus (#237)'
+# --serve with no target (not -r, not git sys1grep) searches the bundled examples/ instead of stdin, and says so
+# plainly. The query strings below come straight from serve.mjs's own EXAMPLES, not a copy of their regexes, so a
+# change to an example or to the corpus shows up here instead of silently drifting apart.
+node -e 'import("../serve.mjs").then(({ EXAMPLES }) => {
+  const lines = EXAMPLES.filter(e => e.x.some(f => f[0] === "S")).map(e => {
+    const params = e.x.map(f => ["x", f]);
+    if (e.hops) params.push(["hops", e.hops]);
+    if (e.reverse) params.push(["reverse", "1"]);
+    if (e.include) params.push(["include", e.include]);
+    return params.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
+  });
+  require("fs").writeFileSync(process.argv[1], lines.join("\n") + "\n");
+}, e => { console.error(e); process.exit(1); })' "$tmp/step.qs"
+[ "$(wc -l <"$tmp/step.qs" | tr -d ' ')" -ge 4 ] || fail "--serve: demo corpus: expected at least 4 multi-step examples, got $(wc -l <"$tmp/step.qs")"
+$E SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= node ../sys1grep.mjs --serve >"$tmp/serve-demo.url" 2>/dev/null &
+serve=$!
+i=0; while [ ! -s "$tmp/serve-demo.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (no target) did not start"; sleep 0.05; done
+U=$(cat "$tmp/serve-demo.url"); BASE=${U%%\?*} K=${U#*k=}
+eq "$(curl -s "$U" | grep -o '<li class="note">[^<]*</li>')" '<li class="note">demo corpus (bundled): examples/</li>' "--serve: no target, Target says it searches the bundled corpus"
+eq "$(curl -s "$U" | grep -c 'id="cmd-demo-note"')" "1" "--serve: no target, the copy-command box notes the pasted command reads stdin instead"
+i=0
+while IFS= read -r qs; do
+  i=$((i + 1))
+  [ -n "$qs" ] || continue
+  out=$(curl -s "${BASE}results?k=$K&$qs")
+  txt=$(printf '%s' "$out" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); j.text ?? JSON.stringify(j)")
+  case $txt in *examples/app.*) ;; *) fail "--serve: demo corpus: multi-step example #$i found nothing in the corpus: $txt" ;; esac
+done <"$tmp/step.qs"
+eq "$i" "4" "--serve: demo corpus: every multi-step example checked"
+# a walk never sends Details' -g (toArgv's nostep), so a g=1 left checked during a walk must not drop the demo's -r either
+while IFS= read -r qs; do
+  [ -n "$qs" ] || continue
+  txt=$(curl -s "${BASE}results?k=$K&$qs&g=1" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); j.text ?? JSON.stringify(j)")
+  case $txt in *examples/app.*) ;; *) fail "--serve: demo corpus: a multi-step example with Details -g left on found nothing: $txt" ;; esac
+done <"$tmp/step.qs"
+# the Details -g toggle must not fight the demo corpus's own -r: a per-search g=1 drops the -r DEMO_DIR this run
+# would otherwise add (serve.mjs's run(), the gitlog parameter), not send -g and -r together (sys1grep refuses that
+# outright: "-g searches commits, not files: it cannot be combined with -r")
+got=$(curl -s "${BASE}results?k=$K&x=e:cat&rank=&g=1")
+errtxt=$(printf '%s' "$got" | node -pe "JSON.parse(require('fs').readFileSync(0)).error ?? ''")
+case $errtxt in *'cannot be combined with -r'*) fail "--serve: no target, Details -g=1: still conflicts with the demo corpus's -r: $errtxt" ;; esac
+kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
+# a bare --serve -g (launch-level, not a per-search toggle) hits the same wall if demo ignores it; it must not
+$E SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= node ../sys1grep.mjs --serve -g >"$tmp/serve-demo-g.url" 2>/dev/null &
+serve=$!
+i=0; while [ ! -s "$tmp/serve-demo-g.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve -g did not start"; sleep 0.05; done
+U=$(cat "$tmp/serve-demo-g.url"); BASE=${U%%\?*} K=${U#*k=}
+got=$(curl -s "${BASE}results?k=$K&x=e:cat&rank=")
+errtxt=$(printf '%s' "$got" | node -pe "JSON.parse(require('fs').readFileSync(0)).error ?? ''")
+case $errtxt in *'cannot be combined with -r'*) fail "--serve -g at launch: demo still adds -r: $errtxt" ;; esac
+kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
+# SYS1GREP_OPTS=-r (not the launch argv) must also turn the demo corpus off: targetsOf's probe, not a bare o.r parse
+$E SYS1GREP_OPTS=-r SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= node ../sys1grep.mjs --serve >"$tmp/serve-demo-opts.url" 2>/dev/null &
+serve=$!
+i=0; while [ ! -s "$tmp/serve-demo-opts.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (SYS1GREP_OPTS=-r) did not start"; sleep 0.05; done
+eq "$(curl -s "$(cat "$tmp/serve-demo-opts.url")" | grep -o '<li class="note">[^<]*</li>')" '<li class="note">. (this folder, recursively: -r)</li>' "--serve: SYS1GREP_OPTS=-r, no launch -r: Target says ., not the demo corpus"
+kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
+
 section 'serve: launch options'
 # launch values the page must carry: -g unchecked, a summary instruction, the key kept out of the page
 $E SYS1GREP_SUMMARIZE=stdin SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve -n --dedup=always --summarize=cat --summarize-prompt=hello --suggest 'Q:why is it slow' --suggest=e:disk\ full --suggest=plain --sys1-api-key=SECRETKEY123 "$F" >"$tmp/serve2.url" 2>/dev/null &
@@ -2204,8 +2265,8 @@ eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=" | node -pe "JSON.parse(require
 cat dog" "--serve --serve=PORT: searches still run"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 section 'serve: targets display'
-# #216: with no target the Target section says what a search reads instead: stdin (left empty), or . with -r; -g
-# shows git log in its place
+# #216/#237: with no target the Target section says what a search reads instead: the bundled demo corpus, or . with
+# -r; -g shows git log in its place
 for launch in '' -r -g; do
   $E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve $launch >"$tmp/serve6.url" 2>/dev/null &
   serve=$!
@@ -2217,7 +2278,7 @@ for launch in '' -r -g; do
   case $launch in
     -r) eq "$(cat "$tmp/target.txt")" ". (this folder, recursively: -r)" "--serve -r, no target: Target says ." ;;
     -g) eq "$(cat "$tmp/target.html")" "1" "--serve -g: Target shows git log, not the files" ;;
-    *) eq "$(cat "$tmp/target.txt")" "stdin, which --serve leaves empty: start it with a file or folder to search" "--serve, no target: Target says stdin" ;;
+    *) eq "$(cat "$tmp/target.txt")" "demo corpus (bundled): examples/" "--serve, no target: Target says the bundled demo corpus" ;;
   esac
 done
 # six targets, one after --: five shown, the rest in a "+N more" fold; a name is shown as text, never as markup

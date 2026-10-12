@@ -6,6 +6,16 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 ## [Unreleased]
 
 ### Added
+- `--serve`: a small sample corpus now ships in the package (`examples/`: logs, support tickets, prose in English
+  and Japanese, and a `.js`/`.py` pair with a call chain, tens of KB total), so every example button has something
+  to find (#237). With no target on the command line, and only when `-r`, `-g` and `git sys1grep` are all off
+  (checked against what sys1grep itself would resolve, SYS1GREP_OPTS and settings.json opts included, not just the
+  launch's own argv), `--serve` searches that bundled corpus instead of reading empty stdin; Target says so plainly
+  (`demo corpus (bundled): examples/`), and results print its real path, same as any other target. Any target given
+  on the command line, `-r`, `-g` (at launch or toggled per search in Details) or `git sys1grep` all replace it, as
+  before. Only the copy-command box and the page's own script keep showing the command with no target (a note next
+  to Copy says the pasted command reads stdin instead, and names what to add); the bundled path is added only to
+  what each search actually runs, and only when that search is not itself reading git log.
 - `--serve`: Details now has `-A`/`-B` (lines of context, each side, like `-C`), `-j` (concurrent requests) and
   `--max-cost` (the cost guard), and `-o` shown only when the unit is a sentence (#234, #211 item 10, decided).
   `-A`/`-B`/`-o` go inert during a multi-step walk, like `-C`/`--dedup` already do; `-j`/`--max-cost` still apply

@@ -1,0 +1,19 @@
+2026-01-05 03:12:01 INFO  server started, listening on port 8080
+2026-01-05 03:12:04 INFO  connected to the primary database
+2026-01-05 03:14:40 WARN  slow query took 2800ms: SELECT * FROM orders WHERE status = 'pending'
+2026-01-05 03:20:11 ERROR connection reset by peer while calling the payment service
+2026-01-05 03:20:12 INFO  retrying the payment request (attempt 2 of 3)
+2026-01-05 03:20:18 ERROR timeout after 5000ms waiting for the payment service
+2026-01-05 03:20:19 INFO  retrying the payment request (attempt 3 of 3)
+2026-01-05 03:20:25 FATAL giving up after 3 attempts: the payment service is unreachable
+2026-01-05 04:02:00 INFO  nightly backup completed
+2026-01-05 04:05:30 WARN  disk usage at 92% on /var/log
+2026-01-05 04:10:44 ERROR DNS lookup failed for the billing API
+2026-01-05 04:10:46 INFO  DNS lookup succeeded on retry
+2026-01-05 05:00:00 ERROR health check failed: no response from the application server
+2026-01-05 05:00:05 ERROR health check failed again: no response from the application server
+2026-01-05 05:00:10 FATAL marking the application server as down after 2 failed health checks
+2026-01-05 05:30:00 INFO  the application server is back and answering health checks
+2026-01-05 06:00:00 WARN  an admin ran DROP TABLE sessions; on the staging database by mistake
+2026-01-05 06:05:00 INFO  restored the sessions table from last night's backup
+2026-01-05 07:00:00 INFO  it is a quiet morning, nothing else to report

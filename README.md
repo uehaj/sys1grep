@@ -856,15 +856,16 @@ http://127.0.0.1:51234/?k=3f9e...
 $ sys1grep --serve=8080 -y --level=strict -r src/     # a fixed port; the options given here are the page's first values
 ```
 
-From a clone, `npm run serve -- -r src/` is the same (`--` keeps npm from reading the options; `npm run serve -- --serve=8080 -r src/` fixes the port; with no target the search reads an empty stdin, so name one).
+From a clone, `npm run serve -- -r src/` is the same (`--` keeps npm from reading the options; `npm run serve -- --serve=8080 -r src/` fixes the port). With no target, `--serve` searches its own bundled sample corpus (`examples/`, #237) instead of reading an empty stdin, so every example button has something to find; name a target to search that instead.
 
 The printed URL carries a token made fresh at launch (`?k=...`). Every route needs it, the page itself included: without
 it (in the query, or in a header for the page's own requests) the server answers 404 to everything, so another local
 account or process cannot read the page, its token, or a search's results merely by knowing the port.
 
 The page has four sections (#216). **Target** shows what every search reads: the files and folders given at launch
-(`npm run serve -- src docs/a.md`), or with none what sys1grep falls back to, `.` with `-r` or stdin, which `--serve`
-leaves empty; while `-g` (in Details) is on, it says git log's commits instead. It is shown only: the page cannot
+(`npm run serve -- src docs/a.md`), or with none what sys1grep falls back to: `.` with `-r`, every file git tracks
+with `git sys1grep`, or, with neither, the bundled sample corpus (`demo corpus (bundled): examples/`, #237); while
+`-g` (in Details) is on, it says git log's commits instead. It is shown only: the page cannot
 change it, and a target in a request is ignored. **Search conditions**
 holds the meaning fields, multi-step and the examples, **Options** the Search button, `rank`, `summarize` and the command
 line, and **Details** the other options; the results come below them. What they hold: the meaning fields (`+` adds one; each takes `-e`, `-a`, `-v` or `-Q`), `rank`, `summarize`, a **multi-step**
