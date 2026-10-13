@@ -29,21 +29,22 @@ node .claude/skills/serve-check/fixture.mjs workdir/serve-check   # writes workd
 
 H=$(mktemp -d); echo "$H" > workdir/serve-check/home.path         # a scratch HOME for the --serve process (#206)
 
-env -u SYS1GREP_API_KEY HOME="$H" nohup node tests/fake-jev.mjs > workdir/serve-check/fake.port 2> workdir/serve-check/fake.log &
+# every key variable is unset, as in tests/offline.sh: sys1grep falls back to TYPESAFE_API_KEY and the others
+env -u SYS1GREP_API_KEY -u SEMGREP_API_KEY -u TYPESAFE_API_KEY -u SYS1GREP_SUMMARIZER_API_KEY -u SEMGREP_SUMMARIZER_API_KEY -u SYS1GREP_MODEL -u SEMGREP_MODEL -u SEMGREP_URL -u SEMGREP_SUMMARIZER -u SEMGREP_SUMMARIZER_MODEL -u SYS1GREP_TEMPLATE -u OLLAMA_HOST HOME="$H" nohup node tests/fake-jev.mjs > workdir/serve-check/fake.port 2> workdir/serve-check/fake.log &
 echo $! > workdir/serve-check/fake.pid
 # next call: confirm it's alive before using it
 #   ps -p $(cat workdir/serve-check/fake.pid); cat workdir/serve-check/fake.port
 base="http://127.0.0.1:$(cat workdir/serve-check/fake.port)"
 
 H=$(cat workdir/serve-check/home.path)
-env -u SYS1GREP_API_KEY HOME="$H" SYS1GREP_URL=$base/v1 SYS1GREP_SUMMARIZER=$base/v1 SYS1GREP_SUMMARIZER_MODEL=fake \
+env -u SYS1GREP_API_KEY -u SEMGREP_API_KEY -u TYPESAFE_API_KEY -u SYS1GREP_SUMMARIZER_API_KEY -u SEMGREP_SUMMARIZER_API_KEY -u SYS1GREP_MODEL -u SEMGREP_MODEL -u SEMGREP_URL -u SEMGREP_SUMMARIZER -u SEMGREP_SUMMARIZER_MODEL -u SYS1GREP_TEMPLATE -u OLLAMA_HOST HOME="$H" SYS1GREP_URL=$base/v1 SYS1GREP_SUMMARIZER=$base/v1 SYS1GREP_SUMMARIZER_MODEL=fake \
   nohup node sys1grep.mjs --serve -r workdir/serve-check/target > workdir/serve-check/serve.url 2> workdir/serve-check/serve.log &
 echo $! > workdir/serve-check/serve.pid
 # next call: ps -p $(cat workdir/serve-check/serve.pid); cat workdir/serve-check/serve.url
 U=$(cat workdir/serve-check/serve.url)   # http://127.0.0.1:PORT/?k=TOKEN
 
 # always, even on failure, once both PID files exist:
-kill $(cat workdir/serve-check/serve.pid) $(cat workdir/serve-check/fake.pid) 2>/dev/null
+kill $(cat workdir/serve-check/serve.pid workdir/serve-check/serve2.pid workdir/serve-check/fake.pid 2>/dev/null) 2>/dev/null   # serve2.pid: the second launch of item 10, if any
 # then confirm: ps aux | grep -E 'fake-jev|--serve' | grep -v grep   (nothing left)
 ```
 
@@ -76,7 +77,7 @@ Default: the `playwright-cli` skill, Chromium (its default browser), headless. I
 repository dependency.
 
 Run `playwright-cli` itself with the **real** `HOME`, in a separate command from the one that started `--serve`
-(step 1 exported a scratch `HOME` for that command only). The browser never writes `~/.config/sys1grep/settings.json`;
+(step 1 gave only the fake and `--serve` a scratch `HOME`). The browser never writes `~/.config/sys1grep/settings.json`;
 only `--serve`'s own process does, which is why #206's guard is on the server (and on `tests/serve-page.mjs`), not on
 Chromium. A real `HOME` also means Playwright finds its already-downloaded browser (`~/Library/Caches/ms-playwright`
 on macOS); a scratch one would need `PLAYWRIGHT_BROWSERS_PATH` pointed at the real cache, or `open` fails outright.
@@ -145,7 +146,8 @@ the matching snapshot) and, for a search, the match count the page shows.
     blank panel. A failing search needs its own launch, since `SYS1GREP_URL` is fixed when `--serve` starts: either
     point it at a closed port, or launch once more with a target that holds only an `@err` fixture line (per
     `tests/fake-jev.mjs`, every search against it fails with a 400). Either way, `#left` shows a message, not a
-    blank panel, and the server is still answering afterward.
+    blank panel, and the server is still answering afterward. Start that launch the same way as step 1 (the same
+    `env -u ...` and scratch `HOME`) and write its PID to `workdir/serve-check/serve2.pid` so the kill line stops it.
 
 ## 4. Evidence out
 

@@ -8,8 +8,9 @@
 //
 // This reads EXAMPLES from serve.mjs, so a new field in an existing example is picked up for free. A new or
 // reworded EXAMPLE is not: the per-heading LINES table below is the only thing that knows how to make each example
-// match the fake, and it keys off the exact English heading (`h`). An unknown heading fails loudly instead of
-// silently shipping a fixture that proves nothing.
+// match the fake, and it keys off the exact English heading (`h`). An unknown heading, or an example whose English
+// terms (`x`) its LINES no longer carry verbatim (or, for P:, match), fails loudly instead of silently shipping a
+// fixture that proves nothing.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { EXAMPLES } from '../../../serve.mjs';
 
@@ -26,7 +27,8 @@ const LINES = {
   'where an API key is read': ['an API key or token is read from the environment or a settings file'],
   'a request is retried': ['a failed request is retried'],
   'either meaning, with scores (-p)': ['customer is asking for a refund', 'delivery address change request'],
-  'exclude with -v': ['network or remote connection failure'], // the -v text must NOT be on this line
+  // the first line must match; the second carries the -v text too, so -v must drop it
+  'exclude with -v': ['network or remote connection failure', 'network or remote connection failure; a retry is happening or was attempted'],
   'regex and meaning together': ['try { risky() } catch (e) { /* the error is ignored */ }'],
   'stricter (--level strict)': ['a security risk or dangerous destructive operation'],
   'one line per template (--dedup)': [
@@ -42,6 +44,17 @@ const missing = wanted.filter(h => !known.includes(h)), stale = known.filter(h =
 if (missing.length || stale.length) {
   if (missing.length) console.error(`fixture.mjs: no LINES entry for: ${missing.join(' | ')}`);
   if (stale.length) console.error(`fixture.mjs: LINES has a heading EXAMPLES no longer has: ${stale.join(' | ')}`);
+  console.error('EXAMPLES changed in serve.mjs; update the LINES table above, then rerun.');
+  process.exit(1);
+}
+
+const re = t => new RegExp(t.slice(1, t.lastIndexOf('/')), t.slice(t.lastIndexOf('/') + 1));
+const unmatched = EXAMPLES.filter(e => !stepHeadings.has(e.h)).flatMap(e => e.x.filter(t => {
+  const k = t[0], s = t.slice(2);
+  return k === 'P' ? !LINES[e.h].some(l => re(s).test(l)) : !LINES[e.h].some(l => l.includes(s));
+}).map(t => `${e.h}: ${t}`));
+if (unmatched.length) {
+  console.error(`fixture.mjs: LINES no longer carries these example terms: ${unmatched.join(' | ')}`);
   console.error('EXAMPLES changed in serve.mjs; update the LINES table above, then rerun.');
   process.exit(1);
 }
