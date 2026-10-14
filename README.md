@@ -192,8 +192,9 @@ to the narrowest:
   now: a hint says when `--dedup=auto` would pay.
 - **Never twice.** `--cache` keeps Jev's answers in `~/.config/sys1grep/cache`, keyed by the request sent (model,
   lines, questions) and the endpoint's host, so the same search again sends nothing and costs nothing. It is off
-  by default, since the cache holds the lines searched; `SYS1GREP_CACHE=on` sets the default. `--cache=only`
-  answers from the cache alone: a request not there is exit 2, named, and nothing is sent. `--dry-run` says how
+  by default, since the cache holds the lines searched; `SYS1GREP_CACHE=on` (in the environment or
+  `~/.config/sys1grep/.env`, not settings.json) sets the default. `--cache=only` answers from the cache alone: a
+  request not there is exit 2 unless `-q` already found a match, named, and nothing is sent. `--dry-run` says how
   many requests are cached and how many it would send. There is no expiry: the model is in the key, and Jev
   drifts about ±0.05 between runs, so a cached answer is one of those runs. `--cache=clear` empties it.
 - **Check before paying.** `--dry-run` sends nothing and prints the settings the search would run with, the
@@ -1166,7 +1167,8 @@ usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION|-P /RE/FLAGS [-a MEANING] [-v
   --dedup[=auto|always|never]  judge one line per template and reuse its answer for the rest (default never,
                for now; see "One line per template" above)
   --cache[=on|off|only]  answer a request sent before from ~/.config/sys1grep/cache, free; only: never send,
-               a request not cached is exit 2 (default off, SYS1GREP_CACHE; see "Sending less");
+               a request not cached is exit 2 unless -q already found a match (default off,
+               SYS1GREP_CACHE; see "Sending less");
                --cache=clear (alone) empties it
   --rank[=jev|match]  print the results (a match with its context) best first, under numbered headers; jev
                (bare --rank) asks Jev of each result, match sorts by its best match probability (see "Best first"); --no-rank: file order

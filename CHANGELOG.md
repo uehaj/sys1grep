@@ -10,9 +10,10 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   SHA-256 of the endpoint's host and the request body (model, lines, questions); the API key is never stored or
   hashed in, and usage is not kept (#252, the first step of #200). A hit sends nothing and counts no request and no
   cost (`--max-cost`'s estimate leaves it out too); a miss sends as before and stores the answers. Off by default,
-  since the questions carry the searched lines; `SYS1GREP_CACHE` sets the default. `only` never sends: a request not
-  cached is exit 2, naming it. `--dry-run` says `N requests to send, M cached`. `--cache=clear` empties the cache and
-  must stand alone. A failed write is a warning; the search result stands. No expiry: the model is in the key.
+  since the questions carry the searched lines; `SYS1GREP_CACHE` (environment or `.env`, not settings.json) sets
+  the default. `only` never sends: a request not cached is exit 2 unless `-q` already found a match, naming it.
+  `--dry-run` says `N requests to send, M cached`; its line count and the summary's count only the lines of
+  requests sent. `--cache=clear` empties the cache and must stand alone. A failed write is a warning; the search result stands. No expiry: the model is in the key.
 - `--serve`: a small sample corpus now ships in the package (`examples/`: logs, support tickets, prose in English
   and Japanese, and a `.js`/`.py` pair with a call chain, tens of KB total), so every example button has something
   to find (#237). With no target on the command line, and only when `-r`, `-g` and `git sys1grep` are all off

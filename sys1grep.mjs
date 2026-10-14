@@ -320,10 +320,10 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
   --cache[=on|off|only]  keep Jev's answers in ~/.config/sys1grep/cache, keyed by what is sent (model, lines,
                questions) and the endpoint's host, so the same request again is answered from there: no
                request, no cost. Default off (SYS1GREP_CACHE): the cache holds the lines searched. Bare
-               --cache is on; only answers from the cache alone, and a request not there is exit 2, naming
-               it, with nothing sent. No expiry: Jev drifts about 0.05 between runs, a cached answer is one
-               of them. --dry-run says how many requests are cached and how many to send.
-               --cache=clear empties it; it must stand alone, and is refused in SYS1GREP_OPTS
+               --cache is on; only answers from the cache alone, and a request not there is exit 2 unless -q
+               already found a match, naming it, with nothing sent. No expiry: Jev drifts about 0.05 between
+               runs, a cached answer is one of them. --dry-run says how many requests are cached and how many
+               to send. --cache=clear empties it; it must stand alone, and is refused in SYS1GREP_OPTS
   --dedup[=auto|always|never]  judge one line per template instead of every line. Lines that differ only in
                ids, hashes, numbers, dates and times, paths and URLs share a template; one of them is sent and
                its answer is reused for the rest. Which of those may be folded depends on the meaning: a number
@@ -419,7 +419,8 @@ Environment (read from the environment, else from ~/.config/sys1grep/settings.js
   SYS1GREP_SUMMARIZER_API_KEY  sent as Authorization: Bearer to a --summarize=URL server only (never
                      SYS1GREP_API_KEY, which is Jev's)
   SYS1GREP_TEMPLATE   --template's default, for --rank or --summarize --format=html
-  SYS1GREP_CACHE      --cache's default: on, off or only (default off)
+  SYS1GREP_CACHE      --cache's default: on, off or only (default off); the environment or .env only, not
+                     settings.json
   SYS1GREP_OPTS       default options, split on spaces and put before the command line, which wins;
                      --no-X turns a boolean flag off (--color takes --color=never). Options only: no
                      meanings, files or --. e.g. SYS1GREP_OPTS='--level strict -n'. Scripts: SYS1GREP_OPTS= sys1grep
@@ -605,8 +606,9 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
   --cache[=on|off|only]  Jev の答えを ~/.config/sys1grep/cache に残す。キーは送る内容 (モデル・行・問い) と
                送信先のホスト名で、同じリクエストはそこから答え、送らず料金もかからない。既定は off
                (SYS1GREP_CACHE): 検索した行が残るため。値の無い --cache は on。only はキャッシュだけで答え、
-               無いリクエストがあればそれを名指しして終了コード 2 (何も送らない)。期限は無い: Jev の答えは
-               実行ごとに 0.05 ほど揺れ、残るのはその 1 回分。--dry-run はキャッシュ済みと送る分の数を出す。
+               無いリクエストがあればそれを名指しして終了コード 2 (何も送らない。-q が先に一致を見つけて
+               いれば 0)。期限は無い: Jev の答えは実行ごとに 0.05 ほど揺れ、残るのはその 1 回分。
+               --dry-run はキャッシュ済みと送る分の数を出す。
                --cache=clear で空にする。これは単独で使い、SYS1GREP_OPTS には書けない
   --dedup[=auto|always|never]  全行ではなくテンプレートごとに 1 行だけ判定する。ID・ハッシュ・数値・日付と時刻・
                パス・URL だけが違う行は同じテンプレートとみなし、代表 1 行を送ってその答えを残りにも使う。
@@ -700,7 +702,7 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
   SYS1GREP_SUMMARIZER_API_KEY  --summarize=URL のサーバへ Authorization: Bearer で送る
                      (Jev 用の SYS1GREP_API_KEY とは別)
   SYS1GREP_TEMPLATE   --rank か --summarize の --format=html の --template の既定
-  SYS1GREP_CACHE      --cache の既定: on・off・only (既定 off)
+  SYS1GREP_CACHE      --cache の既定: on・off・only (既定 off)。環境か .env だけで、settings.json には書けない
   SYS1GREP_OPTS       既定のオプション。空白で区切ってコマンドラインの前に置くので、コマンドラインが
                      優先する。--no-X で真偽のフラグを消せる (--color は --color=never)。書けるのは
                      オプションだけで、意味・ファイル・-- は書けない。例 SYS1GREP_OPTS='--level strict -n'。
@@ -2228,6 +2230,11 @@ function guardCost(chunks, asks, terms) {
   if (estPrice > MAX_COST) askToContinue(`sys1grep: about ${estTokens.toLocaleString('en-US')} input tokens, ~$${estPrice.toFixed(2)}${at}  (--max-cost ${MAX_COST})`);
 }
 guardCost(chunks, asksByUnit, starting);
+// #252 review: the units of chunks the cache answers, left out of "N sent" (summary) and "N of M to send" (--dry-run)
+const cachedUnits = cacheMode === 'off' ? 0 : chunks.reduce((t, c) => {
+  const { state, questions } = requestOf(c);
+  return cached(JSON.stringify({ model, state, questions }), questions) ? t + c.length : t;
+}, 0);
 const isHit = l => starting.some(term => termHolds(term, l));
 // -q: a failed request is reported and the rest still run, since a later match means exit 0 (grep -q).
 let answered = 0;
@@ -2640,7 +2647,7 @@ if (dry) {
   // and -i show only the cost guard's verdict here, consistent with what a real run would ask.
   const guard = (tokens * pricePerM) / 1e6 > MAX_COST ? `; over --max-cost ${MAX_COST}, would ask` : '';
   const split = cacheMode === 'off' ? '' : ` to send, ${cacheHits} cached`;
-  logPlan(`dry run: ${toSend} request${toSend === 1 ? '' : 's'}${split}, ${sent.length} of ${totalUnits} ${unitName} to send, ${tracedQuestions} questions, ${tracedChars} chars, ~${tokens} input tokens${price}; nothing sent${assumed.length ? ` (${assumed.join(' and ')} questions assumed no)` : ''}${guard}`);
+  logPlan(`dry run: ${toSend} request${toSend === 1 ? '' : 's'}${split}, ${sent.length - cachedUnits} of ${totalUnits} ${unitName} to send, ${tracedQuestions} questions, ${tracedChars} chars, ~${tokens} input tokens${price}; nothing sent${assumed.length ? ` (${assumed.join(' and ')} questions assumed no)` : ''}${guard}`);
 } else if ((process.stderr.isTTY || opt.verbose) && !opt.quiet) {
   // #143: dedup off by default until real-run stats say auto should be it; meanwhile a run that would have paid
   // says so, once, so a user stuck on the default default learns --dedup=auto exists.
@@ -2663,7 +2670,7 @@ if (dry) {
     folded = ` (${members.length} folded by --dedup, ~${saved} input tokens / ~$${(saved * perToken).toFixed(6)} saved${share})`;
   }
   const n = (k, w) => `${k} ${w}${k === 1 ? '' : 's'}`;
-  console.error(`${matched} of ${totalUnits} ${unitName} matched; ${requestCount ? `${sent.length} sent to Jev${folded} in ${n(requestCount, 'request')}, ${n(usedTokens, 'input token')}${cost}` : 'nothing sent'}${cacheHits ? `, ${n(cacheHits, 'request')} answered from the cache` : ''}`);
+  console.error(`${matched} of ${totalUnits} ${unitName} matched; ${requestCount ? `${sent.length - cachedUnits} sent to Jev${folded} in ${n(requestCount, 'request')}, ${n(usedTokens, 'input token')}${cost}` : 'nothing sent'}${cacheHits ? `, ${n(cacheHits, 'request')} answered from the cache` : ''}`);
 }
 // process.exit() can drop buffered stdout when piped, so set exitCode instead.
 process.exitCode = dry ? (hadError ? 2 : 0) : matched && opt.quiet ? 0 : hadError || (summaryFailed && !askSummary) ? 2 : matched ? 0 : 1; // -q: a match wins over an error

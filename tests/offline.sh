@@ -337,6 +337,24 @@ eq "$($J --cache -e cat "$F" 2>"$tmp/cache.err")" "$(cat "$tmp/cache1")" "--cach
 grep -q '^sys1grep: warning: the cache was not written: ' "$tmp/cache.err" || fail "--cache: a failed write is reported"
 code 0 "--cache: a failed write keeps the exit status" -- $J --cache -e cat "$F"
 rm -rf "$CD"
+mode() { node -e 'console.log((require("fs").statSync(process.argv[1]).mode & 0o777).toString(8))' "$1"; }
+reset; $J --cache -e cat "$F" >/dev/null; CF=$(ls "$CD"/*.json)
+eq "$(mode "$CD") $(mode "$CF")" "700 600" "--cache: the directory is 0700, a file 0600"
+for bad in '' '{' 'null' '[]' '{"L000_0":{"noul":0.9}}'; do
+  printf '%s' "$bad" >"$CF"; reset
+  eq "$($J --cache -e cat "$F")" "$(cat "$tmp/cache1")" "--cache: a corrupt file ('$bad') is a miss"
+  eq "$(stat count)" "1" "--cache: a corrupt file ('$bad') is sent again"
+  reset; $J --cache -e cat "$F" >/dev/null; eq "$(stat count)" "0" "--cache: a corrupt file ('$bad') is overwritten"
+done
+code 0 "--cache: a corrupt file keeps exit 0" -- $J --cache -e cat "$F"
+# the units of cached requests are not counted as sent
+G252="$tmp/c252.txt"; for i in 1 2 3 4 5 6 7 8 9 10 11 12; do echo "cat $i"; done >"$G252"
+$J --cache --chunk 2 -e cat "$G252" >/dev/null; echo "cat 13" >>"$G252"
+eq "$($J --cache --dry-run --chunk 2 -e cat "$G252" | tail -1 | cut -d, -f1-3)" "sys1grep: dry run: 1 request to send, 6 cached, 1 of 13 lines to send" "--cache --dry-run: only the units of misses are to send"
+eq "$($J --cache --verbose --chunk 2 -e cat "$G252" 2>&1 >/dev/null | tail -1 | cut -d, -f1)" "13 of 13 lines matched; 1 sent to Jev in 1 request" "--cache: the summary counts only the units sent"
+echo "cat 14" >>"$G252"; echo "cat 15" >>"$G252"; echo "cat 16" >>"$G252"
+code 0 "--cache=only: -q's match wins over a later miss" -- $J -q --cache=only --chunk 2 -j 4 -e cat "$G252"
+rm -rf "$CD"
 
 section '-j'
 # -j: requests in flight at once (each takes 30ms at the fake)
