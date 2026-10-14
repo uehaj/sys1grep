@@ -5,7 +5,8 @@
 //   -e / -Q terms are OR'd; -a / -v attach AND / AND NOT to the preceding term: (A and B and not C) or D.
 //   A leading ! negates just that meaning: -e A -e '!B' is A or not B.
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { constants, copyFileSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, statSync, writeSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { constants, copyFileSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
@@ -316,6 +317,13 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
                naming the option that would let it through; -q does not change this (scripts pass -y).
                -i already asks unconditionally and earlier, so this does not ask again
   -y, --yes    answer that question yes without asking (SYS1GREP_OPTS='--max-cost ... -y' for scripts)
+  --cache[=on|off|only]  keep Jev's answers in ~/.config/sys1grep/cache, keyed by what is sent (model, lines,
+               questions) and the endpoint's host, so the same request again is answered from there: no
+               request, no cost. Default off (SYS1GREP_CACHE): the cache holds the lines searched. Bare
+               --cache is on; only answers from the cache alone, and a request not there is exit 2, naming
+               it, with nothing sent. No expiry: Jev drifts about 0.05 between runs, a cached answer is one
+               of them. --dry-run says how many requests are cached and how many to send.
+               --cache=clear empties it; it must stand alone, and is refused in SYS1GREP_OPTS
   --dedup[=auto|always|never]  judge one line per template instead of every line. Lines that differ only in
                ids, hashes, numbers, dates and times, paths and URLs share a template; one of them is sent and
                its answer is reused for the rest. Which of those may be folded depends on the meaning: a number
@@ -411,6 +419,7 @@ Environment (read from the environment, else from ~/.config/sys1grep/settings.js
   SYS1GREP_SUMMARIZER_API_KEY  sent as Authorization: Bearer to a --summarize=URL server only (never
                      SYS1GREP_API_KEY, which is Jev's)
   SYS1GREP_TEMPLATE   --template's default, for --rank or --summarize --format=html
+  SYS1GREP_CACHE      --cache's default: on, off or only (default off)
   SYS1GREP_OPTS       default options, split on spaces and put before the command line, which wins;
                      --no-X turns a boolean flag off (--color takes --color=never). Options only: no
                      meanings, files or --. e.g. SYS1GREP_OPTS='--level strict -n'. Scripts: SYS1GREP_OPTS= sys1grep
@@ -593,6 +602,12 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                -q でも変わらない (スクリプトからは -y)。
                -i は無条件かつこれより前に聞くので、二重には聞かない
   -y, --yes    その質問に yes と答えて聞かない (スクリプトからは SYS1GREP_OPTS='--max-cost ... -y')
+  --cache[=on|off|only]  Jev の答えを ~/.config/sys1grep/cache に残す。キーは送る内容 (モデル・行・問い) と
+               送信先のホスト名で、同じリクエストはそこから答え、送らず料金もかからない。既定は off
+               (SYS1GREP_CACHE): 検索した行が残るため。値の無い --cache は on。only はキャッシュだけで答え、
+               無いリクエストがあればそれを名指しして終了コード 2 (何も送らない)。期限は無い: Jev の答えは
+               実行ごとに 0.05 ほど揺れ、残るのはその 1 回分。--dry-run はキャッシュ済みと送る分の数を出す。
+               --cache=clear で空にする。これは単独で使い、SYS1GREP_OPTS には書けない
   --dedup[=auto|always|never]  全行ではなくテンプレートごとに 1 行だけ判定する。ID・ハッシュ・数値・日付と時刻・
                パス・URL だけが違う行は同じテンプレートとみなし、代表 1 行を送ってその答えを残りにも使う。
                どれをまとめてよいかは意味による。「ディスク使用率が 90% を超えている」なら数値が、
@@ -685,6 +700,7 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
   SYS1GREP_SUMMARIZER_API_KEY  --summarize=URL のサーバへ Authorization: Bearer で送る
                      (Jev 用の SYS1GREP_API_KEY とは別)
   SYS1GREP_TEMPLATE   --rank か --summarize の --format=html の --template の既定
+  SYS1GREP_CACHE      --cache の既定: on・off・only (既定 off)
   SYS1GREP_OPTS       既定のオプション。空白で区切ってコマンドラインの前に置くので、コマンドラインが
                      優先する。--no-X で真偽のフラグを消せる (--color は --color=never)。書けるのは
                      オプションだけで、意味・ファイル・-- は書けない。例 SYS1GREP_OPTS='--level strict -n'。
@@ -727,6 +743,16 @@ if (opt['install-templates']) {
   }
   process.exit(0);
 }
+// #252: Jev's answers, one file per request, named by the hash of the body sent and the endpoint's host. The
+// questions carry the searched lines, so the cache is off unless asked for.
+const CACHE_DIR = `${homedir()}/.config/sys1grep/cache`;
+if (opt.cache === 'clear') {
+  if (tokens.filter(k => k.index >= defaults.length).length > 1) die('--cache=clear takes no other arguments');
+  rmSync(CACHE_DIR, { recursive: true, force: true });
+  process.exit(0);
+}
+const cacheMode = opt.cache ?? (process.env.SYS1GREP_CACHE || 'off');
+if (!['on', 'off', 'only'].includes(cacheMode)) die(opt.cache === undefined ? `SYS1GREP_CACHE: '${cacheMode}' is not on, off or only` : `--cache: '${cacheMode}' is not on, off, only or clear`);
 const parseTemplate = (text, where) => {
   const open = '<!--result-->', close = '<!--/result-->', times = m => text.split(m).length - 1;
   for (const m of [open, close]) if (times(m) !== 1) throw new Error(`template ${where}: ${times(m) ? `${m} appears ${times(m)} times` : `no ${m}`}; it needs one ${open} ... ${close} around the part repeated per result`);
@@ -1565,22 +1591,48 @@ const cut = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 const kify = n => (n >= 1000 ? `${Math.round(n / 1000)}k` : `${n}`); // #143: token counts in a one-line hint
 // --dry-run / --verbose: one line per request, then its questions grouped by wording (line ids read Lnnn).
 // --dry-run answers every question no (0), which also decides what --dedup folds and where --unit=sentence-by-* joins.
-function show(state, questions, label) {
+function show(state, questions, label, body, hit) {
   const count = new Map();
   for (const q of Object.values(questions)) { const k = q.instructions.replace(/\bL\d{3}\b/g, 'Lnnn'); count.set(k, (count.get(k) ?? 0) + 1); }
   const n = Object.keys(questions).length, chars = Object.values(state).join('').length;
-  logPlan(`request ${++traced} ${label}, ${n} question${n === 1 ? '' : 's'}, ${chars} chars`);
+  logPlan(`request ${++traced} ${label}, ${n} question${n === 1 ? '' : 's'}, ${chars} chars${hit ? ', cached' : ''}`);
   if (state.note) logPlan(`  ${cut(state.note, 110)}`);
   [...count].slice(0, 3).forEach(([q, k]) => logPlan(`  ${String(k).padStart(3)}× ${cut(q, 100)}`));
   if (count.size > 3) logPlan(`       (+${count.size - 3} more)`);
-  const body = JSON.stringify({ model, state, questions });
-  tracedQuestions += n; tracedChars += chars; tracedBytes += Buffer.byteLength(body); tracedCjkBytes += cjkBytesOf(body);
+  if (!hit) tracedQuestions += n, tracedChars += chars, tracedBytes += Buffer.byteLength(body), tracedCjkBytes += cjkBytesOf(body);
+}
+const isP = p => typeof p === 'number' && p >= 0 && p <= 1;
+const cacheFile = body => `${CACHE_DIR}/${createHash('sha256').update(`${apiHost}\n${body}`).digest('hex')}.json`;
+// A stored answer counts only when it answers every question, as a response must; anything else is a miss.
+function cached(body, questions) {
+  if (cacheMode === 'off') return null;
+  try {
+    const answers = JSON.parse(readFileSync(cacheFile(body), 'utf8'));
+    return Object.keys(questions).every(k => isP(answers[k]?.noul)) ? answers : null;
+  } catch { return null; }
+}
+let cacheHits = 0, cacheWarned = false;
+// A failed write costs only the next run's hit, never this run's result.
+function store(body, answers) {
+  try {
+    mkdirSync(CACHE_DIR, { recursive: true, mode: 0o700 });
+    const file = cacheFile(body);
+    writeFileSync(`${file}.${process.pid}`, JSON.stringify(answers), { mode: 0o600 });
+    renameSync(`${file}.${process.pid}`, file);
+  } catch (e) {
+    if (!cacheWarned) console.error(`sys1grep: warning: the cache was not written: ${e.message}`);
+    cacheWarned = true;
+  }
 }
 // One request with retries: 429 / 529 / 5xx, connection errors and timeouts back off exponentially.
 async function post(state, questions, label) {
-  if (logPlan) show(state, questions, label);
-  if (dry) return Object.fromEntries(Object.keys(questions).map(k => [k, { noul: 0 }]));
   const body = JSON.stringify({ model, state, questions });
+  const hit = cached(body, questions);
+  if (logPlan) show(state, questions, label, body, hit);
+  if (hit) cacheHits++;
+  if (dry) return Object.fromEntries(Object.keys(questions).map(k => [k, { noul: 0 }]));
+  if (hit) return hit;
+  if (cacheMode === 'only') die(`--cache=only: not cached, nothing sent: ${safe(label)}, e.g. ${safe(Object.values(questions)[0]?.instructions ?? '')}`, false);
   sentBytes += Buffer.byteLength(body); sentCjkBytes += cjkBytesOf(body); sentRequests++;
   for (let attempt = 0; ; attempt++) {
     let res;
@@ -1601,13 +1653,13 @@ async function post(state, questions, label) {
     const { answers, usage = {} } = await res.json();
     // A missing or malformed answer would read as 0 and make every "not X" hold, so it is an error instead.
     for (const k of Object.keys(questions)) {
-      const p = answers?.[k]?.noul;
-      if (typeof p !== 'number' || !(p >= 0 && p <= 1)) throw new Error(`${apiHost}: the response has no answer for ${k}`);
+      if (!isP(answers?.[k]?.noul)) throw new Error(`${apiHost}: the response has no answer for ${k}`);
     }
     requestCount++;
     usedTokens += usage.input_tokens ?? 0;
     if (label.startsWith('[dedup]')) dedupTokens += usage.input_tokens ?? 0;
     usedCost += typeof usage.cost === 'number' ? usage.cost : 0;
+    if (cacheMode !== 'off') store(body, Object.fromEntries(Object.keys(questions).map(k => [k, { noul: answers[k].noul }])));
     return answers;
   }
 }
@@ -2153,11 +2205,14 @@ function guardCost(chunks, asks, terms) {
   const units = chunks.reduce((t, c) => t + c.length, 0);
   const wide = (opt.r || asGit) && !opt.quiet && units > LARGE_SEND_UNITS && terms.find(term => term.some(lit => lit.kind === 'm') && !term.some(lit => lit.kind === 'r' && !lit.not));
   if (opt.yes && !wide) return;
+  let unsent = 0;
   const bits = chunks.reduce((t, c) => {
-    const body = JSON.stringify({ model, ...requestOf(c, asks, terms) });
+    const { state, questions } = requestOf(c, asks, terms), body = JSON.stringify({ model, state, questions });
+    if (cached(body, questions)) return t; // #252: an answer from the cache costs nothing
+    unsent++;
     return { bytes: t.bytes + Buffer.byteLength(body), cjk: t.cjk + cjkBytesOf(body) };
   }, { bytes: sentBytes, cjk: sentCjkBytes });
-  const estTokens = estimateTokens(sentRequests + chunks.length, bits.bytes, bits.cjk);
+  const estTokens = estimateTokens(sentRequests + unsent, bits.bytes, bits.cjk);
   // pricePerM (the owner's decision of 2026-10-04, replacing item 4 of 2026-09-27): a local URL is free, a model of
   // PRICES has its own price, anything else Jev's. For another URL the question says whose price it is (priceTag).
   const estPrice = (estTokens * pricePerM) / 1e6;
@@ -2580,11 +2635,12 @@ async function summarizeText(text, count) {
 // Summary only when interactive; grep prints nothing to stderr when scripted.
 if (dry) {
   const assumed = [willFold && `--dedup=${opt.dedup}`, opt.unit === 'sentence-by-jev' && '--unit=sentence-by-jev'].filter(Boolean);
-  const tokens = estimateTokens(traced, tracedBytes, tracedCjkBytes), price = `, ~$${(tokens * pricePerM / 1e6).toFixed(6)}${priceTag}`;
+  const toSend = traced - cacheHits, tokens = estimateTokens(toSend, tracedBytes, tracedCjkBytes), price = `, ~$${(tokens * pricePerM / 1e6).toFixed(6)}${priceTag}`;
   // #125 review: the size guard is gone (an oversized file is skipped outright above, not asked about); --dry-run
   // and -i show only the cost guard's verdict here, consistent with what a real run would ask.
   const guard = (tokens * pricePerM) / 1e6 > MAX_COST ? `; over --max-cost ${MAX_COST}, would ask` : '';
-  logPlan(`dry run: ${traced} request${traced === 1 ? '' : 's'}, ${sent.length} of ${totalUnits} ${unitName} to send, ${tracedQuestions} questions, ${tracedChars} chars, ~${tokens} input tokens${price}; nothing sent${assumed.length ? ` (${assumed.join(' and ')} questions assumed no)` : ''}${guard}`);
+  const split = cacheMode === 'off' ? '' : ` to send, ${cacheHits} cached`;
+  logPlan(`dry run: ${toSend} request${toSend === 1 ? '' : 's'}${split}, ${sent.length} of ${totalUnits} ${unitName} to send, ${tracedQuestions} questions, ${tracedChars} chars, ~${tokens} input tokens${price}; nothing sent${assumed.length ? ` (${assumed.join(' and ')} questions assumed no)` : ''}${guard}`);
 } else if ((process.stderr.isTTY || opt.verbose) && !opt.quiet) {
   // #143: dedup off by default until real-run stats say auto should be it; meanwhile a run that would have paid
   // says so, once, so a user stuck on the default default learns --dedup=auto exists.
@@ -2607,7 +2663,7 @@ if (dry) {
     folded = ` (${members.length} folded by --dedup, ~${saved} input tokens / ~$${(saved * perToken).toFixed(6)} saved${share})`;
   }
   const n = (k, w) => `${k} ${w}${k === 1 ? '' : 's'}`;
-  console.error(`${matched} of ${totalUnits} ${unitName} matched; ${requestCount ? `${sent.length} sent to Jev${folded} in ${n(requestCount, 'request')}, ${n(usedTokens, 'input token')}${cost}` : 'nothing sent'}`);
+  console.error(`${matched} of ${totalUnits} ${unitName} matched; ${requestCount ? `${sent.length} sent to Jev${folded} in ${n(requestCount, 'request')}, ${n(usedTokens, 'input token')}${cost}` : 'nothing sent'}${cacheHits ? `, ${n(cacheHits, 'request')} answered from the cache` : ''}`);
 }
 // process.exit() can drop buffered stdout when piped, so set exitCode instead.
 process.exitCode = dry ? (hadError ? 2 : 0) : matched && opt.quiet ? 0 : hadError || (summaryFailed && !askSummary) ? 2 : matched ? 0 : 1; // -q: a match wins over an error

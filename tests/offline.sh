@@ -24,7 +24,7 @@ trap 'rm -rf "$tmp"; exit 130' INT TERM # dash runs the EXIT trap on exit, not o
 i=0; while [ ! -s "$tmp/port" ]; do i=$((i + 1)); [ $i -lt 200 ] || { echo "FAIL: fake-jev did not start" >&2; exit 1; }; sleep 0.05; done
 base="http://127.0.0.1:$(cat "$tmp/port")"
 # No key from the environment, and a HOME and cwd without .env, so nothing real is read or sent
-E="env -u SYS1GREP_API_KEY -u SYS1GREP_TEMPLATE -u SEMGREP_API_KEY -u TYPESAFE_API_KEY -u SYS1GREP_MODEL -u SEMGREP_MODEL -u SEMGREP_URL -u SEMGREP_SUMMARIZER -u SEMGREP_SUMMARIZER_MODEL -u SYS1GREP_SUMMARIZER_API_KEY -u SEMGREP_SUMMARIZER_API_KEY -u OLLAMA_HOST -u NO_COLOR -u LC_ALL -u LC_MESSAGES HOME=$tmp SYS1GREP_OPTS="
+E="env -u SYS1GREP_API_KEY -u SYS1GREP_TEMPLATE -u SYS1GREP_CACHE -u SEMGREP_API_KEY -u TYPESAFE_API_KEY -u SYS1GREP_MODEL -u SEMGREP_MODEL -u SEMGREP_URL -u SEMGREP_SUMMARIZER -u SEMGREP_SUMMARIZER_MODEL -u SYS1GREP_SUMMARIZER_API_KEY -u SEMGREP_SUMMARIZER_API_KEY -u OLLAMA_HOST -u NO_COLOR -u LC_ALL -u LC_MESSAGES HOME=$tmp SYS1GREP_OPTS="
 J="$E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs"
 # JN: the same fake by a host the price rule does not count as local (0.0.0.0), so a price is shown and --max-cost can ask
 JN="$E SYS1GREP_URL=http://0.0.0.0:${base##*:}/v1 node ../sys1grep.mjs"
@@ -298,6 +298,45 @@ eq "$($J --verbose -P /cat/ "$F" 2>&1 >/dev/null | tail -1)" "2 of 8 lines match
 eq "$($J --verbose -P /dog/ -a cat "$F" 2>&1 >/dev/null | tail -1)" "1 of 8 lines matched; 2 sent to Jev in 1 request, 1 input token, ~\$0.000000 (local URL, free)" "summary line counts the lines a regex left out"
 $J --verbose --dedup -e cat "$F" 2>&1 >/dev/null | tail -1 | grep -Eq '^2 of 8 lines matched; [0-9]+ sent to Jev \([0-9]+ folded by --dedup, ~-?[0-9]+ input tokens / ~\$-?[0-9]+\.[0-9]{6} saved, -?[0-9]+%\) in 2 requests, 2 input tokens, ~\$[0-9]+\.[0-9]{6} \(local URL, free\)$' || fail "summary line with --dedup"
 $J --dry-run -P /dog/ -a cat "$F" | tail -1 | grep -q ', 2 of 8 lines to send,' || fail "--dry-run counts the lines a regex left out"
+
+section '--cache'
+# #252: Jev's answers, keyed by the body sent and the endpoint's host, under ~/.config/sys1grep/cache; off by default
+CD="$tmp/.config/sys1grep/cache"
+rm -rf "$CD"
+reset; $J -e cat "$F" >/dev/null; [ ! -e "$CD" ] || fail "no --cache: nothing is stored"
+reset; $J --cache -e cat "$F" >"$tmp/cache1"; eq "$(stat count)" "1" "--cache: a miss is sent"
+reset; $J --cache -e cat "$F" >"$tmp/cache2"; eq "$(stat count)" "0" "--cache: the second run does not reach Jev"
+cmp -s "$tmp/cache1" "$tmp/cache2" || fail "--cache: a hit prints what the request printed"
+eq "$($J --cache --verbose -e cat "$F" 2>&1 >/dev/null | tail -1)" "2 of 8 lines matched; nothing sent, 1 request answered from the cache" "--cache: a hit costs nothing"
+reset; eq "$($J --cache=only -e cat "$F")" "$(cat "$tmp/cache1")" "--cache=only: a hit"
+reset; code 2 "--cache=only, a miss" -- $J --cache=only -e dog "$F"; eq "$(stat count)" "0" "--cache=only: a miss sends nothing"
+eq "$($J --cache=only -e dog "$F" 2>&1 | grep -c '^sys1grep: --cache=only: not cached, nothing sent: \[judge\] .*"dog"?$')" "1" "--cache=only names the missing question"
+code 2 "--cache=only, a miss under -q" -- $J -q --cache=only -e dog "$F"
+reset; eq "$($J --cache --dry-run -e cat "$F" | tail -1 | cut -d, -f1-2)" "sys1grep: dry run: 0 requests to send, 1 cached" "--dry-run: the cached split"
+eq "$($J --cache=only --dry-run -e cat -e dog "$F" | tail -1 | cut -d, -f1-2)" "sys1grep: dry run: 1 request to send, 0 cached" "--dry-run: a miss is to send, also under only"
+eq "$(stat count)" "0" "--cache --dry-run sends nothing"
+reset; $J --cache --sys1-model=other -e cat "$F" >/dev/null; eq "$(stat count)" "1" "--cache: the model is in the key"
+reset; $JN --cache -e cat "$F" >/dev/null; eq "$(stat count)" "1" "--cache: the endpoint's host is in the key"
+code 0 "--cache: --max-cost does not price a hit" -- notty $JN --cache --max-cost 0 -e cat "$F"
+code 2 "--cache: --max-cost prices a miss" -- notty $JN --cache --max-cost 0 -e dog "$F"
+reset; $J --cache --sys1-api-key=k252secret -e cat "$F" >/dev/null; eq "$(stat count)" "0" "--cache: the API key is not in the key"
+$J --cache --sys1-api-key=k252secret -e bird "$F" >/dev/null 2>&1 || true
+[ -z "$(grep -rl k252secret "$CD")" ] || fail "--cache: the API key is never stored"
+reset; $E SYS1GREP_CACHE=on SYS1GREP_URL=$base/v1 node ../sys1grep.mjs -e cat "$F" >/dev/null; eq "$(stat count)" "0" "SYS1GREP_CACHE=on"
+reset; $E SYS1GREP_CACHE=only SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --cache=off -e dog "$F" >/dev/null; eq "$(stat count)" "1" "--cache=off over SYS1GREP_CACHE=only"
+code 2 "SYS1GREP_CACHE=bogus" -- $E SYS1GREP_CACHE=bogus SYS1GREP_URL=$base/v1 node ../sys1grep.mjs -e cat "$F"
+code 2 "--cache=bogus" -- $J --cache=bogus -e cat "$F"
+code 2 "--cache=clear with other arguments" -- $J --cache=clear -e cat "$F"
+code 2 "--cache=clear in SYS1GREP_OPTS" -- $E SYS1GREP_OPTS=--cache=clear SYS1GREP_URL=$base/v1 node ../sys1grep.mjs -e cat "$F"
+[ -e "$CD" ] || fail "a refused --cache=clear keeps the cache"
+code 0 "--cache=clear" -- $J --cache=clear; [ ! -e "$CD" ] || fail "--cache=clear empties the cache"
+code 2 "--cache=only after --cache=clear" -- $J --cache=only -e cat "$F"
+# a file where the cache directory goes: the write fails, the search result stands
+: >"$CD"
+eq "$($J --cache -e cat "$F" 2>"$tmp/cache.err")" "$(cat "$tmp/cache1")" "--cache: a failed write keeps the result"
+grep -q '^sys1grep: warning: the cache was not written: ' "$tmp/cache.err" || fail "--cache: a failed write is reported"
+code 0 "--cache: a failed write keeps the exit status" -- $J --cache -e cat "$F"
+rm -rf "$CD"
 
 section '-j'
 # -j: requests in flight at once (each takes 30ms at the fake)
