@@ -334,6 +334,16 @@ export function serve(argv) {
     const { stdout } = spawnSync(process.execPath, [script, ...launch], { input: '', encoding: 'utf8', timeout: 10_000, env: { ...process.env, SYS1GREP_PROBE: 'recursive' } });
     try { return JSON.parse(stdout); } catch { return null; }
   })();
+  // The page says so when searches go to the fake Jev (tests/fake-jev.mjs): a GET to it answers its own counters,
+  // which no real endpoint does. Only a loopback URL is asked, so a remote Jev never gets a request from this, and a
+  // GET is never judged or billed. Asked once, at launch: a url changed later in the settings panel needs a restart.
+  const fake = (async () => {
+    try {
+      if (!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(new URL(probe.url).hostname)) return false;
+      const j = await (await fetch(probe.url, { signal: AbortSignal.timeout(1000) })).json();
+      return ['count', 'asked', 'qmax'].every(k => k in j);
+    } catch { return false; }
+  })();
   const targets = targetsOf(launch, after, probe);
   // #222: a folder searched without -r fails every search ("Is a directory (use -r)"), so refuse it before listening.
   const dir = targets.list.find(t => statSync(t, { throwIfNoEntry: false })?.isDirectory());
@@ -386,7 +396,7 @@ export function serve(argv) {
     // server answers nothing, not even the page, so another local account or process cannot read the page (and the
     // token it carries, and anything a search of these targets would show) merely by knowing the port.
     if (url.searchParams.get('k') !== token && req.headers['x-sys1grep-token'] !== token) return send(404, 'text/plain', 'not found');
-    if (url.pathname === '/') return send(200, 'text/html', page({ init, launch, after, token, targets, suggest: suggestOf(suggested) }));
+    if (url.pathname === '/') return send(200, 'text/html', page({ init, launch, after, token, targets, suggest: suggestOf(suggested), fake: await fake }));
     // The settings panel. It changes a file, so beyond the token above: for a write, POST with a JSON body and this
     // request's own Host as Origin (a page on another site cannot forge that, and GET never sends Origin at all, so
     // only POST is checked). A key goes in, never out.
@@ -446,12 +456,12 @@ const targetList = ({ list, cwd, none }, g) => `<div id="targets" title="${esc(`
   + `<p class="note" id="tg-git"${g ? '' : ' hidden'}>git log's commits (-g)</p></div>`;
 // a labelled control with its "?" hint (the same markup as rank's): the label, then the icon and its tooltip
 const hg = (name, label, text) => `<div class="withhint hintgroup" id="hg-${name}">${label.replace(/<(select|input)/, `<$1 aria-describedby="hint-${name}"`)}<span class="hintctl"><button type="button" class="qbtn" id="q-${name}" aria-expanded="false" aria-controls="hint-${name}" aria-label="more about ${label.replace(/<select.*?<\/select>/, '').replace(/<[^>]+>/g, '').trim()}">?</button><small class="hint" id="hint-${name}" role="tooltip">${text}</small></span></div>`;
-const page = ({ init, launch, after, token, targets, suggest }) => `<!doctype html>
+const page = ({ init, launch, after, token, targets, suggest, fake }) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark"><title>sys1grep</title>
 <style>
-:root { --page: #eef2f7; --bg: #fff; --fg: #1f2430; --muted: #5f6b7a; --rule: #e3e8ef; --border: #7b8392; --accent: #2563eb; --accent-ink: #fff; --link: #2563eb; --input-bg: #f3f5f8; --pill-bg: #e3f6e9; --pill-fg: #17703d; --code: #1e2433; --code-fg: #d7dde7; --shadow: 0 1px 2px rgba(16,24,40,.04), 0 8px 24px rgba(16,24,40,.08); }
-@media (prefers-color-scheme: dark) { :root { --page: #12141a; --bg: #1b1e26; --fg: #e7e9ee; --muted: #9aa3b2; --rule: #2b303b; --border: #707a8a; --accent: #5b8df6; --accent-ink: #0b1020; --link: #5b8df6; --input-bg: #20242e; --pill-bg: #163826; --pill-fg: #7be0a0; --code: #11141b; --code-fg: #c9d1e0; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35); } }
+:root { --page: #eef2f7; --bg: #fff; --fg: #1f2430; --muted: #5f6b7a; --rule: #e3e8ef; --border: #7b8392; --accent: #2563eb; --accent-ink: #fff; --link: #2563eb; --input-bg: #f3f5f8; --pill-bg: #e3f6e9; --pill-fg: #17703d; --code: #1e2433; --code-fg: #d7dde7; --warn-bg: #fff4d6; --warn-fg: #6b4400; --warn-border: #d99a00; --shadow: 0 1px 2px rgba(16,24,40,.04), 0 8px 24px rgba(16,24,40,.08); }
+@media (prefers-color-scheme: dark) { :root { --page: #12141a; --bg: #1b1e26; --fg: #e7e9ee; --muted: #9aa3b2; --rule: #2b303b; --border: #707a8a; --accent: #5b8df6; --accent-ink: #0b1020; --link: #5b8df6; --input-bg: #20242e; --pill-bg: #163826; --pill-fg: #7be0a0; --code: #11141b; --code-fg: #c9d1e0; --warn-bg: #3a2c06; --warn-fg: #ffd970; --warn-border: #b58800; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35); } }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--page); color: var(--fg); font: 14px/1.5 arial, "Hiragino Sans", "Noto Sans CJK JP", sans-serif; }
 .card { background: var(--bg); border-radius: 16px; box-shadow: var(--shadow); margin: 24px auto; padding: 20px 24px; width: min(880px, calc(100% - 32px)); }
@@ -465,7 +475,9 @@ body { margin: 0; background: var(--page); color: var(--fg); font: 14px/1.5 aria
 .row input[type=text] { flex: 1; min-width: 100px; padding: 10px 16px; font-size: 15px; border: 1px solid var(--border); border-radius: 14px; background: var(--input-bg); color: var(--fg); }
 select, button, input { font: inherit; color: var(--fg); }
 button, select { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 6px 12px; cursor: pointer; }
-#go { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+#go { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; font-size: 16px; padding: 10px 32px; border-radius: 12px; }
+.row[hidden] { display: none; }
+#fake-jev { margin: 0 0 10px; padding: 8px 12px; background: var(--warn-bg); color: var(--warn-fg); border: 1px solid var(--warn-border); border-radius: 10px; font-weight: 700; }
 #est, #stop, #copy, #save { background: var(--input-bg); }
 fieldset.group { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px 12px; margin: 10px 0; min-width: 0; }
 .group legend.glabel { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 6px; padding: 0 4px; }
@@ -513,6 +525,7 @@ iframe { width: 100%; border: 0; min-height: 80px; } pre.out { white-space: pre-
 </style></head><body>
 <div class="card" id="card">
 <div class="title" id="title"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#fff" stroke-width="2.2"/><line x1="15.3" y1="15.3" x2="20.5" y2="20.5" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg></span><h1>sys<span class="accent">1grep</span></h1><button type="button" class="gear" id="gear" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
+${fake ? '<p id="fake-jev" role="note">FAKE Jev: searches go to tests/fake-jev.mjs. Its probabilities are dummies, not real answers.</p>' : ''}
 <form id="f" autocomplete="off" onsubmit="return false">
 <section class="sec" id="sec-target" aria-labelledby="h-target"><h2 class="sech" id="h-target" title="ターゲット / 検索対象: what every search reads, set when --serve starts; the page cannot change it">Target</h2>
 ${targetList(targets, init.g)}</section>
@@ -524,11 +537,11 @@ Default: from a function to the functions it calls. reverse (--step-reverse-to):
 --hops limits how many calls away an end may be. For exact relations, start --serve with --edges=FILE.</small></span></div></div>
 <fieldset class="group" id="steps" hidden><legend class="glabel">end (--step-to)</legend><div id="ends"></div><button type="button" id="addend" title="add an end" aria-label="add an end">+ end</button>
 <div class="row edges hintgroup" id="hg-edges"><span class="note">edges</span><span class="hintctl"><button type="button" class="qbtn" id="q-edges" aria-expanded="false" aria-controls="hint-edges" aria-label="more about edges">?</button><small class="hint" id="hint-edges" role="tooltip">--hops limits how many hops away an end may be; reverse (--step-reverse-to) searches backwards along the graph</small></span><label title="how many hops the end may be from the start, e.g. 1..2">--hops <input type="text" name="hops" size="6" aria-describedby="hint-edges"></label><label><input type="checkbox" name="reverse" aria-describedby="hint-edges"> reverse</label></div></fieldset>
+<div class="row" id="actions"><button type="submit" id="go">Search</button><button type="button" id="est" title="run with --dry-run: shows the request size and estimated cost, no results">Estimate cost</button><button type="button" id="stop" title="stop the search that is running (its process is killed)" disabled>Stop</button></div>
 <div class="row" id="ex"><span class="note label">examples <span class="exlang" role="group" aria-label="language of the examples"><button type="button" id="ex-en" lang="en" aria-pressed="true">EN</button><button type="button" id="ex-ja" lang="ja" aria-pressed="false">日本語</button></span></span></div>
 </section>
 <section class="sec" id="sec-opts" aria-labelledby="h-opts"><h2 class="sech" id="h-opts" title="オプション">Options</h2>
 <div class="row">
-<button type="submit" id="go">Search</button><button type="button" id="est" title="run with --dry-run: shows the request size and estimated cost, no results">Estimate cost</button><button type="button" id="stop" title="stop the search that is running (its process is killed)" disabled>Stop</button>
 <div class="withhint hintgroup" id="hg-rank"><label>rank <select name="rank" aria-describedby="hint-rank"><option value="">off</option><option value="jev">jev</option><option value="match">match</option></select></label><span class="hintctl"><button type="button" class="qbtn" id="q-rank" aria-expanded="false" aria-controls="hint-rank" aria-label="more about rank">?</button><small class="hint" id="hint-rank" role="tooltip">off keeps file order</small></span></div>
 <div class="withhint hintgroup" id="hg-summarize"><label><input type="checkbox" name="summarize" aria-describedby="hint-summarize"> summarize</label><span class="hintctl"><button type="button" class="qbtn" id="q-summarize" aria-expanded="false" aria-controls="hint-summarize" aria-label="more about summarize">?</button><small class="hint" id="hint-summarize" role="tooltip">answers in a sentence or two after the search</small></span></div>
 <input type="text" name="summarize-prompt" placeholder="summary instruction" style="display:none;flex:1;min-width:160px">

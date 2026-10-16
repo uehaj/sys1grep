@@ -128,7 +128,8 @@ if (askSummary) opt.summarize = SYS1GREP_SUMMARIZER || 'claude';
 // any check of how they combine, say whether a folder target would be searched: -r in effect, or -g / git sys1grep,
 // which read no target files. Nothing is read or sent.
 if (process.env.SYS1GREP_PROBE === 'recursive') {
-  console.log(JSON.stringify({ r: !!opt.r, g: !!opt.gitlog, git: globalThis.SYS1GREP_GIT === true }));
+  // url: the endpoint a search sends to (customUrl, below), null for the default; --serve asks a local one whether it is the fake
+  console.log(JSON.stringify({ r: !!opt.r, g: !!opt.gitlog, git: globalThis.SYS1GREP_GIT === true, url: opt['sys1-url'] || SYS1GREP_URL || null }));
   process.exit(0);
 }
 // --verbose / --dry-run (#90): where a parsed option's value came from. null: never set (caller says "default").

@@ -1691,6 +1691,8 @@ case $U in http://127.0.0.1:*/\?k=*) ;; *) fail "--serve prints its URL, with it
 BASE=${U%%\?*} K=${U#*k=} PORT=${U%%/\?*} PORT=${PORT##*:}
 [ -n "$K" ] || fail "--serve: the startup line carries a token"
 eq "$(curl -s "$U" | grep -c 'id="cmd"')" "1" "--serve: the page, fetched with its token"
+eq "$(curl -s "$U" | grep -c '<p id="fake-jev" role="note">FAKE Jev')" "1" "--serve: against the fake, the page says its answers are a fake Jev's"
+eq "$(curl -s "$U" | node -pe "const h = require('fs').readFileSync(0, 'utf8'); [h.indexOf('id=\"go\"') > h.indexOf('id=\"startgrp\"'), h.indexOf('id=\"go\"') < h.indexOf('id=\"ex\"')].join()")" "true,true" "--serve: Search sits under the start fields, above the examples"
 eq "$(curl -s -o /dev/null -w '%{http_code}' "$BASE")" "404" "--serve: the page without the token is refused"
 # #216: the Target section shows the launch's targets; the page has no way to send one, and a query naming another
 # file is ignored (only the known fields count), so a search reads the launch's targets and nothing else
@@ -1965,6 +1967,7 @@ eq "$(pgrep -f "$F.*color=always" | wc -l | tr -d ' ')" "1" "--serve: a search i
 kill $curl 2>/dev/null; wait $curl 2>/dev/null || true
 sleep 0.7
 eq "$(pgrep -f "$F.*color=always" | wc -l | tr -d ' ')" "0" "--serve: an abandoned search ends its child"
+eq "$(curl -s "$U" | grep -c 'id="fake-jev"')" "0" "--serve: a local endpoint that is not the fake gets no fake-Jev notice"
 kill $serve $hang 2>/dev/null; wait $serve $hang 2>/dev/null || true
 section 'serve: multi-step and summarize endpoint'
 # the multi-step toggle: off, the page has no end fields and no --step-to; on, the end and --hops reach the command and
@@ -1975,10 +1978,10 @@ printf '%s\n' 'def main():' '  helper()' 'def helper():' '  raise X' >"$tmp/m.py
 $E PATH=$tmp/bin:$PATH SUM=$tmp/sum SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve --suggest=e:disk\ full "$tmp/m.py" >"$tmp/serve4.url" 2>/dev/null &
 serve=$!
 i=0; while [ ! -s "$tmp/serve4.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (multi-step) did not start"; sleep 0.05; done
-eq "$(HOME="$tmp" node serve-page.mjs "$(cat "$tmp/serve4.url")")" "card children: #title #f #m #sd
+eq "$(HOME="$tmp" node serve-page.mjs "$(cat "$tmp/serve4.url")")" "card children: #title #fake-jev #f #m #sd
 form children: #sec-target #sec-cond #sec-opts #d
 sections: Target | Search conditions | Options; Details stays the fold
-search conditions: #h-cond #startgrp .row #steps #ex
+search conditions: #h-cond #startgrp .row #steps #actions #ex
 options: #h-opts .row #ask .row
 start group: fieldset > .glabel #fields #add
 end group: fieldset > .glabel #ends #addend #hg-edges

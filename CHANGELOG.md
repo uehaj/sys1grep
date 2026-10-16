@@ -6,6 +6,9 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 ## [Unreleased]
 
 ### Added
+- `--serve`: when searches go to the fake Jev of the offline tests (`tests/fake-jev.mjs`), the page says so in a
+  banner under the title: its probabilities are dummies, not real answers. `--serve` asks only a loopback URL, once
+  at launch, with a GET (never judged or billed); a remote Jev gets no request from this.
 - `--serve`: a small sample corpus now ships in the package (`examples/`: logs, support tickets, prose in English
   and Japanese, and a `.js`/`.py` pair with a call chain, tens of KB total), so every example button has something
   to find (#237). With no target on the command line, and only when `-r`, `-g` and `git sys1grep` are all off
@@ -245,6 +248,9 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   string option (#233 review on #198).
 
 ### Changed
+- `--serve`: Search is a large primary button, with Estimate cost and Stop beside it, right under the meaning fields
+  and multi-step, above the examples; it used to sit in Options. The `OK` / `Not now` row (summarize the results on
+  screen?) no longer shows while it has nothing to ask.
 - `--serve`: Search with `summarize` checked now runs the search once (#231): once the results arrive, the page
   summarizes them the way #227's OK does (POSTs the text on screen to `/summarize`; only the summarizer runs, nothing
   more goes to Jev). Before, Search sent `results` and a whole second search with `--summarize --format=plain`, which

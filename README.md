@@ -867,7 +867,7 @@ The page has four sections (#216). **Target** shows what every search reads: the
 with `git sys1grep`, or, with neither, the bundled sample corpus (`demo corpus (bundled): examples/`, #237); while
 `-g` (in Details) is on, it says git log's commits instead. It is shown only: the page cannot
 change it, and a target in a request is ignored. **Search conditions**
-holds the meaning fields, multi-step and the examples, **Options** the Search button, `rank`, `summarize` and the command
+holds the meaning fields, multi-step, the Search, Estimate cost and Stop buttons, and the examples, **Options** `rank`, `summarize` and the command
 line, and **Details** the other options; the results come below them. What they hold: the meaning fields (`+` adds one; each takes `-e`, `-a`, `-v` or `-Q`), `rank`, `summarize`, a **multi-step**
 switch (on, it shows the end fields, `--step-to` and one or more meanings, and the edges, `--hops` and a reverse switch that makes it `--step-reverse-to`; off, they
 leave the command and the search and keep their values), example buttons (searches from this README and
