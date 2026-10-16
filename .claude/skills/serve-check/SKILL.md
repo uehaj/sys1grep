@@ -119,7 +119,9 @@ the matching snapshot) and, for a search, the match count the page shows.
    regex over source, not Jev, and `fixture.jsx` is there so the launch target itself has something to walk), one
    sentence at a time (`unit: sentence-by-jev`). Click the example, click Search, read the match count.
 4. Both languages: click `日本語`, click an example, confirm it fills with the Japanese text and that the exact
-   command shown matches the kind of search EN did (not necessarily the same example).
+   command shown matches the kind of search EN did (not necessarily the same example). Then click Search and read
+   the match count: `fixture.mjs` writes a line for each Japanese meaning too, so a Japanese meaning example that
+   finds nothing is a failure.
 5. Search, Stop, Estimate cost, Copy each do something observable: Search shows results, Stop (clicked mid-search,
    or verify it's enabled only while running and disabled otherwise — against the fake this can finish too fast to
    catch mid-flight; disabled at rest before and after a search, plus reading `busy()` in `serve.mjs`, is enough),

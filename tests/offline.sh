@@ -1922,6 +1922,33 @@ i=0; while [ ! -s "$tmp/serve-demo-opts.url" ]; do i=$((i + 1)); [ $i -lt 200 ] 
 eq "$(curl -s "$(cat "$tmp/serve-demo-opts.url")" | grep -o '<li class="note">[^<]*</li>')" '<li class="note">. (this folder, recursively: -r)</li>' "--serve: SYS1GREP_OPTS=-r, no launch -r: Target says ., not the demo corpus"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 
+section 'serve: meaning examples, EN and 日本語, on the serve-check fixture'
+# The fake matches a meaning only verbatim, so no meaning example (in either language) finds anything in the bundled
+# corpus, which is written for real Jev. serve-check's fixture.mjs writes the lines that do match the fake; every
+# meaning example, its English x and its Japanese xj alike, must find at least one of them, as the page sends it.
+node ../.claude/skills/serve-check/fixture.mjs "$tmp/sc" >/dev/null || fail "serve-check fixture.mjs failed"
+node -e 'import("../serve.mjs").then(({ EXAMPLES }) => {
+  const lines = EXAMPLES.filter(e => !e.x.includes("S:")).flatMap(e => [["en", e.x], ["ja", e.xj ?? e.x]].map(([lang, x]) => {
+    const params = x.map(f => ["x", f]);
+    for (const k of ["level", "dedup", "unit"]) if (e[k]) params.push([k, e[k]]);
+    for (const k of ["n", "p"]) if (e[k]) params.push([k, "1"]);
+    return `${lang} ${e.h}\t` + params.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
+  }));
+  require("fs").writeFileSync(process.argv[1], lines.join("\n") + "\n");
+}, e => { console.error(e); process.exit(1); })' "$tmp/meaning.qs"
+$E SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= node ../sys1grep.mjs --serve -r "$tmp/sc/target" >"$tmp/serve-sc.url" 2>/dev/null &
+serve=$!
+i=0; while [ ! -s "$tmp/serve-sc.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve on the serve-check fixture did not start"; sleep 0.05; done
+U=$(cat "$tmp/serve-sc.url"); BASE=${U%%\?*} K=${U#*k=}
+i=0
+while IFS="$(printf '\t')" read -r name qs; do
+  i=$((i + 1))
+  txt=$(curl -s "${BASE}results?k=$K&$qs" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); j.text ?? JSON.stringify(j)")
+  case $txt in *fixture.txt*) ;; *) fail "--serve: meaning example \"$name\" found nothing in the serve-check fixture: $txt" ;; esac
+done <"$tmp/meaning.qs"
+eq "$i" "20" "--serve: every meaning example, in English and in Japanese, finds a line in the serve-check fixture"
+kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
+
 section 'serve: launch options'
 # launch values the page must carry: -g unchecked, a summary instruction, the key kept out of the page
 $E SYS1GREP_SUMMARIZE=stdin SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve -n --dedup=always --summarize=cat --summarize-prompt=hello --suggest 'Q:why is it slow' --suggest=e:disk\ full --suggest=plain --sys1-api-key=SECRETKEY123 "$F" >"$tmp/serve2.url" 2>/dev/null &
