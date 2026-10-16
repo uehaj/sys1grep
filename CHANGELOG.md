@@ -251,6 +251,9 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 - `--serve`: Search is a large primary button, with Estimate cost and Stop beside it, right under the meaning fields
   and multi-step, above the examples; it used to sit in Options. The `OK` / `Not now` row (summarize the results on
   screen?) no longer shows while it has nothing to ask.
+- `--serve`: a blue look: a header band, cards (Target and Search conditions with Search at their right, the examples
+  with an `EN` / `日本語` switch beside Options, a dark command-line card), blue light and dark palettes, and one
+  column on a phone. Every control and what it runs are unchanged.
 - `--serve`: Search with `summarize` checked now runs the search once (#231): once the results arrive, the page
   summarizes them the way #227's OK does (POSTs the text on screen to `/summarize`; only the summarizer runs, nothing
   more goes to Jev). Before, Search sent `results` and a whole second search with `--summarize --format=plain`, which

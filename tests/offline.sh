@@ -1979,10 +1979,10 @@ $E PATH=$tmp/bin:$PATH SUM=$tmp/sum SYS1GREP_URL=$base/v1 node ../sys1grep.mjs -
 serve=$!
 i=0; while [ ! -s "$tmp/serve4.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (multi-step) did not start"; sleep 0.05; done
 eq "$(HOME="$tmp" node serve-page.mjs "$(cat "$tmp/serve4.url")")" "card children: #title #fake-jev #f #m #sd
-form children: #sec-target #sec-cond #sec-opts #d
-sections: Target | Search conditions | Options; Details stays the fold
-search conditions: #h-cond #startgrp .row #steps #actions #ex
-options: #h-opts .row #ask .row
+form children: #search .columns #sec-cmd #d
+sections: Target | Search conditions | Options | Command; Details stays the fold
+search conditions: #h-cond #startgrp .row #steps
+options: #h-opts .row #ask
 start group: fieldset > .glabel #fields #add
 end group: fieldset > .glabel #ends #addend #hg-edges
 target: $tmp/m.py

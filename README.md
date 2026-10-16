@@ -862,13 +862,15 @@ The printed URL carries a token made fresh at launch (`?k=...`). Every route nee
 it (in the query, or in a header for the page's own requests) the server answers 404 to everything, so another local
 account or process cannot read the page, its token, or a search's results merely by knowing the port.
 
-The page has four sections (#216). **Target** shows what every search reads: the files and folders given at launch
+The page is a set of cards under a blue header band: Target and Search conditions in one card with a large Search
+button (Estimate cost and Stop under it) at its right, the examples and Options side by side below it (one column on
+a phone), then the command line and Details. **Target** shows what every search reads: the files and folders given at launch
 (`npm run serve -- src docs/a.md`), or with none what sys1grep falls back to: `.` with `-r`, every file git tracks
 with `git sys1grep`, or, with neither, the bundled sample corpus (`demo corpus (bundled): examples/`, #237); while
 `-g` (in Details) is on, it says git log's commits instead. It is shown only: the page cannot
 change it, and a target in a request is ignored. **Search conditions**
-holds the meaning fields, multi-step, the Search, Estimate cost and Stop buttons, and the examples, **Options** `rank`, `summarize` and the command
-line, and **Details** the other options; the results come below them. What they hold: the meaning fields (`+` adds one; each takes `-e`, `-a`, `-v` or `-Q`), `rank`, `summarize`, a **multi-step**
+holds the meaning fields and multi-step, **Options** `rank` and `summarize`,
+and **Details** the other options; the results come below them. What they hold: the meaning fields (`+` adds one; each takes `-e`, `-a`, `-v` or `-Q`), `rank`, `summarize`, a **multi-step**
 switch (on, it shows the end fields, `--step-to` and one or more meanings, and the edges, `--hops` and a reverse switch that makes it `--step-reverse-to`; off, they
 leave the command and the search and keep their values), example buttons (searches from this README and
 [docs/use-cases.md](docs/use-cases.md), then multi-step walks; one fills the fields and the controls it needs, puts the rest back to their launch values, and waits for Search; `EN` / `日本語` beside the label switches their labels and
