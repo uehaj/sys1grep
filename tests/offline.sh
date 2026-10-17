@@ -1943,8 +1943,8 @@ U=$(cat "$tmp/serve-sc.url"); BASE=${U%%\?*} K=${U#*k=}
 i=0
 while IFS="$(printf '\t')" read -r name qs; do
   i=$((i + 1))
-  txt=$(curl -s "${BASE}results?k=$K&$qs" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); j.text ?? JSON.stringify(j)")
-  case $txt in *fixture.txt*) ;; *) fail "--serve: meaning example \"$name\" found nothing in the serve-check fixture: $txt" ;; esac
+  txt=$(curl -s "${BASE}results?k=$K&$qs" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); j.none ? 'NONE' : j.text ?? JSON.stringify(j)")
+  case $txt in NONE) fail "--serve: meaning example \"$name\" found nothing in the serve-check fixture" ;; *fixture.txt*) ;; *) fail "--serve: meaning example \"$name\" answered without a fixture.txt line: $txt" ;; esac
 done <"$tmp/meaning.qs"
 eq "$i" "20" "--serve: every meaning example, in English and in Japanese, finds a line in the serve-check fixture"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
