@@ -49,7 +49,8 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   the multi-step ones keep their regexes, `--suggest`'s pills stay as given, and the choice is remembered in the browser
   (English when storage is blocked).
 - `--serve`: the page is laid out as four sections, Target, Search conditions, Options and Details (#216). Target shows
-  the launch's targets (or `.` with `-r`, or stdin, which `--serve` leaves empty, when none were given), read-only: the
+  the launch's targets (or, when none were given, `.` with `-r`, every tracked file with `git sys1grep`, git log with
+  `-g`, else the bundled sample corpus: see #237 above), read-only: the
   page cannot change them. Results stay below the sections; the examples are under Search conditions.
 - `--serve`: the first field is a question (`-Q`), `--suggest=Q:TEXT` / `--suggest=e:TEXT` (repeatable) puts your own suggested-question buttons first in the examples, and the options in Details have "?" hints.
 - `~/.config/sys1grep/settings.json` holds the settings as JSON, one optional field per variable: `url`, `key`,
@@ -90,10 +91,10 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   example turns multi-step off), and sends nothing until Search.
 - `-r` and `git sys1grep` warn before sending a large tree through a term no regex narrows (#138). When such a
   term is about to send more than 10,000 units, one stderr line before the judging requests gives the totals
-  `--dry-run` would (units, files, estimated input tokens and, for TypeSafe itself, the price), names the term and
+  `--dry-run` would (units, files, estimated input tokens and the price), names the term and
   suggests `-a '/RE/'`, `--include` / `--changed-within` or `--dry-run`. The run goes on: it is a warning, not a
   refusal. `-q` silences it, `-y` does not; `--dry-run` and `-i` show the same totals already and do not print it.
-  A negated regex does not narrow its term, and a regex in another OR term (`-e '/RE/' -e MEANING`) does not
+  A negated regex does not narrow its term, and a regex in another OR term (`-P '/RE/' -e MEANING`) does not
   narrow this one.
 - A meaning may start with a dash on any search, not only around `--step-to`: `-e "--summarize hands the lines on"`, and the same for `-a`, `-v` and `-Q`. An option holds no space; a value that starts with `-` and is not an option is taken as the meaning.
 - Multi-step matching: `EXPRESSION --step-to EXPRESSION` finds the functions the expression before `--step-to`
@@ -127,7 +128,7 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 - `--template` also applies to `--summarize --format=html`. The TOOL is asked for plain text instead of a whole
   HTML document, and its answer goes, escaped, into the template's `{{answer}}` (empty with `--rank`) once the
   TOOL is done; the `<!--result-->` part is not written. A template used with `--summarize` must have `{{answer}}`
-  outside that part, or it is exit 2. The bundled `default`, `print` and `terminal` have it.
+  outside that part, or it is exit 2. The bundled `default`, `print`, `search` and `terminal` have it.
 - `--no-summarize` turns off an earlier `--summarize`, and `SYS1GREP_OPTS` now takes `--summarize` and `--rank`
   (both used to be refused there, having no `--no-` form to undo them for `-l` / `-c`). A `--summarize` in
   `SYS1GREP_OPTS` sends every search's matches to TOOL's provider too.
@@ -225,9 +226,9 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   that held, never a negated regex.
 - `-o` without `--unit=sentence-by-*` prints each regex match on a line of its own, as `grep -o`, with no context. A line only
   meanings matched prints whole. Before, `-o` without `--sentence` was ignored.
-- The `--dry-run` summary line (also shown by `-i`) estimates the input tokens and, for TypeSafe itself, the price:
+- The `--dry-run` summary line (also shown by `-i`) estimates the input tokens and the price:
   `…, 2315 chars, ~3178 input tokens, ~$0.000133; nothing sent`. The estimate is 650 tokens a request plus 0.21 a
-  request-body byte, fitted on real requests in English and Japanese; it was within -8% to +12% of what Jev billed.
+  request-body byte (0.33 a byte of CJK text), fitted on real requests in English and Japanese; it was within -8% to +12% of what Jev billed.
 - Auto-scope (#43): with `-r` and `git sys1grep`, each meaning first asks Jev, in one small request, whether it
   restricts its matches to a language or format (26 of them) or to what changed within a span (the last minute
   … this fiscal year, 14 of them); a yes at 0.6 or more searches only those files. Per term, reported on stderr as
@@ -247,7 +248,23 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   it sends every unit, asking nothing extra. `--verbose` / `--dry-run` print the decision and its numbers
   (units, templates, requests, tokens) for every `--dedup` value.
 
+- Exit 1 after lines were sent prints one stderr line naming the highest probability and its line, the option that
+  would loosen the threshold, and `-p -t 0` to see every probability (#139). Not with `-q`, `--summarize` (except
+  `=ask`), `--step-to` / `--step-reverse-to`, nor when only a negated meaning kept lines out.
+- A request carries at most 64 questions, whatever the backend (#174): with three or more meanings, a chunk holds
+  fewer lines than `--chunk`.
+- `npm run serve` starts `--serve` from a clone (`npm run serve -- -r src/`); with several `--serve`, the last one's
+  port counts (#210).
+- `--serve`: Settings opens as a dialog from a gear icon (#208); a Stop button ends a running search, and Search and
+  Estimate are disabled while one runs (#189).
+
 ### Fixed
+- `--serve` refuses a folder target without `-r` at launch, naming the command with `-r` added, instead of failing
+  every search with "Is a directory" (#222). Whether `-r` is in effect is asked of sys1grep itself, so
+  `SYS1GREP_OPTS` and settings.json opts count.
+- `--serve` refuses `--reverse` at launch, and a reverse walk's requests are tagged `--step-reverse-to` (#218 review).
+- `-g`'s time scope uses `--since-as-filter` (git 2.37 and later), so a commit dated earlier than its parent no
+  longer hides the period behind it (#136).
 - `--serve` settings (the default-options panel): `opts` now refuses `--unit=zero` the way the launch already does
   (`-z`'s output shape, not for `--serve`); it previously slipped through DENY, which never sees `unit` as a plain
   string option (#233 review on #198).
@@ -505,11 +522,11 @@ First release as `@uehaj/semgrep`.
 - Errors are one line plus exit code 2, no stack traces.
 - LLM-as-judge test (`tests/judge.mts`) with threshold sweep; self-check (`tests/check.sh`).
 
-[Unreleased]: https://github.com/uehaj/jev-semgrep/compare/v0.4.0...HEAD
-[0.4.0]: https://github.com/uehaj/jev-semgrep/compare/v0.3.0...v0.4.0
-[0.3.1]: https://github.com/uehaj/jev-semgrep/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/uehaj/jev-semgrep/compare/v0.2.2...v0.3.0
-[0.2.2]: https://github.com/uehaj/jev-semgrep/compare/v0.2.0...v0.2.2
-[0.2.0]: https://github.com/uehaj/jev-semgrep/compare/v0.1.1...v0.2.0
-[0.1.1]: https://github.com/uehaj/jev-semgrep/compare/40b0d5d...v0.1.1
-[0.1.0]: https://github.com/uehaj/jev-semgrep/commits/40b0d5d
+[Unreleased]: https://github.com/uehaj/sys1grep/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/uehaj/sys1grep/compare/v0.3.1...v0.4.0
+[0.3.1]: https://github.com/uehaj/sys1grep/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/uehaj/sys1grep/compare/v0.2.2...v0.3.0
+[0.2.2]: https://github.com/uehaj/sys1grep/compare/v0.2.0...v0.2.2
+[0.2.0]: https://github.com/uehaj/sys1grep/compare/v0.1.1...v0.2.0
+[0.1.1]: https://github.com/uehaj/sys1grep/compare/40b0d5d...v0.1.1
+[0.1.0]: https://github.com/uehaj/sys1grep/commits/40b0d5d
