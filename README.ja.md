@@ -1189,7 +1189,7 @@ usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION|-P /RE/FLAGS [-a MEANING] [-v
                否定側の閾値未満を赤、あいだを黄で表示。NO_COLOR にも従う
   --sys1-model=ID, --sys1-url=URL, --sys1-api-key=KEY
                API の設定。SYS1GREP_MODEL / SYS1GREP_URL / SYS1GREP_API_KEY より優先
-  -h, --help   このヘルプ (LANG / LC_ALL / LC_MESSAGES が ja 以外なら英語)
+  -h, --help   このヘルプ (LC_ALL / LC_MESSAGES / LANG のうち最初に設定されたものが ja 以外なら英語)
   -V, --version  バージョンを表示して終了
 ```
 
