@@ -1,5 +1,6 @@
 #!/bin/sh
-# Offline self-check against tests/fake-jev.mjs: no API key, no network, the same answer every run.
+# Offline self-check against tests/fake-jev.mjs: no API key, no network (but npx fetching the demo's pinned esbuild
+# once), the same answer every run.
 # The fake scores a line 0.9 when it contains the meaning verbatim ("@N" in the line sets N instead), else 0.05,
 # so these checks are about sys1grep itself: the expression, output shapes, options, requests and exit codes.
 set -e
@@ -2459,5 +2460,36 @@ for launch in -r -g opts settings unchecked; do
 done
 eq "$(head -1 "$tmp/serve6.err")" "sys1grep: --serve: could not check whether -r is in effect" "--serve: a check with no answer is reported, not fatal"
 eq "$($J --serve=99999 "$F" 2>&1 | head -1 | cut -c1-30)" "sys1grep: --serve=99999: not a" "--serve: a bad port is an error"
+
+section 'demo: browser bundle (#200)'
+# The demo page runs the real sys1grep.mjs in the browser, bundled with demo/shims/ in place of node:* (scripts/demo-build.mjs,
+# esbuild via npx, cached after the first run) and committed as docs/demo/. Recorded on the fake here
+# (scripts/record-demo-cache.mjs) into $tmp, never under docs/, then each example pill replayed: the bundle in a worker
+# thread, as the page's worker runs it, against the CLI on the same files, arguments and recording (tests/demo-core.mjs).
+eq "$(node demo-shims.mjs)" "parseArgs = node:util on 21873 argvs
+sha256 = node:crypto on 9 texts" "demo: the parseArgs and sha256 stand-ins agree with Node's"
+mkdir -p "$tmp/demo"
+[ ! -f ../docs/demo/cache.json ] || cp ../docs/demo/cache.json "$tmp/demo/"
+node ../scripts/demo-build.mjs "$tmp/demo" >"$tmp/demo-build.out" 2>&1 || fail "demo build: $(cat "$tmp/demo-build.out")"
+eq "$(diff -r ../docs/demo "$tmp/demo" | head -c 300)" "" "demo: docs/demo/ is what scripts/demo-build.mjs builds from these sources (run it and commit docs/demo/)"
+rm -f "$tmp/demo/cache.json" && node ../scripts/demo-build.mjs "$tmp/demo" >/dev/null 2>&1
+eq "$(grep -c '<meta name="robots" content="noindex">' "$tmp/demo/index.html")" "1" "demo: the page asks not to be indexed"
+eq "$(grep -o 'id="demo-missing">[^<]*' "$tmp/demo/index.html")" 'id="demo-missing">The recording is not published yet, so this demo runs no search for now.' "demo: built with no recording, the page says it is not published yet"
+eq "$(grep -o 'id="gear"[^>]*' "$tmp/demo/index.html" | grep -c hidden)" "1" "demo: no settings panel"
+$E SYS1GREP_URL=$base/v1 node ../scripts/record-demo-cache.mjs --record --out "$tmp/demo/cache.json" >"$tmp/demo-record.out" 2>&1 || fail "demo: recording on the fake: $(tail -3 "$tmp/demo-record.out")"
+case $(tail -1 "$tmp/demo-record.out") in *"every pill replays from $tmp/demo/cache.json") ;; *) fail "demo: recording on the fake: $(tail -1 "$tmp/demo-record.out")" ;; esac
+node ../scripts/demo-build.mjs "$tmp/demo" >/dev/null 2>&1
+eq "$(grep -c 'id="demo-missing"' "$tmp/demo/index.html") $(grep -o 'data-recorded="."' "$tmp/demo/index.html")" '0 data-recorded="1"' "demo: built next to a recording, the page runs searches"
+$E node demo-core.mjs "$tmp/demo" "$tmp/demo/cache.json" >"$tmp/demo-core.out" 2>"$tmp/demo-core.err" || fail "demo-core.mjs: $(cat "$tmp/demo-core.err")"
+eq "$(cat "$tmp/demo-core.out")" "pills, bundle = CLI, answered from the recording: 24 (en 14, ja 10)
+meaning pills with -t 0 -T 1 -p, bundle = CLI, lines and recorded probabilities printed: 20
+multi-step pills found something with no recording at all: 4 of 4
+free-typed regex searches, bundle = CLI, no recording: 4 of 4
+a meaning not recorded: exit 2, not cached
+estimate (--dry-run) of the first pill, bundle = CLI: true
+the first pill with --rank=jev (html, its template), bundle = CLI: true
+differences: 0" "demo: the bundled core prints what the CLI prints, with the same exit code$(head -c 2000 "$tmp/demo-core.err")"
+# owner, 2026-10-18: the demo is reached at /demo/ but linked from nowhere until it is announced
+eq "$(grep -lE 'sys1grep\.js\.org/demo|href="/?demo/?"|\(/?demo/?\)' ../README.md ../README.ja.md ../docs/index.html ../sys1grep.mjs ../CHANGELOG.md)" "" "demo: no link to it from the README, the site, --help or the changelog"
 # offline-sections: end
 echo "OK: $n checks passed (and the grep-guarded ones)"
