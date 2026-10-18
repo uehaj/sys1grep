@@ -9,6 +9,14 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 - `--serve`: when searches go to the fake Jev of the offline tests (`tests/fake-jev.mjs`), the page says so in a
   banner under the title: its probabilities are dummies, not real answers. `--serve` asks only a loopback URL, once
   at launch, with a GET (never judged or billed); a remote Jev gets no request from this.
+- `--cache[=on|off|only]` keeps Jev's answers in `~/.config/sys1grep/cache`, one file per request, named by the
+  SHA-256 of the endpoint's host and the request body (model, lines, questions); the API key is never stored or
+  hashed in, and usage is not kept (#252, the first step of #200). A hit sends nothing and counts no request and no
+  cost (`--max-cost`'s estimate leaves it out too); a miss sends as before and stores the answers. Off by default,
+  since the questions carry the searched lines; `SYS1GREP_CACHE` (environment or `.env`, not settings.json) sets
+  the default. `only` never sends: a request not cached is exit 2 unless `-q` already found a match, naming it.
+  `--dry-run` says `N requests to send, M cached`; its line count and the summary's count only the lines of
+  requests sent. `--cache=clear` empties the cache and must stand alone. A failed write is a warning; the search result stands. No expiry: the model is in the key.
 - `--serve`: a small sample corpus now ships in the package (`examples/`: logs, support tickets, prose in English
   and Japanese, and a `.js`/`.py` pair with a call chain, tens of KB total), so every example button has something
   to find (#237). With no target on the command line, and only when `-r`, `-g` and `git sys1grep` are all off
