@@ -770,7 +770,7 @@ $ sys1grep -e "a request failed" app.log
 sys1grep: 2040 units fold to at most 31 templates; --dedup=auto would save ~68 requests (~44k tokens)
 ```
 
-`--dedup=auto` asks and folds only when that estimate says it pays; a file that barely repeats sends every
+`--dedup=auto` folds only when that estimate says it pays; a file that barely repeats sends every
 line, asking nothing extra. `--verbose` / `--dry-run` print the decision and its numbers for every value.
 
 ```sh
@@ -782,9 +782,21 @@ $ sys1grep --dedup -n -e "a request failed" app.log
 ```
 
 Whether a value may be folded depends on the meaning: a number decides "disk usage is above 90%", a time
-decides "happened at night". So Jev is first asked, one small request per meaning, which kinds of value
-could change a match, and those kinds are kept apart (one of the two requests above). With
-`-e "disk usage is above 90%"` the same file keeps `95%` and `12%` apart and prints only `5:disk usage 95%`.
+decides "happened at night". So `--dedup=always` (and a bare `--dedup`) first asks Jev, one small request per
+meaning, which kinds of value could change a match, and keeps those kinds apart (one of the two requests above).
+With `-e "disk usage is above 90%"` the same file keeps `95%` and `12%` apart and prints only `5:disk usage 95%`.
+
+`--dedup=auto` asks no such question (#152). It folds every kind and judges a sample of each template instead:
+up to 5 members whose values differ, for each varying value the member holding its lowest, its highest and its
+middle value. When every sample gets the same verdict, the members not sampled share the first sample's answers,
+and the samples keep their own (`-p` prints each sample's own probability). When the verdicts differ, the rest are
+sent in a second wave, and `--max-cost` is checked again before it. A split costs slightly more than `never`, at
+worst one extra request per wave boundary, a few percent: one template of 600 members sent 21 requests where
+`never` sent 20. A value only between the samples is missed: among `usage 1` to `usage 120`, the meaning
+`usage 50` matches no sample, so `auto` prints nothing where `never` prints line 50. `--verbose` prints how many
+templates agreed and how many units were sent again. `--dry-run` assumes every sample agrees, so its count is the
+floor: 100 templates of 6 members show 10 requests and 300 of 600 lines, and a run where every template splits
+sends all 600 lines in 20 requests.
 
 Measured on real logs, with nothing kept: a 43,071-line system log folds into 550 templates (1.2% of the
 bytes), `install.log` to 21.1%, a Claude Code transcript (jsonl) only to 56.8%. It is for machine-generated
