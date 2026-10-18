@@ -216,6 +216,22 @@ export const toArgv = (p, init) => {
   if (sum && v('summarize-prompt')) out.push(`--summarize-prompt=${v('summarize-prompt')}`);
   return out;
 };
+// A search's arguments after the launch's, and the page's answer from how it exited: the server's search() and the
+// demo page's in-browser runner (#200) both use these, stringified into the client like toArgv, so the two differ
+// only in where the arguments run. A results search never carries --summarize: the summary is a separate step,
+// over what's on screen (#231, /summarize below).
+export const tplOf = launch => (launch.some(a => a.startsWith('--template')) ? [] : ['--template=search']);
+export const searchArgs = (p, kind, init, tpl) => {
+  const args = toArgv({ ...p, summarize: false }, init);
+  if (kind === 'dry') args.push('--dry-run', '--no-summarize');
+  else if (!p.x.some(f => f[0] === 'S') && (p.rank ?? init.rank)) args.push('--format=html', ...tpl);
+  return [`--color=${kind === 'results' ? 'always' : 'never'}`, ...args];
+};
+export const answerOf = (p, kind, init, { code, out, err }) => {
+  if (code > 1) return { error: err.trim() || `exit ${code}` };
+  if (code === 1 && !out) return { none: true, note: err.trim() };
+  return kind === 'results' && !p.x.some(f => f[0] === 'S') && (p.rank ?? init.rank) ? { html: out.replace('</head>', '<style>.bar{display:none}</style></head>') } : { text: out };
+};
 // #234 (Q1, measured 2026-10-12): a search over --max-cost is refused at once, naming -y and --max-cost, neither of
 // which the page can set. The refusal already carries the same estimate --dry-run would show (sys1grep.mjs prices it
 // the same way for both), so this reads the price out of the error instead of firing a second --dry-run request:
@@ -358,7 +374,7 @@ export function serve(argv) {
     const sh = a => (/^[\w@%+=:,./-]+$/.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`);
     if (probe && !probe.r && !probe.g && !probe.git) throw new Error(`--serve: ${dir} is a directory: add -r to search it (${process.env.npm_lifecycle_event === 'serve' ? 'npm run serve --' : 'sys1grep --serve'} -r ${dir.startsWith('-') ? '-- ' : ''}${sh(dir)})`);
   }
-  const tpl = launch.some(a => a.startsWith('--template')) ? [] : ['--template=search'];
+  const tpl = tplOf(launch);
   const { SYS1GREP_SUMMARIZE, ...searchEnv } = process.env; // set by the user, it would turn every search into a summary
   // Demo mode (#237) adds -r DEMO_DIR to what a search actually runs, never to launch/LAUNCH (the copy-command box and
   // the client script keep showing the command as typed, not sys1grep's own bundled path -- the page's "reads the
@@ -374,15 +390,8 @@ export function serve(argv) {
   });
 
   const search = async (p, kind, signal) => {
-    // a results search never carries --summarize: the summary is a separate step, over what's on screen (#231, /summarize below)
-    const step = (p.x).some(f => f[0] === 'S');
-    const args = toArgv({ ...p, summarize: false }, init);
-    if (kind === 'dry') args.push('--dry-run', '--no-summarize');
-    else if (!step && (p.rank ?? init.rank)) args.push('--format=html', ...tpl);
-    const { code, out, err } = await run([`--color=${kind === 'results' ? 'always' : 'never'}`, ...args], signal, '', searchEnv, step ? init.g : p.g ?? init.g);
-    if (code > 1) return { error: err.trim() || `exit ${code}` };
-    if (code === 1 && !out) return { none: true, note: err.trim() };
-    return kind === 'results' && !step && (p.rank ?? init.rank) ? { html: out.replace('</head>', '<style>.bar{display:none}</style></head>') } : { text: out };
+    const step = p.x.some(f => f[0] === 'S');
+    return answerOf(p, kind, init, await run(searchArgs(p, kind, init, tpl), signal, '', searchEnv, step ? init.g : p.g ?? init.g));
   };
 
   const server = createServer(async (req, res) => {
@@ -463,9 +472,15 @@ const targetList = ({ list, cwd, none }, g) => `<div id="targets" title="${esc(`
   + `<p class="note" id="tg-git"${g ? '' : ' hidden'}>git log's commits (-g)</p></div>`;
 // a labelled control with its "?" hint (the same markup as rank's): the label, then the icon and its tooltip
 const hg = (name, label, text) => `<div class="withhint hintgroup" id="hg-${name}">${label.replace(/<(select|input)/, `<$1 aria-describedby="hint-${name}"`)}<span class="hintctl"><button type="button" class="qbtn" id="q-${name}" aria-expanded="false" aria-controls="hint-${name}" aria-label="more about ${label.replace(/<select.*?<\/select>/, '').replace(/<[^>]+>/g, '').trim()}">?</button><small class="hint" id="hint-${name}" role="tooltip">${text}</small></span></div>`;
-const page = ({ init, launch, after, token, targets, suggest, fake }) => `<!doctype html>
+// The browser demo (#200, scripts/demo-build.mjs): this page with sys1grep itself running in the visitor's browser, on the
+// bundled examples/ (-r examples, as the copied command says), Jev's answers read from a recording (--cache=only) and
+// no settings. recorded: whether the build found the recording (cache.json); without it the page runs no search.
+export const DEMO_LAUNCH = ['-r', 'examples'];
+const demoNote = ({ recorded }) => `<div id="demo-note" role="note" data-recorded="${recorded ? 1 : 0}"><p><strong>Demo.</strong> sys1grep runs here in your browser, on the bundled <code>examples/</code>. Jev's answers come from a recording made for the example buttons: a meaning you type yourself is answered only if it happens to be in it, while a regex (<code>-P</code>, and multi-step between regexes) always runs. On your own files: <code>npx @uehaj/sys1grep --serve</code></p>${recorded ? '' : '<p id="demo-missing">The recording is not published yet, so this demo runs no search for now.</p>'}</div>`;
+export const demoPage = ({ recorded }) => page({ init: initOf(DEMO_LAUNCH), launch: DEMO_LAUNCH, after: [], token: '', targets: { list: ['examples'], cwd: 'the demo folder, in this browser' }, suggest: [], fake: false, demo: { recorded } });
+const page = ({ init, launch, after, token, targets, suggest, fake, demo }) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light dark"><title>sys1grep</title>
+<meta name="color-scheme" content="light dark">${demo ? '<meta name="robots" content="noindex"><link rel="icon" href="data:,">' : ''}<title>sys1grep${demo ? ' demo' : ''}</title>
 <style>
 :root { --page: #f0f6ff; --bg: #fff; --fg: #102447; --muted: #5a6e8c; --rule: #e4edf8; --border: #7589ab; --accent: #075cf5; --accent-ink: #fff; --link: #0754d4; --input-bg: #f5f9ff; --pill-bg: #eaf3ff; --pill-fg: #0754d4; --code: #03162e; --code-fg: #dbe7ff; --band: linear-gradient(130deg, #03152e 5%, #083475 65%, #0751bc); --go: linear-gradient(130deg, #1a66e0, #0047cc); --cmd-bg: linear-gradient(115deg, #071c3d, #103c7a); --warn-bg: #fff4d6; --warn-fg: #6b4400; --warn-border: #d99a00; --shadow: 0 8px 28px rgba(24,62,116,.07); }
 @media (prefers-color-scheme: dark) { :root { --page: #0a1222; --bg: #111c30; --fg: #e3ecfb; --muted: #93a6c4; --rule: #22324f; --border: #64799e; --accent: #4d8dff; --accent-ink: #06132b; --link: #7aaaff; --input-bg: #16243d; --pill-bg: #16305a; --pill-fg: #b4d0ff; --code: #050d1c; --code-fg: #cdd9f0; --band: linear-gradient(130deg, #010a18 5%, #06244f 65%, #073a85); --go: linear-gradient(130deg, #1d68dc, #0a4fd0); --cmd-bg: linear-gradient(115deg, #050f22, #0c2a57); --warn-bg: #3a2c06; --warn-fg: #ffd970; --warn-border: #b58800; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35); } }
@@ -537,6 +552,7 @@ body { background: var(--band) top / 100% 132px no-repeat, var(--page); }
 .title h1 { font-size: 34px; letter-spacing: -1px; } .title .accent { color: #6aa8ff; }
 .gear { color: #d5e5ff; border: 1px solid #7f9fca; padding: 8px; } .gear:hover, .gear:focus-visible { background: rgba(255,255,255,.12); color: #fff; }
 #fake-jev { margin: 16px 0 0; }
+#demo-note { margin: 16px 0 0; padding: 10px 14px; background: var(--bg); border: 1px solid var(--accent); border-left-width: 6px; border-radius: 10px; } #demo-note p { margin: 0; } #demo-note p + p { margin-top: 4px; } #demo-note code { font: 13px ui-monospace, Menlo, monospace; } #demo-missing { font-weight: 700; color: var(--warn-fg); }
 .kcard { background: var(--bg); border: 1px solid var(--rule); border-radius: 18px; padding: 20px 24px; box-shadow: var(--shadow); margin-top: 20px; }
 .search-layout { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 24px; }
 .actions { border-left: 1px solid var(--rule); padding-left: 22px; display: flex; flex-direction: column; justify-content: center; gap: 12px; }
@@ -558,8 +574,8 @@ body { background: var(--band) top / 100% 132px no-repeat, var(--page); }
 @media (max-width: 520px) { .title h1 { font-size: 26px; } .title .icon { width: 44px; height: 44px; } .kcard { padding: 16px; } }
 </style></head><body>
 <div class="card" id="card">
-<div class="title" id="title"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#fff" stroke-width="2.2"/><line x1="15.3" y1="15.3" x2="20.5" y2="20.5" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg></span><h1>sys<span class="accent">1grep</span></h1><button type="button" class="gear" id="gear" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
-<p id="fake-jev" role="note"${fake ? '' : ' hidden'}>FAKE Jev: searches go to tests/fake-jev.mjs. Its probabilities are dummies, not real answers.</p>
+<div class="title" id="title"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#fff" stroke-width="2.2"/><line x1="15.3" y1="15.3" x2="20.5" y2="20.5" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg></span><h1>sys<span class="accent">1grep</span></h1><button type="button" class="gear" id="gear" title="Settings" aria-label="Settings"${demo ? ' hidden' : ''}><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
+<p id="fake-jev" role="note"${fake ? '' : ' hidden'}>FAKE Jev: searches go to tests/fake-jev.mjs. Its probabilities are dummies, not real answers.</p>${demo ? demoNote(demo) : ''}
 <form id="f" autocomplete="off" onsubmit="return false">
 <div class="kcard search-layout" id="search"><div class="fields">
 <section class="sec" id="sec-target" aria-labelledby="h-target"><h2 class="sech" id="h-target" title="ターゲット / 検索対象: what every search reads, set when --serve starts; the page cannot change it">Target</h2>
@@ -615,9 +631,16 @@ ${hg('changed', '<label>--changed-within <input name="changed-within" placeholde
 <label>summarizerKey <input type="password" name="set-summarizerKey" autocomplete="new-password"><small class="note" id="src-summarizerKey"></small><span class="chk"><input type="checkbox" name="clear-summarizerKey"> remove</span></label>
 </div><div class="row"><button type="button" id="save">Save to ~/.config/sys1grep/settings.json</button><span class="note" id="sst"></span></div></form></div></dialog>
 </div>
+${demo ? '<script src="demo.js"></script>' : ''}
 <script>
-const CONTROLS = ${json(CONTROLS)}, INIT = ${json(init)}, LAUNCH = ${json(launch)}, AFTER = ${json(after)}, TOKEN = ${json(token)}, EXAMPLES = ${json(EXAMPLES)}, SUGGEST = ${json(suggest)};
+const CONTROLS =${json(CONTROLS)}, INIT = ${json(init)}, LAUNCH = ${json(launch)}, AFTER = ${json(after)}, TOKEN = ${json(token)}, EXAMPLES = ${json(EXAMPLES)}, SUGGEST = ${json(suggest)};
 const toArgv = ${toArgv};
+const searchArgs = ${searchArgs}, answerOf = ${answerOf}, TPL = ${json(tplOf(launch))};
+// The transport: --serve's own server, or on the demo page (demo.js, #200) sys1grep itself in a Web Worker and the
+// browser's own summarizer; the arguments and the answer are built the same way for both.
+const answer = window.sys1demo
+  ? async (kind, p, post, signal) => (kind === 'summarize' ? sys1demo.summarize(post.body, p, signal) : answerOf(p, kind, INIT, await sys1demo.run([...LAUNCH, ...searchArgs(p, kind, INIT, TPL), ...AFTER], signal)))
+  : async (kind, p, post, signal) => { const r = await fetch('/' + kind + '?' + query(p), { ...post, signal }); return r.json().catch(() => ({ error: 'bad answer' })); };
 const costRetryOf = ${costRetryOf};
 const quote = (s, force) => (!force && /^[\\w@%+=:,./-]+$/.test(s) ? s : "'" + s.replace(/'/g, "'\\\\''") + "'");
 const shown = argv => argv.map((t, i) => (/^-[eavQP]$/.test(argv[i - 1] ?? '') ? quote(t, t[0] === '-') : /^--[a-z-]+=/.test(t) ? t.replace(/=([\\s\\S]*)/, (_, v) => '=' + quote(v)) : quote(t)));
@@ -666,7 +689,8 @@ const show = () => {
   const g = p.g && !multi; // -g does not apply to a walk
   document.getElementById('tg-files').hidden = g;
   document.getElementById('tg-git').hidden = !g;
-  f.elements.rank.disabled = f.elements.summarize.disabled = multi;
+  f.elements.rank.disabled = multi;
+  f.elements.summarize.disabled = multi || !!window.sys1demo?.noSummary; // the demo, in a browser with no summarizer
   f.elements['summarize-prompt'].style.display = p.summarize && !multi ? '' : 'none';
   // #234: -o is useful only with a sentence unit (owner, #211 item 10); hidden otherwise, like steps for multi-step.
   document.getElementById('hg-o').hidden = !/^sentence-by-/.test(p.unit);
@@ -692,7 +716,7 @@ const get = async (kind, p, into, post) => {
   const mine = gen;
   running++;
   try {
-    const r = await fetch('/' + kind + '?' + query(p), { ...post, signal: ctl.signal }), j = await r.json().catch(() => ({ error: 'bad answer' }));
+    const j = await answer(kind, p, post, ctl.signal);
     if (mine === gen) await show1(j, into); // an html result's iframe loads async; wait for it, so the caller's text is ever the shown text (#231)
     if (mine === gen && kind === 'results' && (j.text || j.html) && !p.x.some(x => x[0] === 'S')) onScreen = p;
     return j;
