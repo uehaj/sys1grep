@@ -259,6 +259,9 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   Estimate are disabled while one runs (#189).
 
 ### Fixed
+- `--serve`'s launch refusal now reads the options as parsed, not the raw arguments: a cluster like `-nq` or `-Hn`
+  and a long name like `--with-filename`, `--l` or `--z` were let through and the page started. A negation such as
+  `--no-verbose` still starts it, as before.
 - `--serve` refuses a folder target without `-r` at launch, naming the command with `-r` added, instead of failing
   every search with "Is a directory" (#222). Whether `-r` is in effect is asked of sys1grep itself, so
   `SYS1GREP_OPTS` and settings.json opts count.

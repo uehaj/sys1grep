@@ -2381,7 +2381,7 @@ code 2 "--serve refuses -P" -- $J --serve -P '/cat/' "$F"
 code 2 "--serve refuses --format" -- $J --serve --format=html "$F"
 code 2 "--serve refuses --step-to at launch" -- limit $J --serve --step-to cat "$F"
 code 2 "--serve refuses --step-reverse-to at launch" -- limit $J --serve --step-reverse-to cat "$F"
-# M1 (20260919_jev_grep/2 review): the refusal reads parseArgs' tokens, so a cluster and a long name are refused too
+# the refusal reads parseArgs' tokens, so a cluster and a long name are refused too
 for o in -nq -Hn -nefoo -no --with-filename --quiet --null-data --l --z --e=cat; do
   eq "$(limit $J --serve $o "$F" 2>&1 | head -1)" "sys1grep: --serve: ${o%%=*} is not for --serve (the page sets the meaning and shows the results as html)" "--serve refuses $o at launch"
 done

@@ -34,8 +34,8 @@ const settingsView = cli => {
 // to --r), which refuses a positional (a target, #196) and a meaning/expression on its own; DENY below refuses the
 // rest, by the canonical OPTIONS name parseOpts resolves a token to, however it was spelled (-r, --r, or inside a
 // cluster like -rC1 or -nr all resolve to "r").
-// Checked on parseArgs' own tokens (M1 of the 20260919_jev_grep/2 review): a regex over the raw arguments missed a
-// cluster like -nq and a long name like --with-filename or --l. A negation (--no-verbose) only turns one off.
+// Checked on parseArgs' own tokens: a regex over the raw arguments missed a cluster like -nq and a long name like
+// --with-filename or --l. A negation (--no-verbose) only turns one off.
 const REFUSED_LAUNCH = new Set(['e', 'P', 'a', 'v', 'question', 'l', 'c', 'quiet', 'o', 'z', 'interactive', 'with-filename',
   'help', 'version', 'step-to', 'step-reverse-to', 'format', 'color', 'verbose', 'dry-run', 'install-templates']);
 // --unit=zero is -z by another name (options.mjs): REFUSED_LAUNCH names options, so it cannot single it out from every
