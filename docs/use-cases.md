@@ -2,8 +2,9 @@
 
 The README's [Examples](../README.md#examples) are organised by option and run on the test fixtures. This page
 is organised by the job a reader has to do. Every entry was run on real, public data on 2026-10-04 with
-sys1grep 0.5.0-next.2 (commit `2d0b009`), using existing options only; thresholds were left at the default or
-moved only with `--level`. The output shown is what the run printed, cut where marked `…`.
+sys1grep at commit `2d0b009` (on main after the v0.5.0-next.2 tag), using existing options only; thresholds were left at the default or
+moved only with `--level`. The output shown is what the run printed, cut where marked `…`; file names and line
+numbers quoted from this repository are as of that commit.
 
 Each entry gives the job, the command, the data, what it found and missed, how a keyword search compares, and
 what the run cost. Entries that did not work are in [Tried, not recommended](#tried-not-recommended).
