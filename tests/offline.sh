@@ -1,5 +1,6 @@
 #!/bin/sh
-# Offline self-check against tests/fake-jev.mjs: no API key, no network, the same answer every run.
+# Offline self-check against tests/fake-jev.mjs: no API key, no network (but npx fetching the demo's pinned esbuild
+# once), the same answer every run.
 # The fake scores a line 0.9 when it contains the meaning verbatim ("@N" in the line sets N instead), else 0.05,
 # so these checks are about sys1grep itself: the expression, output shapes, options, requests and exit codes.
 set -e
