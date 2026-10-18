@@ -2479,15 +2479,20 @@ eq "$($J --serve=99999 "$F" 2>&1 | head -1 | cut -c1-30)" "sys1grep: --serve=999
 
 section 'demo: browser bundle (#200)'
 # The demo page runs the real sys1grep.mjs in the browser, bundled with demo/shims/ in place of node:* (scripts/demo-build.mjs,
-# esbuild via npx, cached after the first run) and committed as docs/demo/. Recorded on the fake here
-# (scripts/record-demo-cache.mjs) into $tmp, never under docs/, then each example pill replayed: the bundle in a worker
-# thread, as the page's worker runs it, against the CLI on the same files, arguments and recording (tests/demo-core.mjs).
+# esbuild via npx, cached after the first run), built at deploy time by .github/workflows/pages.yml, never committed.
+# Built here twice: from this checkout, and from a copy of only its tracked files, which must give the same bytes.
+# Recorded on the fake (scripts/record-demo-cache.mjs) into $tmp, never under docs/, then each example pill replayed: the
+# bundle in a worker thread, as the page's worker runs it, against the CLI on the same files, arguments and recording
+# (tests/demo-core.mjs).
 eq "$(node demo-shims.mjs)" "parseArgs = node:util on 21873 argvs
 sha256 = node:crypto on 9 texts" "demo: the parseArgs and sha256 stand-ins agree with Node's"
-mkdir -p "$tmp/demo"
+mkdir -p "$tmp/demo" "$tmp/demo-src" "$tmp/demo2"
 [ ! -f ../docs/demo/cache.json ] || cp ../docs/demo/cache.json "$tmp/demo/"
+[ ! -f ../docs/demo/cache.json ] || cp ../docs/demo/cache.json "$tmp/demo2/"
 node ../scripts/demo-build.mjs "$tmp/demo" >"$tmp/demo-build.out" 2>&1 || fail "demo build: $(cat "$tmp/demo-build.out")"
-eq "$(diff -r ../docs/demo "$tmp/demo" | head -c 300)" "" "demo: docs/demo/ is what scripts/demo-build.mjs builds from these sources (run it and commit docs/demo/)"
+(cd .. && git ls-files -z | tar --null -T - -cf -) | tar -xf - -C "$tmp/demo-src"
+node "$tmp/demo-src/scripts/demo-build.mjs" "$tmp/demo2" >"$tmp/demo-build2.out" 2>&1 || fail "demo build from the tracked files alone: $(cat "$tmp/demo-build2.out")"
+eq "$(diff -r "$tmp/demo" "$tmp/demo2" | head -c 300)" "" "demo: the build needs only tracked files and gives the same bytes every run"
 rm -f "$tmp/demo/cache.json" && node ../scripts/demo-build.mjs "$tmp/demo" >/dev/null 2>&1
 eq "$(grep -c '<meta name="robots" content="noindex">' "$tmp/demo/index.html")" "1" "demo: the page asks not to be indexed"
 eq "$(grep -o 'id="demo-missing">[^<]*' "$tmp/demo/index.html")" 'id="demo-missing">The recording is not published yet, so this demo runs no search for now.' "demo: built with no recording, the page says it is not published yet"

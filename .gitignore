@@ -2,6 +2,9 @@
 .env.*
 workdir/
 node_modules/
+# built by scripts/demo-build.mjs, in pages.yml at deploy time; the recording (docs/demo/cache.json) stays committed
+docs/demo/*
+!docs/demo/cache.json
 .claude/*
 !.claude/skills/
 .claude/skills/*

@@ -1,9 +1,8 @@
 #!/usr/bin/env node
-// Builds the browser demo (#200) into OUT (default docs/demo, committed; GitHub Pages serves it at /demo/): the real
-// sys1grep.mjs bundled with esbuild, node:* swapped for demo/shims/ (an import of node:X with no shim fails the build),
-// plus the page (serve.mjs's own, in demo mode), the worker and the files it searches. tests/offline.sh builds into a
-// scratch folder and fails when docs/demo/ differs, so after a change to sys1grep.mjs, serve.mjs, demo/, examples/ or
-// templates/, run this and commit docs/demo/.
+// Builds the browser demo (#200) into OUT (default docs/demo, not committed: .github/workflows/pages.yml runs this at
+// deploy time and GitHub Pages serves it at /demo/): the real sys1grep.mjs bundled with esbuild, node:* swapped for
+// demo/shims/ (an import of node:X with no shim fails the build), plus the page (serve.mjs's own, in demo mode), the
+// worker and the files it searches. tests/offline.sh builds it from the tracked files, twice, and compares.
 //   node scripts/demo-build.mjs [OUT]
 // esbuild is pinned and fetched by npx (cached after the first run), so the same sources always build the same files.
 import { execFileSync } from 'node:child_process';
@@ -17,7 +16,7 @@ const out = resolve(process.argv[2] ?? `${root}/docs/demo`);
 const SHIMS = { 'node:fs': 'fs.js', 'node:crypto': 'crypto.js', 'node:util': 'util.js', 'node:os': 'path.js', 'node:path': 'path.js', 'node:url': 'path.js', 'node:child_process': 'absent.js', 'node:zlib': 'absent.js' };
 
 mkdirSync(out, { recursive: true });
-// not minified: a change to sys1grep.mjs shows up in docs/demo/core.mjs's diff as the same lines, and Pages gzips it anyway
+// not minified: a line in core.mjs reads as the sys1grep.mjs line it came from, and Pages gzips it anyway
 execFileSync('npx', ['--yes', ESBUILD, 'sys1grep.mjs', '--bundle', '--format=esm', '--platform=browser', '--target=es2022', '--legal-comments=none',
   ...Object.entries(SHIMS).map(([from, to]) => `--alias:${from}=./demo/shims/${to}`),
   '--inject:./demo/shims/globals.js', '--define:import.meta.url="file:///sys1grep/sys1grep.mjs"', '--external:./serve.mjs',

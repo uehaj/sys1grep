@@ -3,7 +3,18 @@ name: pages
 on:
   push:
     branches: [main]
-    paths: [docs/**, .github/workflows/pages.yml]
+    # docs/demo/ is built here from these sources (scripts/demo-build.mjs), not committed
+    paths:
+      - docs/**
+      - sys1grep.mjs
+      - serve.mjs
+      - options.mjs
+      - settings.mjs
+      - demo/**
+      - examples/**
+      - templates/**
+      - scripts/demo-build.mjs
+      - .github/workflows/pages.yml
   workflow_dispatch:
 
 permissions:
@@ -23,6 +34,12 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      # esbuild is pinned in the script (ESBUILD) and fetched by npx
+      - run: node scripts/demo-build.mjs docs/demo
+      - run: test -s docs/demo/index.html && test -s docs/demo/core.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
