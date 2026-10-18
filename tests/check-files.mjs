@@ -3,18 +3,19 @@
 // (ERR_MODULE_NOT_FOUND) instead of failing a test. #199 round 3: options.mjs was added to sys1grep.mjs and
 // serve.mjs but not to "files".
 import { readFileSync } from 'node:fs';
+import { posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const pkg = JSON.parse(readFileSync(`${root}package.json`, 'utf8'));
 const shipped = new Set(pkg.files.filter(f => f.endsWith('.mjs')));
-const IMPORT = /\bfrom\s+['"]\.\/([\w.-]+\.mjs)['"]|\bimport\(\s*['"]\.\/([\w.-]+\.mjs)['"]/g;
+const IMPORT = /\bfrom\s+['"](\.\.?\/[\w./-]+\.mjs)['"]|\bimport\(\s*['"](\.\.?\/[\w./-]+\.mjs)['"]/g;
 const missing = [];
 for (const f of shipped) {
   const text = readFileSync(`${root}${f}`, 'utf8');
   for (const m of text.matchAll(IMPORT)) {
-    const name = m[1] ?? m[2];
-    if (!shipped.has(name)) missing.push(`${f} imports ./${name}, which package.json's "files" does not list`);
+    const name = posix.join(posix.dirname(f), m[1] ?? m[2]); // lib/a.mjs importing ./b.mjs means lib/b.mjs
+    if (!shipped.has(name)) missing.push(`${f} imports ${m[1] ?? m[2]} (${name}), which package.json's "files" does not list`);
   }
 }
 if (missing.length) { console.error(missing.join('\n')); process.exit(1); }
