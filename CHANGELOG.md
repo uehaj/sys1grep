@@ -276,9 +276,11 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 ### Changed
 - `--dedup=auto` no longer asks Jev which kinds of value a meaning reads (#152). Each template, every kind folded,
   sends up to 5 members whose values differ (for each varying value, the lowest, the highest and the middle); when
-  their verdicts agree the rest share their answers, and when they differ the rest are sent in a second wave, with
-  `--max-cost` checked again before it. A value only between the samples is missed. `--verbose` prints how many
-  templates agreed and how many units were sent again. `--dedup=always` (and a bare `--dedup`) still asks and keeps
+  their verdicts agree the members not sampled share the first sample's answers and the samples keep their own, and
+  when they differ the rest are sent in a second wave, with `--max-cost` checked again before it. A split costs a few
+  percent more than `never` (one extra request per wave boundary at worst). A value only between the samples is
+  missed. `--verbose` prints how many templates agreed and how many units were sent again; `--dry-run` assumes
+  every sample agrees (`--dedup=auto samples assumed to agree; a split sends the rest`), so its count is the floor. `--dedup=always` (and a bare `--dedup`) still asks and keeps
   those kinds apart.
 - `--serve`: Search is a large primary button, with Estimate cost and Stop beside it, right under the meaning fields
   and multi-step, above the examples; it used to sit in Options. The `OK` / `Not now` row (summarize the results on

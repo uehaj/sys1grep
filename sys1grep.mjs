@@ -332,8 +332,10 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
                decides "disk usage above 90%", a time decides "happened at night". always asks Jev first, one
                small request per meaning, and keeps apart the kinds that could change a match. auto asks
                nothing: it judges up to 5 sampled members of each template (the lowest, highest and middle of
-               each varying value), and sends the rest, after checking --max-cost again, only when the
-               samples' verdicts differ; a value only between the samples is missed. Built for
+               each varying value). When their verdicts agree, the members not sampled share the first
+               sample's answers and the samples keep their own; when they differ, the rest are sent after
+               --max-cost is checked again (a few percent more than never). A value only between the samples
+               is missed, and --dry-run assumes every sample agrees, so its count is the floor. Built for
                machine-generated logs, where it can cut the cost by a factor of 30 or more; prose has no
                shared skeleton and barely folds, and a meaning that reads a value folds little.
                never (default, for now: see #143) never asks or folds, but still estimates locally, before
@@ -628,10 +630,11 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                どれをまとめてよいかは意味による。「ディスク使用率が 90% を超えている」なら数値が、
                「夜間に起きた」なら時刻が答えを決める。always は意味ごとに小さなリクエストを 1 つ送って
                Jev に聞き、答えを変えうる種類はまとめない。auto は聞かず、各テンプレートから最大 5 行の
-               標本 (変わる値ごとに最小・最大・中央の行) を判定し、標本の判定が分かれたときだけ、
-               --max-cost をもう一度確かめてから残りを送る。標本のあいだにしか無い値は見落とす。
-               機械が吐くログ向けで、費用が 30 分の 1
-               以下になることもある。散文には共通の骨格がないのでほとんど縮まず、値を読む意味もあまり
+               標本 (変わる値ごとに最小・最大・中央の行) を判定する。判定が揃えば、標本でない行は最初の
+               標本の答えを共有し、標本は自分の答えを保つ。分かれたら --max-cost をもう一度確かめてから
+               残りを送る (never より数パーセント高くつく)。標本のあいだにしか無い値は見落とす。
+               --dry-run はすべての標本が揃うと仮定するので、その数は下限。機械が吐くログ向けで、
+               費用が 30 分の 1 以下になることもある。散文には共通の骨格がないのでほとんど縮まず、値を読む意味もあまり
                縮まない。
                never (既定。当面は #143 参照) は尋ねも縮めもしないが、送る前にローカルで、全種類を
                縮めた場合 (最良のケース) にどれだけ浮くかを見積もる。それが --dedup 自身の質問の費用の
@@ -2163,7 +2166,8 @@ if (logPlan && dedupEstimate) {
 // #152: --dedup=auto asks no question about which values a meaning reads. Each template (every MASK kind
 // folded) sends a sample of members whose values differ: for each varying value, fewest distinct values first, the
 // member holding its lowest, its highest and its middle value, up to SAMPLE. The rest wait. If every sample gets the
-// same verdict the rest share the first sample's answers; if not, the rest are sent too.
+// same verdict, the members not sampled share the first sample's answers and the samples keep their own; if not,
+// the rest are sent too.
 const SAMPLE = 5;
 const valuesOf = text => { const vals = []; MASK.reduce((s, [, re, to]) => s.replace(re, v => (vals.push(v), to)), text); return vals; };
 function sampleOf(group) {
@@ -2310,7 +2314,7 @@ await judgeAll(chunks);
 if (waiting.length) {
   const verdict = l => [...asksByUnit.get(l).values()].map(x => (x >= tPos) + 2 * (x < tNeg)).join();
   const split = waiting.filter(([s]) => new Set(s.map(verdict)).size > 1);
-  for (const pair of waiting) if (!split.includes(pair)) pair.flat().forEach(l => asksByUnit.set(l, asksByUnit.get(pair[0][0])));
+  for (const [s, rest] of waiting) if (!split.some(([t]) => t === s)) rest.forEach(l => asksByUnit.set(l, asksByUnit.get(s[0])));
   const again = split.flatMap(([, rest]) => rest);
   if (logPlan) logPlan(`dedup: ${waiting.length - split.length} templates agreed, ${split.length} split; ${again.length} units sent again`);
   if (again.length) {
@@ -2720,13 +2724,15 @@ async function summarizeText(text, count) {
 }
 // Summary only when interactive; grep prints nothing to stderr when scripted.
 if (dry) {
-  const assumed = [willFold && `--dedup=${opt.dedup}`, opt.unit === 'sentence-by-jev' && '--unit=sentence-by-jev'].filter(Boolean);
+  const assumed = [willFold && opt.dedup === 'always' && '--dedup=always', opt.unit === 'sentence-by-jev' && '--unit=sentence-by-jev'].filter(Boolean);
+  // --dedup=auto asks no question; a dry run answers every sample no, so they always agree: the count is the floor
+  const agreed = willFold && opt.dedup === 'auto' ? ' (--dedup=auto samples assumed to agree; a split sends the rest)' : '';
   const toSend = traced - cacheHits, tokens = estimateTokens(toSend, tracedBytes, tracedCjkBytes), price = `, ~$${(tokens * pricePerM / 1e6).toFixed(6)}${priceTag}`;
   // #125 review: the size guard is gone (an oversized file is skipped outright above, not asked about); --dry-run
   // and -i show only the cost guard's verdict here, consistent with what a real run would ask.
   const guard = (tokens * pricePerM) / 1e6 > MAX_COST ? `; over --max-cost ${MAX_COST}, would ask` : '';
   const split = cacheMode === 'off' ? '' : ` to send, ${cacheHits} cached`;
-  logPlan(`dry run: ${toSend} request${toSend === 1 ? '' : 's'}${split}, ${sent.length - cachedUnits} of ${totalUnits} ${unitName} to send, ${tracedQuestions} questions, ${tracedChars} chars, ~${tokens} input tokens${price}; nothing sent${assumed.length ? ` (${assumed.join(' and ')} questions assumed no)` : ''}${guard}`);
+  logPlan(`dry run: ${toSend} request${toSend === 1 ? '' : 's'}${split}, ${sent.length - cachedUnits} of ${totalUnits} ${unitName} to send, ${tracedQuestions} questions, ${tracedChars} chars, ~${tokens} input tokens${price}; nothing sent${assumed.length ? ` (${assumed.join(' and ')} questions assumed no)` : ''}${agreed}${guard}`);
 } else if ((process.stderr.isTTY || opt.verbose) && !opt.quiet) {
   // #143: dedup off by default until real-run stats say auto should be it; meanwhile a run that would have paid
   // says so, once, so a user stuck on the default default learns --dedup=auto exists.

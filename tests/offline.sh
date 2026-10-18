@@ -428,6 +428,11 @@ reset; eq "$($J -n --dedup=auto -e 'usage 120' "$tmp/use120.txt" | nums)" "120 "
 eq "$(stat count)" "5" "--dedup=auto, split: one request of samples, then the other 117 units in 4"
 eq "$($J -n --dedup=never -e 'usage 50' "$tmp/use120.txt" | nums)" "50 " "never finds a value between the samples"
 eq "$($J -n --dedup=auto -e 'usage 50' "$tmp/use120.txt" | nums)" "" "--dedup=auto misses it: every sample said no"
+# Agreed samples keep their own answers; only the members not sampled share the first sample's (#176 review).
+awk 'BEGIN { for (i = 1; i <= 120; i++) print "cat " i " @0." 71 + i % 29 }' >"$tmp/own.txt"
+P=$($J -n -p --color=never --dedup=auto -e cat "$tmp/own.txt")
+eq "$(echo "$P" | grep -E '^(1|120):' | tr '\t' ' ' | tr '\n' '|')" "1:cat 1 @0.72 [0.72]|120:cat 120 @0.75 [0.75]|" "--dedup=auto -p: a sample prints its own probability"
+eq "$(echo "$P" | grep -c '\[0.71\]')" "116" "--dedup=auto -p: the first sample (line 29) and the 115 members not sampled print its 0.71"
 reset; $J --dedup=always -e cat "$tmp/rep.txt" >/dev/null; eq "$(stat count)" "2" "--dedup=always: folds regardless"
 reset; V=$($J --verbose --dedup=always -e cat "$tmp/rep.txt" 2>&1 >/dev/null)
 echo "$V" | grep -Eq ': on \(always\)$' || fail "--verbose --dedup=always: the decision line reads on (always) (#143 review): $V"
@@ -442,6 +447,9 @@ eq "$(stat count)" "2" "SYS1GREP_OPTS=--dedup=never, undone by --dedup on the co
 # --dry-run: the decision line only (nothing sent; dry answers every question no, same as --dedup's own real fold does)
 out=$($J --dry-run --dedup=auto -e cat "$tmp/rep.txt")
 echo "$out" | grep -Eq '^sys1grep: dedup: 120 units fold to at most 1 templates .*: on$' || fail "--dry-run --dedup=auto: the decision line: $out"
+echo "$out" | grep -q 'nothing sent (--dedup=auto samples assumed to agree; a split sends the rest)$' || fail "--dry-run --dedup=auto: no question assumed, the samples assumed to agree (#176 review): $out"
+out=$($J --dry-run --dedup=always -e cat "$tmp/rep.txt" 2>&1)
+echo "$out" | grep -q 'nothing sent (--dedup=always questions assumed no)$' || fail "--dry-run --dedup=always: its question assumed no: $out"
 
 section '--dedup: prints what never prints'
 # #152: folding changes what is sent, not what is printed. On the real-shaped logs in tests/dedup, with a meaning
