@@ -248,8 +248,8 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   states (uncommitted, staged, untracked, this branch, not pushed, mine) and the 30 most active authors are
   candidates too. One git process per repository and question.
 - `--dedup=auto` (#143): before anything is sent, `--dedup` locally estimates the best case (every kind
-  folded) and, when folding would save at least twice the cost of its own question, asks and folds; otherwise
-  it sends every unit, asking nothing extra. `--verbose` / `--dry-run` print the decision and its numbers
+  folded) and, when folding would save at least twice the cost of its own question, folds (by sampling, #152 under
+  Changed); otherwise it sends every unit, asking nothing extra. `--verbose` / `--dry-run` print the decision and its numbers
   (units, templates, requests, tokens) for every `--dedup` value.
 
 - Exit 1 after lines were sent prints one stderr line naming the highest probability and its line, the option that
@@ -274,6 +274,14 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   string option (#233 review on #198).
 
 ### Changed
+- `--dedup=auto` no longer asks Jev which kinds of value a meaning reads (#152). Each template, every kind folded,
+  sends up to 5 members whose values differ (for each varying value, the lowest, the highest and the middle); when
+  their verdicts agree the members not sampled share the first sample's answers and the samples keep their own, and
+  when they differ the rest are sent in a second wave, with `--max-cost` checked again before it. A split costs a few
+  percent more than `never` (one extra request per wave boundary at worst). A value only between the samples is
+  missed. `--verbose` prints how many templates agreed and how many units were sent again; `--dry-run` assumes
+  every sample agrees (`--dedup=auto samples assumed to agree; a split sends the rest`), so its count is the floor. `--dedup=always` (and a bare `--dedup`) still asks and keeps
+  those kinds apart.
 - `--serve`: Search is a large primary button, with Estimate cost and Stop beside it, right under the meaning fields
   and multi-step, above the examples; it used to sit in Options. The `OK` / `Not now` row (summarize the results on
   screen?) and the `-o` control (only for a sentence unit) no longer show while hidden.
