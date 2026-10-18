@@ -869,9 +869,10 @@ $ sys1grep --serve=8080 -y --level=strict -r src/     # ポートを固定。こ
 ファイルとフォルダ（`npm run serve -- src docs/a.md`）、渡さなければ sys1grep が代わりに読むもの、つまり `-r` なら `.`、
 `git sys1grep` なら git が追跡しているファイル全部、どちらでもなければ同梱のサンプル（`demo corpus (bundled): examples/`、#237）
 です。（Details の）`-g` がオンの間は、代わりに git log のコミットと出ます。表示だけで、ページからは変えられず、
-リクエストに含まれたターゲットは無視されます。**Search conditions** には意味の欄、multi-step、例ボタンがあり、
-**Options** には Search ボタン、`rank`、`summarize`、コマンドライン、**Details** にはそれ以外のオプションがあり、
-結果はその下に出ます。中身は次のとおりです: 意味の欄（`+` で増やせ、それぞれ `-e`、`-P`、`-a`、`-v`、`-Q` のどれか）、
+リクエストに含まれたターゲットは無視されます。**Search conditions** には意味の欄と multi-step があり、
+**Options** には `rank` と `summarize`、**Details** にはそれ以外のオプションがあり、
+結果はその下に出ます。Search ボタン（Estimate cost と Stop はその下）は Search conditions の右に大きく置かれ、
+例とオプションはその下に並び（スマホ幅では 1 列）、続いてコマンドラインと Details が出ます。中身は次のとおりです: 意味の欄（`+` で増やせ、それぞれ `-e`、`-P`、`-a`、`-v`、`-Q` のどれか）、
 `rank`、`summarize`、**multi-step** スイッチ（オンにすると終点の欄、つまり `--step-to` と 1 つ以上の意味、および辺の
 設定である `--hops` と、それを `--step-reverse-to` にする reverse スイッチが出ます。オフにするとそれらはコマンドと検索から
 外れ、値は保たれます）、例ボタン（この README と [docs/use-cases.md](docs/use-cases.md) の検索、続いて多段階の
