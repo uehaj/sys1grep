@@ -336,14 +336,20 @@ export function serve(argv) {
   })();
   // The page says so when searches go to the fake Jev (tests/fake-jev.mjs): a GET to it answers its own counters,
   // which no real endpoint does. Only a loopback URL is asked, so a remote Jev never gets a request from this, and a
-  // GET is never judged or billed. Asked once, at launch: a url changed later in the settings panel needs a restart.
-  const fake = (async () => {
+  // GET is never judged or billed. A redirect is never followed: it could lead off loopback. Asked at launch, and again
+  // after every settings save (the url may have changed), of what sys1grep itself then resolves.
+  const fakeAt = async url => {
     try {
-      if (!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(new URL(probe.url).hostname)) return false;
-      const j = await (await fetch(probe.url, { signal: AbortSignal.timeout(1000) })).json();
+      if (!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(new URL(url).hostname)) return false;
+      const j = await (await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(1000) })).json();
       return ['count', 'asked', 'qmax'].every(k => k in j);
     } catch { return false; }
-  })();
+  };
+  const probeUrl = () => new Promise(resolve => {
+    execFile(process.execPath, [script, ...launch], { timeout: 10_000, env: { ...process.env, SYS1GREP_PROBE: 'recursive' } },
+      (e, out) => { try { resolve(JSON.parse(out).url); } catch { resolve(null); } }).stdin.end();
+  });
+  let fake = fakeAt(probe?.url);
   const targets = targetsOf(launch, after, probe);
   // #222: a folder searched without -r fails every search ("Is a directory (use -r)"), so refuse it before listening.
   const dir = targets.list.find(t => statSync(t, { throwIfNoEntry: false })?.isDirectory());
@@ -409,8 +415,9 @@ export function serve(argv) {
           let patch;
           try { patch = JSON.parse(await body(req)); } catch { return req.tooLarge ? answer(413, { error: 'too large: settings are at most 64 KB' }) : answer(400, { error: 'not valid JSON' }); }
           try { saveSettings(patch); } catch (e) { return answer(400, { error: e.message }); }
+          fake = probeUrl().then(fakeAt);
         } else if (req.method !== 'GET') return send(405, 'text/plain', 'GET or POST');
-        return answer(200, settingsView(cli));
+        return answer(200, { ...settingsView(cli), fake: await fake });
       } catch (e) { return answer(500, { error: `~/.config/sys1grep/settings.json: ${e.message}` }); }
     }
     // #227: summarize the results the page shows, as they are: the page posts their text and only the summarize step
@@ -460,8 +467,8 @@ const page = ({ init, launch, after, token, targets, suggest, fake }) => `<!doct
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark"><title>sys1grep</title>
 <style>
-:root { --page: #f0f6ff; --bg: #fff; --fg: #102447; --muted: #5a6e8c; --rule: #e4edf8; --border: #9fb3d1; --accent: #075cf5; --accent-ink: #fff; --link: #0754d4; --input-bg: #f5f9ff; --pill-bg: #eaf3ff; --pill-fg: #0754d4; --code: #03162e; --code-fg: #dbe7ff; --band: linear-gradient(130deg, #03152e 5%, #083475 65%, #0751bc); --go: linear-gradient(130deg, #3389ff, #0050e9); --cmd-bg: linear-gradient(115deg, #071c3d, #103c7a); --warn-bg: #fff4d6; --warn-fg: #6b4400; --warn-border: #d99a00; --shadow: 0 8px 28px rgba(24,62,116,.07); }
-@media (prefers-color-scheme: dark) { :root { --page: #0a1222; --bg: #111c30; --fg: #e3ecfb; --muted: #93a6c4; --rule: #22324f; --border: #4a5f82; --accent: #4d8dff; --accent-ink: #06132b; --link: #7aaaff; --input-bg: #16243d; --pill-bg: #16305a; --pill-fg: #b4d0ff; --code: #050d1c; --code-fg: #cdd9f0; --band: linear-gradient(130deg, #010a18 5%, #06244f 65%, #073a85); --go: linear-gradient(130deg, #3a86f5, #0a4fd0); --cmd-bg: linear-gradient(115deg, #050f22, #0c2a57); --warn-bg: #3a2c06; --warn-fg: #ffd970; --warn-border: #b58800; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35); } }
+:root { --page: #f0f6ff; --bg: #fff; --fg: #102447; --muted: #5a6e8c; --rule: #e4edf8; --border: #7589ab; --accent: #075cf5; --accent-ink: #fff; --link: #0754d4; --input-bg: #f5f9ff; --pill-bg: #eaf3ff; --pill-fg: #0754d4; --code: #03162e; --code-fg: #dbe7ff; --band: linear-gradient(130deg, #03152e 5%, #083475 65%, #0751bc); --go: linear-gradient(130deg, #1a66e0, #0047cc); --cmd-bg: linear-gradient(115deg, #071c3d, #103c7a); --warn-bg: #fff4d6; --warn-fg: #6b4400; --warn-border: #d99a00; --shadow: 0 8px 28px rgba(24,62,116,.07); }
+@media (prefers-color-scheme: dark) { :root { --page: #0a1222; --bg: #111c30; --fg: #e3ecfb; --muted: #93a6c4; --rule: #22324f; --border: #64799e; --accent: #4d8dff; --accent-ink: #06132b; --link: #7aaaff; --input-bg: #16243d; --pill-bg: #16305a; --pill-fg: #b4d0ff; --code: #050d1c; --code-fg: #cdd9f0; --band: linear-gradient(130deg, #010a18 5%, #06244f 65%, #073a85); --go: linear-gradient(130deg, #1d68dc, #0a4fd0); --cmd-bg: linear-gradient(115deg, #050f22, #0c2a57); --warn-bg: #3a2c06; --warn-fg: #ffd970; --warn-border: #b58800; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35); } }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--page); color: var(--fg); font: 14px/1.5 arial, "Hiragino Sans", "Noto Sans CJK JP", sans-serif; }
 .card { background: var(--bg); border-radius: 16px; box-shadow: var(--shadow); margin: 24px auto; padding: 20px 24px; width: min(880px, calc(100% - 32px)); }
@@ -476,7 +483,7 @@ body { margin: 0; background: var(--page); color: var(--fg); font: 14px/1.5 aria
 select, button, input { font: inherit; color: var(--fg); }
 button, select { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 6px 12px; cursor: pointer; }
 #go { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; font-size: 16px; padding: 10px 32px; border-radius: 12px; }
-.row[hidden] { display: none; }
+[hidden] { display: none !important; }
 #fake-jev { margin: 0 0 10px; padding: 8px 12px; background: var(--warn-bg); color: var(--warn-fg); border: 1px solid var(--warn-border); border-radius: 10px; font-weight: 700; }
 #est, #stop, #copy, #save { background: var(--input-bg); }
 fieldset.group { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px 12px; margin: 10px 0; min-width: 0; }
@@ -541,7 +548,7 @@ body { background: var(--band) top / 100% 132px no-repeat, var(--page); }
 #ex .label { display: flex; align-items: center; justify-content: space-between; font-size: 18px; color: var(--fg); margin: 0 0 4px; }
 #ex .grp { border-top: 1px solid var(--rule); padding-top: 12px; margin-top: 8px; color: var(--fg); }
 .exlang { border: 1px solid var(--border); border-radius: 9px; overflow: hidden; gap: 0; }
-#ex .exlang button { border: 0; border-radius: 0; background: var(--bg); } #ex .exlang button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); }
+#ex .exlang button { border: 0; border-radius: 0; background: var(--bg); } #ex .exlang button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); } #ex .exlang button:focus-visible { outline: 2px solid var(--fg); outline-offset: -3px; }
 #sec-opts .sech { font-size: 18px; }
 .command { background: var(--cmd-bg); color: #fff; border-radius: 16px; padding: 14px 20px; margin-top: 20px; }
 .command .sech { color: #fff; } .command #cmd { background: #03162e; color: #dbe7ff; border: 1px solid #7799ca; }
@@ -552,7 +559,7 @@ body { background: var(--band) top / 100% 132px no-repeat, var(--page); }
 </style></head><body>
 <div class="card" id="card">
 <div class="title" id="title"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#fff" stroke-width="2.2"/><line x1="15.3" y1="15.3" x2="20.5" y2="20.5" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg></span><h1>sys<span class="accent">1grep</span></h1><button type="button" class="gear" id="gear" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
-${fake ? '<p id="fake-jev" role="note">FAKE Jev: searches go to tests/fake-jev.mjs. Its probabilities are dummies, not real answers.</p>' : ''}
+<p id="fake-jev" role="note"${fake ? '' : ' hidden'}>FAKE Jev: searches go to tests/fake-jev.mjs. Its probabilities are dummies, not real answers.</p>
 <form id="f" autocomplete="off" onsubmit="return false">
 <div class="kcard search-layout" id="search"><div class="fields">
 <section class="sec" id="sec-target" aria-labelledby="h-target"><h2 class="sech" id="h-target" title="ターゲット / 検索対象: what every search reads, set when --serve starts; the page cannot change it">Target</h2>
@@ -833,6 +840,7 @@ const fillSettings = view => {
     else el.value = k === 'opts' ? (saved ?? []).join('\\n') : saved ?? '';
     document.getElementById('src-' + k).textContent = SAID[src](name);
   }
+  document.getElementById('fake-jev').hidden = !view.fake; // a saved url can switch to or from the fake
 };
 const settingsReq = async (method, body) => {
   const r = await fetch('/settings', { method, body, headers: { 'x-sys1grep-token': TOKEN, 'content-type': 'application/json' } });

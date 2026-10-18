@@ -7,8 +7,9 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 
 ### Added
 - `--serve`: when searches go to the fake Jev of the offline tests (`tests/fake-jev.mjs`), the page says so in a
-  banner under the title: its probabilities are dummies, not real answers. `--serve` asks only a loopback URL, once
-  at launch, with a GET (never judged or billed); a remote Jev gets no request from this.
+  banner under the title: its probabilities are dummies, not real answers. `--serve` asks only a loopback URL, with
+  a GET that never follows a redirect (never judged or billed), at launch and again after every settings save, so a
+  url switched in the settings panel shows or hides the banner right away; a remote Jev gets no request from this.
 - `--cache[=on|off|only]` keeps Jev's answers in `~/.config/sys1grep/cache`, one file per request, named by the
   SHA-256 of the endpoint's host and the request body (model, lines, questions); the API key is never stored or
   hashed in, and usage is not kept (#252, the first step of #200). A hit sends nothing and counts no request and no
@@ -275,7 +276,7 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 ### Changed
 - `--serve`: Search is a large primary button, with Estimate cost and Stop beside it, right under the meaning fields
   and multi-step, above the examples; it used to sit in Options. The `OK` / `Not now` row (summarize the results on
-  screen?) no longer shows while it has nothing to ask.
+  screen?) and the `-o` control (only for a sentence unit) no longer show while hidden.
 - `--serve`: a blue look: a header band, cards (Target and Search conditions with Search at their right, the examples
   with an `EN` / `日本語` switch beside Options, a dark command-line card), blue light and dark palettes, and one
   column on a phone. Every control and what it runs are unchanged.
