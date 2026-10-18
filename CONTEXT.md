@@ -19,7 +19,7 @@ A revision named on the command line (branch, tag, commit, `@{u}`) whose content
 _Avoid_: revision, ref, snapshot
 
 **Target**:
-One regular file or blob that is searched: from the working tree, the index or a tree. Symlinks and submodules are never targets.
+One regular file or blob that is searched: from the working tree, the index or a tree. `-r` and `git sys1grep` never list a symlink or a submodule as a target; a symlink named on the command line is searched.
 _Avoid_: source (the code uses `sources` for the units printed)
 
 ### What is judged, and multi-step matching
