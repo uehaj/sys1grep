@@ -338,6 +338,22 @@ export function serve(argv) {
     const { stdout } = spawnSync(process.execPath, [script, ...launch], { input: '', encoding: 'utf8', timeout: 10_000, env: { ...process.env, SYS1GREP_PROBE: 'recursive' } });
     try { return JSON.parse(stdout); } catch { return null; }
   })();
+  // The page says so when searches go to the fake Jev (tests/fake-jev.mjs): a GET to it answers its own counters,
+  // which no real endpoint does. Only a loopback URL is asked, so a remote Jev never gets a request from this, and a
+  // GET is never judged or billed. A redirect is never followed: it could lead off loopback. Asked at launch, and again
+  // after every settings save (the url may have changed), of what sys1grep itself then resolves.
+  const fakeAt = async url => {
+    try {
+      if (!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(new URL(url).hostname)) return false;
+      const j = await (await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(1000) })).json();
+      return ['count', 'asked', 'qmax'].every(k => k in j);
+    } catch { return false; }
+  };
+  const probeUrl = () => new Promise(resolve => {
+    execFile(process.execPath, [script, ...launch], { timeout: 10_000, env: { ...process.env, SYS1GREP_PROBE: 'recursive' } },
+      (e, out) => { try { resolve(JSON.parse(out).url); } catch { resolve(null); } }).stdin.end();
+  });
+  let fake = fakeAt(probe?.url);
   const targets = targetsOf(launch, after, probe);
   // #222: a folder searched without -r fails every search ("Is a directory (use -r)"), so refuse it before listening.
   const dir = targets.list.find(t => statSync(t, { throwIfNoEntry: false })?.isDirectory());
@@ -390,7 +406,7 @@ export function serve(argv) {
     // server answers nothing, not even the page, so another local account or process cannot read the page (and the
     // token it carries, and anything a search of these targets would show) merely by knowing the port.
     if (url.searchParams.get('k') !== token && req.headers['x-sys1grep-token'] !== token) return send(404, 'text/plain', 'not found');
-    if (url.pathname === '/') return send(200, 'text/html', page({ init, launch, after, token, targets, suggest: suggestOf(suggested) }));
+    if (url.pathname === '/') return send(200, 'text/html', page({ init, launch, after, token, targets, suggest: suggestOf(suggested), fake: await fake }));
     // The settings panel. It changes a file, so beyond the token above: for a write, POST with a JSON body and this
     // request's own Host as Origin (a page on another site cannot forge that, and GET never sends Origin at all, so
     // only POST is checked). A key goes in, never out.
@@ -403,8 +419,9 @@ export function serve(argv) {
           let patch;
           try { patch = JSON.parse(await body(req)); } catch { return req.tooLarge ? answer(413, { error: 'too large: settings are at most 64 KB' }) : answer(400, { error: 'not valid JSON' }); }
           try { saveSettings(patch); } catch (e) { return answer(400, { error: e.message }); }
+          fake = probeUrl().then(fakeAt);
         } else if (req.method !== 'GET') return send(405, 'text/plain', 'GET or POST');
-        return answer(200, settingsView(cli));
+        return answer(200, { ...settingsView(cli), fake: await fake });
       } catch (e) { return answer(500, { error: `~/.config/sys1grep/settings.json: ${e.message}` }); }
     }
     // #227: summarize the results the page shows, as they are: the page posts their text and only the summarize step
@@ -450,12 +467,12 @@ const targetList = ({ list, cwd, none }, g) => `<div id="targets" title="${esc(`
   + `<p class="note" id="tg-git"${g ? '' : ' hidden'}>git log's commits (-g)</p></div>`;
 // a labelled control with its "?" hint (the same markup as rank's): the label, then the icon and its tooltip
 const hg = (name, label, text) => `<div class="withhint hintgroup" id="hg-${name}">${label.replace(/<(select|input)/, `<$1 aria-describedby="hint-${name}"`)}<span class="hintctl"><button type="button" class="qbtn" id="q-${name}" aria-expanded="false" aria-controls="hint-${name}" aria-label="more about ${label.replace(/<select.*?<\/select>/, '').replace(/<[^>]+>/g, '').trim()}">?</button><small class="hint" id="hint-${name}" role="tooltip">${text}</small></span></div>`;
-const page = ({ init, launch, after, token, targets, suggest }) => `<!doctype html>
+const page = ({ init, launch, after, token, targets, suggest, fake }) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark"><title>sys1grep</title>
 <style>
-:root { --page: #eef2f7; --bg: #fff; --fg: #1f2430; --muted: #5f6b7a; --rule: #e3e8ef; --border: #7b8392; --accent: #2563eb; --accent-ink: #fff; --link: #2563eb; --input-bg: #f3f5f8; --pill-bg: #e3f6e9; --pill-fg: #17703d; --code: #1e2433; --code-fg: #d7dde7; --shadow: 0 1px 2px rgba(16,24,40,.04), 0 8px 24px rgba(16,24,40,.08); }
-@media (prefers-color-scheme: dark) { :root { --page: #12141a; --bg: #1b1e26; --fg: #e7e9ee; --muted: #9aa3b2; --rule: #2b303b; --border: #707a8a; --accent: #5b8df6; --accent-ink: #0b1020; --link: #5b8df6; --input-bg: #20242e; --pill-bg: #163826; --pill-fg: #7be0a0; --code: #11141b; --code-fg: #c9d1e0; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35); } }
+:root { --page: #f0f6ff; --bg: #fff; --fg: #102447; --muted: #5a6e8c; --rule: #e4edf8; --border: #7589ab; --accent: #075cf5; --accent-ink: #fff; --link: #0754d4; --input-bg: #f5f9ff; --pill-bg: #eaf3ff; --pill-fg: #0754d4; --code: #03162e; --code-fg: #dbe7ff; --band: linear-gradient(130deg, #03152e 5%, #083475 65%, #0751bc); --go: linear-gradient(130deg, #1a66e0, #0047cc); --cmd-bg: linear-gradient(115deg, #071c3d, #103c7a); --warn-bg: #fff4d6; --warn-fg: #6b4400; --warn-border: #d99a00; --shadow: 0 8px 28px rgba(24,62,116,.07); }
+@media (prefers-color-scheme: dark) { :root { --page: #0a1222; --bg: #111c30; --fg: #e3ecfb; --muted: #93a6c4; --rule: #22324f; --border: #64799e; --accent: #4d8dff; --accent-ink: #06132b; --link: #7aaaff; --input-bg: #16243d; --pill-bg: #16305a; --pill-fg: #b4d0ff; --code: #050d1c; --code-fg: #cdd9f0; --band: linear-gradient(130deg, #010a18 5%, #06244f 65%, #073a85); --go: linear-gradient(130deg, #1d68dc, #0a4fd0); --cmd-bg: linear-gradient(115deg, #050f22, #0c2a57); --warn-bg: #3a2c06; --warn-fg: #ffd970; --warn-border: #b58800; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35); } }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--page); color: var(--fg); font: 14px/1.5 arial, "Hiragino Sans", "Noto Sans CJK JP", sans-serif; }
 .card { background: var(--bg); border-radius: 16px; box-shadow: var(--shadow); margin: 24px auto; padding: 20px 24px; width: min(880px, calc(100% - 32px)); }
@@ -469,7 +486,9 @@ body { margin: 0; background: var(--page); color: var(--fg); font: 14px/1.5 aria
 .row input[type=text] { flex: 1; min-width: 100px; padding: 10px 16px; font-size: 15px; border: 1px solid var(--border); border-radius: 14px; background: var(--input-bg); color: var(--fg); }
 select, button, input { font: inherit; color: var(--fg); }
 button, select { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 6px 12px; cursor: pointer; }
-#go { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+#go { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; font-size: 16px; padding: 10px 32px; border-radius: 12px; }
+[hidden] { display: none !important; }
+#fake-jev { margin: 0 0 10px; padding: 8px 12px; background: var(--warn-bg); color: var(--warn-fg); border: 1px solid var(--warn-border); border-radius: 10px; font-weight: 700; }
 #est, #stop, #copy, #save { background: var(--input-bg); }
 fieldset.group { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px 12px; margin: 10px 0; min-width: 0; }
 .group legend.glabel { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 6px; padding: 0 4px; }
@@ -514,10 +533,39 @@ main { background: var(--bg); border: 1px solid var(--border); border-radius: 12
 iframe { width: 100%; border: 0; min-height: 80px; } pre.out { white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.5 ui-monospace, Menlo, monospace; }
 .c32 { color: #188038; } .c35 { color: #a142f4; } .c36 { color: #0c7a88; } .c31 { color: #d93025; } .c33 { color: #b06000; } .c01_31 { color: #d93025; font-weight: 700; } .c01_33 { color: #b06000; font-weight: 700; background: #fff3b055; }\n@media (prefers-color-scheme: dark) { .c32 { color: #81c995; } .c35 { color: #d7aefb; } .c36 { color: #78d9ec; } .c31, .c01_31 { color: #f28b82; } .c33, .c01_33 { color: #fdd663; } .err { color: #f28b82; } }\nbutton:disabled { opacity: .45; cursor: default; } #ex button { border-radius: 999px; background: var(--pill-bg); color: var(--pill-fg); border: none; } #ex .label, #ex .grp { flex-basis: 100%; font-weight: 700; color: var(--muted); margin-top: 4px; }
 #right { border-left: 1px solid var(--rule); padding-left: 16px; }
+body { background: var(--band) top / 100% 132px no-repeat, var(--page); }
+.card { background: none; box-shadow: none; border-radius: 0; padding: 0 0 24px; margin: 0 auto; width: min(1160px, calc(100% - 32px)); }
+.title { height: 132px; margin: 0; color: #fff; gap: 16px; }
+.title .icon { width: 56px; height: 56px; border-radius: 14px; background: linear-gradient(140deg, #328bff, #0050df); box-shadow: 0 4px 22px rgba(0,114,255,.31); }
+.title .icon svg { width: 30px; height: 30px; }
+.title h1 { font-size: 34px; letter-spacing: -1px; } .title .accent { color: #6aa8ff; }
+.gear { color: #d5e5ff; border: 1px solid #7f9fca; padding: 8px; } .gear:hover, .gear:focus-visible { background: rgba(255,255,255,.12); color: #fff; }
+#fake-jev { margin: 16px 0 0; }
+.kcard { background: var(--bg); border: 1px solid var(--rule); border-radius: 18px; padding: 20px 24px; box-shadow: var(--shadow); margin-top: 20px; }
+.search-layout { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 24px; }
+.actions { border-left: 1px solid var(--rule); padding-left: 22px; display: flex; flex-direction: column; justify-content: center; gap: 12px; }
+#go { width: 100%; min-height: 56px; border: 0; border-radius: 12px; background: var(--go); color: #fff; font-size: 18px; font-weight: 700; box-shadow: 0 7px 16px rgba(20,105,250,.15); }
+.actions .row { margin: 0; flex-wrap: nowrap; } .actions .row > button { flex: 1; padding: 10px 6px; }
+.columns { display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 20px; align-items: start; }
+.columns .kcard { padding: 20px; }
+#ex { gap: 9px; margin: 0; } #ex button { padding: 8px 14px; } #ex .exlang button { padding: 4px 14px; }
+#ex .label { display: flex; align-items: center; justify-content: space-between; font-size: 18px; color: var(--fg); margin: 0 0 4px; }
+#ex .grp { border-top: 1px solid var(--rule); padding-top: 12px; margin-top: 8px; color: var(--fg); }
+.exlang { border: 1px solid var(--border); border-radius: 9px; overflow: hidden; gap: 0; }
+#ex .exlang button { border: 0; border-radius: 0; background: var(--bg); } #ex .exlang button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); } #ex .exlang button:focus-visible { outline: 2px solid var(--fg); outline-offset: -3px; }
+#sec-opts .sech { font-size: 18px; }
+.command { background: var(--cmd-bg); color: #fff; border-radius: 16px; padding: 14px 20px; margin-top: 20px; }
+.command .sech { color: #fff; } .command #cmd { background: #03162e; color: #dbe7ff; border: 1px solid #7799ca; }
+.command #copy { background: transparent; color: #fff; border-color: #7f9fca; } .command .note, .command .note code { color: #c9dbf7; }
+#d { margin-top: 20px; } main { margin-top: 20px; border-color: var(--rule); border-radius: 18px; box-shadow: var(--shadow); }
+@media (max-width: 850px) { .search-layout, .columns { grid-template-columns: 1fr; } .actions { border-left: 0; border-top: 1px solid var(--rule); padding: 16px 0 0; } #go { min-height: 48px; } }
+@media (max-width: 520px) { .title h1 { font-size: 26px; } .title .icon { width: 44px; height: 44px; } .kcard { padding: 16px; } }
 </style></head><body>
 <div class="card" id="card">
 <div class="title" id="title"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#fff" stroke-width="2.2"/><line x1="15.3" y1="15.3" x2="20.5" y2="20.5" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg></span><h1>sys<span class="accent">1grep</span></h1><button type="button" class="gear" id="gear" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
+<p id="fake-jev" role="note"${fake ? '' : ' hidden'}>FAKE Jev: searches go to tests/fake-jev.mjs. Its probabilities are dummies, not real answers.</p>
 <form id="f" autocomplete="off" onsubmit="return false">
+<div class="kcard search-layout" id="search"><div class="fields">
 <section class="sec" id="sec-target" aria-labelledby="h-target"><h2 class="sech" id="h-target" title="ターゲット / 検索対象: what every search reads, set when --serve starts; the page cannot change it">Target</h2>
 ${targetList(targets, init.g)}</section>
 <section class="sec" id="sec-cond" aria-labelledby="h-cond"><h2 class="sech" id="h-cond" title="検索条件">Search conditions</h2>
@@ -528,16 +576,22 @@ Default: from a function to the functions it calls. reverse (--step-reverse-to):
 --hops limits how many calls away an end may be. For exact relations, start --serve with --edges=FILE.</small></span></div></div>
 <fieldset class="group" id="steps" hidden><legend class="glabel">end (--step-to)</legend><div id="ends"></div><button type="button" id="addend" title="add an end" aria-label="add an end">+ end</button>
 <div class="row edges hintgroup" id="hg-edges"><span class="note">edges</span><span class="hintctl"><button type="button" class="qbtn" id="q-edges" aria-expanded="false" aria-controls="hint-edges" aria-label="more about edges">?</button><small class="hint" id="hint-edges" role="tooltip">--hops limits how many hops away an end may be; reverse (--step-reverse-to) searches backwards along the graph</small></span><label title="how many hops the end may be from the start, e.g. 1..2">--hops <input type="text" name="hops" size="6" aria-describedby="hint-edges"></label><label><input type="checkbox" name="reverse" aria-describedby="hint-edges"> reverse</label></div></fieldset>
-<div class="row" id="ex"><span class="note label">examples <span class="exlang" role="group" aria-label="language of the examples"><button type="button" id="ex-en" lang="en" aria-pressed="true">EN</button><button type="button" id="ex-ja" lang="ja" aria-pressed="false">日本語</button></span></span></div>
+</section></div>
+<div class="actions" id="actions"><button type="submit" id="go">Search</button><div class="row"><button type="button" id="est" title="run with --dry-run: shows the request size and estimated cost, no results">Estimate cost</button><button type="button" id="stop" title="stop the search that is running (its process is killed)" disabled>Stop</button></div></div>
+</div>
+<div class="columns">
+<section class="sec kcard" id="sec-ex" aria-label="examples"><div class="row" id="ex"><span class="note label">examples <span class="exlang" role="group" aria-label="language of the examples"><button type="button" id="ex-en" lang="en" aria-pressed="true">EN</button><button type="button" id="ex-ja" lang="ja" aria-pressed="false">日本語</button></span></span></div>
 </section>
-<section class="sec" id="sec-opts" aria-labelledby="h-opts"><h2 class="sech" id="h-opts" title="オプション">Options</h2>
+<section class="sec kcard" id="sec-opts" aria-labelledby="h-opts"><h2 class="sech" id="h-opts" title="オプション">Options</h2>
 <div class="row">
-<button type="submit" id="go">Search</button><button type="button" id="est" title="run with --dry-run: shows the request size and estimated cost, no results">Estimate cost</button><button type="button" id="stop" title="stop the search that is running (its process is killed)" disabled>Stop</button>
 <div class="withhint hintgroup" id="hg-rank"><label>rank <select name="rank" aria-describedby="hint-rank"><option value="">off</option><option value="jev">jev</option><option value="match">match</option></select></label><span class="hintctl"><button type="button" class="qbtn" id="q-rank" aria-expanded="false" aria-controls="hint-rank" aria-label="more about rank">?</button><small class="hint" id="hint-rank" role="tooltip">off keeps file order</small></span></div>
 <div class="withhint hintgroup" id="hg-summarize"><label><input type="checkbox" name="summarize" aria-describedby="hint-summarize"> summarize</label><span class="hintctl"><button type="button" class="qbtn" id="q-summarize" aria-expanded="false" aria-controls="hint-summarize" aria-label="more about summarize">?</button><small class="hint" id="hint-summarize" role="tooltip">answers in a sentence or two after the search</small></span></div>
 <input type="text" name="summarize-prompt" placeholder="summary instruction" style="display:none;flex:1;min-width:160px">
 </div>
 <div class="row ask" id="ask" role="group" aria-labelledby="askq" hidden><span id="askq"></span><button type="button" id="ask-ok">OK</button><button type="button" id="ask-no">Not now</button></div>
+</section>
+</div>
+<section class="command" id="sec-cmd" aria-labelledby="h-cmd"><h2 class="sech" id="h-cmd">Command</h2>
 <div class="row"><pre id="cmd" title="the command line for the fields and controls as they are now; pasted in a terminal it runs the same search. The API key is never in it"></pre><button type="button" id="copy" title="copy the command line to the clipboard">Copy</button>${targets.demo ? '<span class="note" id="cmd-demo-note">here it searches the bundled <code>examples/</code>; pasted elsewhere it reads stdin instead &mdash; add a file or -r DIR</span>' : ''}</div>
 </section>
 <details id="d"><summary id="ds" title="詳細: the other options; a dot means one differs from its launch value">Details</summary><div class="grid">
@@ -790,6 +844,7 @@ const fillSettings = view => {
     else el.value = k === 'opts' ? (saved ?? []).join('\\n') : saved ?? '';
     document.getElementById('src-' + k).textContent = SAID[src](name);
   }
+  document.getElementById('fake-jev').hidden = !view.fake; // a saved url can switch to or from the fake
 };
 const settingsReq = async (method, body) => {
   const r = await fetch('/settings', { method, body, headers: { 'x-sys1grep-token': TOKEN, 'content-type': 'application/json' } });

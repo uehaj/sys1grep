@@ -84,8 +84,9 @@ const byId = {}, elements = {};
 }
 byId.f.elements = byId.sf.elements = elements;
 // reading order, from the real tree where the static markup gives us one: the card holds the title, the form, the
-// results, then Settings; the form holds the four sections (#216): Target, Search conditions (the start group, the
-// multi-step toggle, the end group, the examples), Options (the run controls, the command line), then Details.
+// results, then Settings; the form holds the search card (Target, Search conditions: the start group, the multi-step
+// toggle, the end group; Search, Estimate cost, Stop at its side), the examples and Options side by side, the command
+// line, then Details.
 {
   const seq = els => els.map(e => { const id = /\sid="([^"]+)"/.exec(e.attrs)?.[1], cls = /\sclass="([^"]+)"/.exec(e.attrs)?.[1]; return id ? '#' + id : cls ? '.' + cls.split(' ')[0] : e.tagName; });
   console.log(`card children: ${seq(byId.card.children).join(' ')}`);

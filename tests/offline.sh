@@ -18,8 +18,8 @@ realsettings() { node -p "try { const s = require('fs').statSync(process.argv[1]
 settings_before=$(realsettings)
 node fake-jev.mjs >"$tmp/port" &
 fake=$!
-serve= # a --serve child, if one of the checks below starts one; killed on exit so a failing check never orphans it
-trap 'kill $fake $serve 2>/dev/null || true; wait $fake $serve 2>/dev/null || true; rm -rf "$tmp"; [ "$(realsettings)" = "$settings_before" ] || { echo "FAIL: the real settings.json changed during the run (#206)" >&2; exit 1; }' EXIT
+serve= like= redir= # a --serve child (and the servers it is pointed at), if one of the checks below starts one; killed on exit so a failing check never orphans it
+trap 'kill $fake $serve $like $redir 2>/dev/null || true; wait $fake $serve $like $redir 2>/dev/null || true; rm -rf "$tmp"; [ "$(realsettings)" = "$settings_before" ] || { echo "FAIL: the real settings.json changed during the run (#206)" >&2; exit 1; }' EXIT
 trap 'rm -rf "$tmp"; exit 130' INT TERM # dash runs the EXIT trap on exit, not on a signal (the TERM the wrapper above forwards on ^C or a closed terminal); a second TERM can cut that trap short, so $tmp goes here too
 i=0; while [ ! -s "$tmp/port" ]; do i=$((i + 1)); [ $i -lt 200 ] || { echo "FAIL: fake-jev did not start" >&2; exit 1; }; sleep 0.05; done
 base="http://127.0.0.1:$(cat "$tmp/port")"
@@ -1748,6 +1748,8 @@ case $U in http://127.0.0.1:*/\?k=*) ;; *) fail "--serve prints its URL, with it
 BASE=${U%%\?*} K=${U#*k=} PORT=${U%%/\?*} PORT=${PORT##*:}
 [ -n "$K" ] || fail "--serve: the startup line carries a token"
 eq "$(curl -s "$U" | grep -c 'id="cmd"')" "1" "--serve: the page, fetched with its token"
+eq "$(curl -s "$U" | grep -c '<p id="fake-jev" role="note">FAKE Jev')" "1" "--serve: against the fake, the page says its answers are a fake Jev's"
+eq "$(curl -s "$U" | node -pe "const h = require('fs').readFileSync(0, 'utf8'); [h.indexOf('id=\"go\"') > h.indexOf('id=\"startgrp\"'), h.indexOf('id=\"go\"') < h.indexOf('id=\"ex\"')].join()")" "true,true" "--serve: Search sits under the start fields, above the examples"
 eq "$(curl -s -o /dev/null -w '%{http_code}' "$BASE")" "404" "--serve: the page without the token is refused"
 # #216: the Target section shows the launch's targets; the page has no way to send one, and a query naming another
 # file is ignored (only the known fields count), so a search reads the launch's targets and nothing else
@@ -2049,7 +2051,41 @@ eq "$(pgrep -f "$F.*color=always" | wc -l | tr -d ' ')" "1" "--serve: a search i
 kill $curl 2>/dev/null; wait $curl 2>/dev/null || true
 sleep 0.7
 eq "$(pgrep -f "$F.*color=always" | wc -l | tr -d ' ')" "0" "--serve: an abandoned search ends its child"
+eq "$(curl -s "$U" | grep -c '<p id="fake-jev" role="note">')" "0" "--serve: a local endpoint that is not the fake gets no fake-Jev notice"
 kill $serve $hang 2>/dev/null; wait $serve $hang 2>/dev/null || true
+section 'serve: fake notice follows the settings url'
+# #255 review: the fake-Jev notice is asked again after a settings save, both ways (the fake to another endpoint, and
+# another endpoint to the fake), and the probe never follows a redirect: a loopback server answering 302 to a server
+# that answers like the fake gets no notice, and that server gets no request. The url comes from settings.json here,
+# so SYS1GREP_URL is unset.
+node -e "const fs = require('fs'), s = require('http').createServer((q, r) => { fs.appendFileSync('$tmp/like.log', q.method + ' ' + q.url + '\n'); r.end('{\"count\":0,\"asked\":0,\"qmax\":0}'); }).listen(0, '127.0.0.1', () => console.log(s.address().port))" >"$tmp/like.port" &
+like=$!
+i=0; while [ ! -s "$tmp/like.port" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "fake-like server did not start"; sleep 0.05; done
+node -e "const s = require('http').createServer((q, r) => { r.writeHead(302, { location: 'http://127.0.0.1:$(cat "$tmp/like.port")' + q.url }); r.end(); }).listen(0, '127.0.0.1', () => console.log(s.address().port))" >"$tmp/redir.port" &
+redir=$!
+i=0; while [ ! -s "$tmp/redir.port" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "redirecting server did not start"; sleep 0.05; done
+: >"$tmp/like.log"
+RD="http://127.0.0.1:$(cat "$tmp/redir.port")/v1"
+mkdir -p "$tmp/.config/sys1grep"; printf '{"url":"%s"}' "$RD" >"$HS"; chmod 600 "$HS"
+$E env -u SYS1GREP_URL node ../sys1grep.mjs --serve "$F" >"$tmp/serve10.url" 2>/dev/null &
+serve=$!
+i=0; while [ ! -s "$tmp/serve10.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (url from settings.json) did not start"; sleep 0.05; done
+U=$(cat "$tmp/serve10.url"); BASE=${U%%\?*} K=${U#*k=}
+SK="x-sys1grep-token: $K" SO="Origin: ${BASE%/}" SJ="content-type: application/json"
+seturl() { curl -s -X POST -H "$SK" -H "$SO" -H "$SJ" --data "{\"url\":\"$1\"}" "${BASE}settings" | field 'j.fake'; }
+shown() { curl -s "$U" | grep -c '<p id="fake-jev" role="note">'; }
+eq "$(shown)" "0" "--serve: a loopback url that redirects to a fake-like server gets no notice"
+eq "$(cat "$tmp/like.log")" "" "--serve: the probe does not follow the redirect"
+eq "$(seturl "$base/v1")" "true" "--serve settings: saving the fake's url answers fake: true"
+eq "$(shown)" "1" "--serve: after the settings switch to the fake, the page shows the notice"
+eq "$(seturl "$RD")" "false" "--serve settings: saving a url that is not the fake answers fake: false"
+eq "$(shown)" "0" "--serve: after the settings switch away from the fake, the notice is gone"
+eq "$(curl -s -H "$SK" "${BASE}settings" | field 'j.fake')" "false" "--serve settings: GET carries fake too"
+eq "$(cat "$tmp/like.log")" "" "--serve: no probe ever followed a redirect"
+# #255 review: [hidden] wins over every display rule (.row, .withhint): -o's control is hidden at rest
+eq "$(curl -s "$U" | grep -c '\[hidden\] { display: none !important; }')" "1" "--serve: [hidden] beats display: flex"
+kill $serve $like $redir 2>/dev/null; wait $serve $like $redir 2>/dev/null || true
+rm -f "$HS"
 section 'serve: multi-step and summarize endpoint'
 # the multi-step toggle: off, the page has no end fields and no --step-to; on, the end and --hops reach the command and
 # the search; off again, both leave (the values stay for the next time on); an example turns it on and fills it.
@@ -2059,11 +2095,11 @@ printf '%s\n' 'def main():' '  helper()' 'def helper():' '  raise X' >"$tmp/m.py
 $E PATH=$tmp/bin:$PATH SUM=$tmp/sum SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve --suggest=e:disk\ full "$tmp/m.py" >"$tmp/serve4.url" 2>/dev/null &
 serve=$!
 i=0; while [ ! -s "$tmp/serve4.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (multi-step) did not start"; sleep 0.05; done
-eq "$(HOME="$tmp" node serve-page.mjs "$(cat "$tmp/serve4.url")")" "card children: #title #f #m #sd
-form children: #sec-target #sec-cond #sec-opts #d
-sections: Target | Search conditions | Options; Details stays the fold
-search conditions: #h-cond #startgrp .row #steps #ex
-options: #h-opts .row #ask .row
+eq "$(HOME="$tmp" node serve-page.mjs "$(cat "$tmp/serve4.url")")" "card children: #title #fake-jev #f #m #sd
+form children: #search .columns #sec-cmd #d
+sections: Target | Search conditions | Options | Command; Details stays the fold
+search conditions: #h-cond #startgrp .row #steps
+options: #h-opts .row #ask
 start group: fieldset > .glabel #fields #add
 end group: fieldset > .glabel #ends #addend #hg-edges
 target: $tmp/m.py
