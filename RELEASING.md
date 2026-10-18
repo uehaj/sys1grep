@@ -1,7 +1,7 @@
 # リリース手順
 
 npm パッケージ `@uehaj/sys1grep` と GitHub のタグ・Release を同じコミットから出すための手順。
-スクリプト `scripts/release.sh` が下の 1〜6 をまとめて行う。
+スクリプト `scripts/release.sh` が下の前提を確かめ、「スクリプトがやること」の 1〜5 をまとめて行う。
 
 ```sh
 sh scripts/release.sh patch     # 0.2.1 -> 0.2.2  (バグ修正、README)
@@ -27,10 +27,11 @@ npm の 0.2.0 にはレビュー対応が入っていない）。
 ## スクリプトがやること
 
 1. `npm version <bump>` で `package.json` を書き換え、`vX.Y.Z` のコミットとタグを作る
+   （`next` なら `npm version prerelease --preid next`）
 2. `git push --follow-tags` でコミットとタグを送る
-3. `npm publish --access public`。2 要素認証はブラウザで行う（npm 11 の既定）。**対話端末から実行する**。
+3. `npm publish --access public`（プレリリースは `--tag next` を付け、`latest` を動かさない）。2 要素認証はブラウザで行う（npm 11 の既定）。**対話端末から実行する**。
    Claude Code の `!` 経由や CI では OTP を渡せないので失敗する
-4. `gh release create vX.Y.Z --generate-notes` で GitHub Release を作る。本文は前のタグ以降の PR とコミットから自動生成
+4. `gh release create vX.Y.Z --title vX.Y.Z --generate-notes` で GitHub Release を作る（プレリリースは `--prerelease` 付き）。本文は前のタグ以降の PR とコミットから自動生成
 5. 確認コマンドを表示する
 
 ## 手で確認すること

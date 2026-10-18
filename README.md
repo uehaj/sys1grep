@@ -13,15 +13,15 @@ sys1grep asks "does this line match the meaning *network failure*?", gets a prob
 and applies a threshold.
 
 ```sh
-./sys1grep -n -e "customer is angry or frustrated" tickets.txt
+sys1grep -n -e "customer is angry or frustrated" tickets.txt
 ```
 
 [![sys1grep demo: a Japanese meaning finds refund requests in six languages; "asking for a refund" vs "about a refund"; -Q finds the answer](docs/demo.svg)](https://sys1grep.js.org/)
 
-<sub>▶ Click the demo, or open <a href="https://sys1grep.js.org/">uehaj.github.io/sys1grep</a>, for the full demo on the landing page.</sub>
+<sub>▶ Click the demo, or open <a href="https://sys1grep.js.org/">sys1grep.js.org</a>, for the full demo on the landing page.</sub>
 
-- Zero dependencies. One file, Node.js 20.16+ and `fetch`.
-- Fast. 30 lines go into one request, requests run 8 at a time. A 210-line file finishes in under a second.
+- Zero dependencies. Node.js 20.16+ and `fetch`, nothing else.
+- Fast. 30 lines go into one request, requests run 8 at a time (1 for a local URL). A 210-line file finishes in under a second.
 - Meanings combine with AND / OR / NOT.
 - **Language-agnostic.** The meaning and the text can each be in any language. A Japanese meaning finds French, Russian, Chinese and Korean lines alike. No translation step, same speed, same cost.
 
@@ -33,7 +33,7 @@ so one query finds matching lines in every language the file contains.
 An **English** meaning finds **Japanese** lines. None of the hits contain "angry" or "frustrated", and two of them are in Japanese:
 
 ```sh
-$ ./sys1grep -n -e "customer is angry or frustrated" tests/corpus.txt
+$ sys1grep -n -e "customer is angry or frustrated" tests/corpus.txt
 14:ユーザー山田さんからの問い合わせ: 返金してほしい、商品が壊れていた
 16:ユーザー佐藤さんからの問い合わせ: 注文した覚えのない請求が来ています。至急確認してください
 18:I want my money back. The item arrived broken and customer service ignored me.
@@ -44,7 +44,7 @@ $ ./sys1grep -n -e "customer is angry or frustrated" tests/corpus.txt
 A **Japanese** meaning finds **English** lines, with the same confidence as the Japanese ones:
 
 ```sh
-$ ./sys1grep -n -p -e "返金の要求" tests/corpus.txt
+$ sys1grep -n -p -e "返金の要求" tests/corpus.txt
 14:ユーザー山田さんからの問い合わせ: 返金してほしい、商品が壊れていた	[0.97]
 18:I want my money back. The item arrived broken and customer service ignored me.	[0.95]
 ```
@@ -54,7 +54,7 @@ Russian, German, Spanish, Chinese and Korean. One Japanese meaning finds all six
 meaning does the same:
 
 ```sh
-$ ./sys1grep -n -p -e "顧客が返金を求めている" tests/multi.txt
+$ sys1grep -n -p -e "顧客が返金を求めている" tests/multi.txt
 1:Je veux être remboursé, le produit est arrivé cassé.	[0.98]
 3:Я требую вернуть деньги, товар не работает.	[0.97]
 5:Ich möchte mein Geld zurück, das Gerät ist defekt.	[0.97]
@@ -62,7 +62,7 @@ $ ./sys1grep -n -p -e "顧客が返金を求めている" tests/multi.txt
 9:我要求退款，商品坏了。	[0.97]
 11:환불해 주세요. 제품이 고장났어요.	[0.97]
 
-$ ./sys1grep -n -p -e "клиент требует возврат денег" tests/multi.txt
+$ sys1grep -n -p -e "клиент требует возврат денег" tests/multi.txt
 1:Je veux être remboursé, le produit est arrivé cassé.	[0.94]
 3:Я требую вернуть деньги, товар не работает.	[0.97]
 5:Ich möchte mein Geld zurück, das Gerät ist defekt.	[0.92]
@@ -84,12 +84,12 @@ Jev reads the line and the question together (a cross-encoder shape), so who did
 "asked for" versus "already done" all change the answer. An embedding of the line is fixed before it
 ever sees your query, so it can only measure topical closeness.
 
-All eight lines below are "about a refund" (the same contrast as `tests/contrast.txt`, translated to
+The first six lines below are "about a refund", and the last two are the pair the AND example further down uses (the same contrast as `tests/contrast.txt`, translated to
 English as `tests/contrast.en.txt` — see [Search across languages](#search-across-languages) above for
 the case where the meaning and the text differ in language). Only two are a customer asking for one:
 
 ```sh
-$ ./sys1grep -n -p -t 0 -e "customer is asking for a refund" tests/contrast.en.txt
+$ sys1grep -n -p -t 0 -e "customer is asking for a refund" tests/contrast.en.txt
 1:I want a refund. The item was broken.	[0.99]
 2:The refund has been processed. Please check your account.	[0.11]
 3:Our refund policy is within 30 days of purchase.	[0.09]
@@ -105,14 +105,14 @@ operations**, not a trick with set differences or "negative queries":
 
 ```sh
 # about a refund, but NOT a customer asking for one → completed, policy, denied, timelines
-$ ./sys1grep -n -e "about a refund" -v "the customer is asking for a refund" tests/contrast.en.txt
+$ sys1grep -n -e "about a refund" -v "the customer is asking for a refund" tests/contrast.en.txt
 2:The refund has been processed. Please check your account.
 3:Our refund policy is within 30 days of purchase.
 4:The manager denied the refund request yesterday
 6:Refunds are processed within 5 business days
 
 # angry AND it is the customer, not the staff
-$ ./sys1grep -n -e "someone is angry" -a "the customer, not the staff, is the one acting" tests/contrast.en.txt
+$ sys1grep -n -e "someone is angry" -a "the customer, not the staff, is the one acting" tests/contrast.en.txt
 5:I demand a full refund immediately
 8:The customer got angry and hung up the phone.
 ```
@@ -147,8 +147,8 @@ ends with `/` can still be written with a leading space to dodge the regex readi
 sends the text `" /cat/"`, not a refusal).
 
 ```sh
-$ ./sys1grep -P '/ERROR|FATAL/' app.log                               # no requests at all
-$ ./sys1grep -P '/timeout/i' -a '顧客に影響が出ている' app.log         # only lines with "timeout" go to Jev
+$ sys1grep -P '/ERROR|FATAL/' app.log                               # no requests at all
+$ sys1grep -P '/timeout/i' -a '顧客に影響が出ている' app.log         # only lines with "timeout" go to Jev
 ```
 
 A regex's named and numbered groups pass to the other meanings of the *same* AND term as
@@ -158,7 +158,7 @@ an error rather than an empty string (so is a reference to a negated regex's gro
 no group stays literal, as in ECMAScript, so `$100 以上の請求` is unaffected.
 
 ```sh
-$ ./sys1grep -P '/(?<date>\d{4}-\d\d-\d\d) (?<time>\d\d:\d\d)/' \
+$ sys1grep -P '/(?<date>\d{4}-\d\d-\d\d) (?<time>\d\d:\d\d)/' \
             -a '$<time> が深夜（0時〜5時）であり、$<date> が週末である' app.log
 #   2026-09-19 03:12 ... → asks "03:12 が深夜（0時〜5時）であり、2026-09-19 が週末である"
 ```
@@ -171,7 +171,7 @@ is never colored. `-o` prints each match on a line of its own, as `grep -o`; a l
 whole, since a meaning has no matching part.
 
 ```sh
-$ ./sys1grep -o -n -P '/[A-Z]+-\d+/' -a 'the ticket is still open' notes.txt   # the ticket ids, one per line
+$ sys1grep -o -n -P '/[A-Z]+-\d+/' -a 'the ticket is still open' notes.txt   # the ticket ids, one per line
 ```
 
 ## Sending less
@@ -237,7 +237,7 @@ sys1grep: file ./a.py: 120 lines, 120 to send
 ## Install
 
 Two ways to use it: as a command-line tool (this section), or as a Claude Code skill
-(see [Use it from Claude Code](#use-it-from-claude-code) below). The skill falls back to `npx @uehaj/sys1grep`,
+(see [Use it from Claude Code](#use-it-from-claude-code) below). The skill runs sys1grep through `npx`,
 so if you only use it through Claude Code you can skip the install here entirely and just set the API key.
 
 Requires Node.js 20.16 or later. No other dependencies.
@@ -281,6 +281,8 @@ lines) still works, below settings.json: a value in settings.json wins over the 
 directory is never read: it may belong to a repository you just cloned, and could send your key elsewhere through
 `SYS1GREP_URL`. For per-project settings, load a file yourself: `node --env-file=.env "$(command -v sys1grep)" ...`.
 `TYPESAFE_API_KEY` is accepted too when `SYS1GREP_API_KEY` is not set.
+
+The `--serve` page's **Settings** dialog edits this settings.json too (see [A search page](#a-search-page---serve)).
 
 ### Default options
 
@@ -357,7 +359,7 @@ For examples organised by job (on-call, triage, release notes, ...) and run on r
 ### Find lines by a concept, in any language
 
 ```sh
-$ ./sys1grep -n -e "customer is angry or frustrated" tests/corpus.en.txt
+$ sys1grep -n -e "customer is angry or frustrated" tests/corpus.en.txt
 14:Inquiry from user Yamada: I want a refund, the item was broken
 16:Inquiry from user Sato: I'm being charged for an order I never placed, it looks like fraud, please check urgently
 18:I want my money back. The item arrived broken and customer service ignored me.
@@ -374,8 +376,8 @@ None of these lines contain the words "angry" or "frustrated".
 so you can write the question as you would ask it:
 
 ```sh
-$ echo "The job failed." | ./sys1grep -e "Did the job succeed?"
-$ echo "The job failed." | ./sys1grep -Q "Did the job succeed?"
+$ echo "The job failed." | sys1grep -e "Did the job succeed?"
+$ echo "The job failed." | sys1grep -Q "Did the job succeed?"
 The job failed.
 ```
 
@@ -384,7 +386,7 @@ the line answers it: no, it failed (0.83). A line that *asks* the question is cl
 answers nothing, and for a yes/no question a line that *denies* it still answers it:
 
 ```sh
-$ ./sys1grep -n -Q "whether the server is down" tests/intent.txt
+$ sys1grep -n -Q "whether the server is down" tests/intent.txt
 5:The server is down.
 6:The server is healthy and responding normally.
 2 of 17 lines matched; 17 sent to Jev in 1 request, 1087 input tokens, ~$0.000046
@@ -398,7 +400,7 @@ would match it instead. `-Q X` is shorthand for `-e "the line answers: X"`, so i
 ### OR: two meanings, and see the probabilities with `-p`
 
 ```sh
-$ ./sys1grep -n -p -e "customer is asking for a refund" -e "delivery address change request" tests/corpus.en.txt
+$ sys1grep -n -p -e "customer is asking for a refund" -e "delivery address change request" tests/corpus.en.txt
 14:Inquiry from user Yamada: I want a refund, the item was broken	[0.99 0.01]
 17:Inquiry from user Takahashi: I'd like to change the delivery address	[0.01 0.99]
 18:I want my money back. The item arrived broken and customer service ignored me.	[0.96 0.01]
@@ -416,7 +418,7 @@ green at or above `-t`, red below `-T`, yellow in between. Line numbers and file
 ### AND NOT: network errors, excluding retries
 
 ```sh
-$ ./sys1grep -n -e "network or remote connection failure" -v "a retry is happening or was attempted" tests/corpus.txt
+$ sys1grep -n -e "network or remote connection failure" -v "a retry is happening or was attempted" tests/corpus.txt
 4:2026-09-19 08:02:30 ERROR connection reset by peer while calling payment-gateway
 6:2026-09-19 08:02:35 ERROR timeout after 5000ms waiting for payment-gateway
 9:2026-09-19 08:10:44 ERROR DNS lookup failed for api.example.com
@@ -424,7 +426,7 @@ $ ./sys1grep -n -e "network or remote connection failure" -v "a retry is happeni
 13:network unreachable: no route to host 10.0.0.5
 30:except ConnectionError as e:
 31:    logger.error("upstream unreachable: %s", e)
-7 of 51 lines matched; 51 sent to Jev in 2 requests, 5112 input tokens
+7 of 51 lines matched; 51 sent to Jev in 2 requests, 5112 input tokens, ~$0.000215
 ```
 
 Line 5, `retrying payment-gateway request (attempt 2/3)`, is a network failure but is dropped by `-v`.
@@ -432,7 +434,7 @@ Line 5, `retrying payment-gateway request (attempt 2/3)`, is a network failure b
 ### Mixed: (finance AND negative) OR weather
 
 ```sh
-$ ./sys1grep -n -e "about economy, finance or markets" -a "the news is negative or a decline" -e "about weather" tests/corpus.en.txt
+$ sys1grep -n -e "about economy, finance or markets" -a "the news is negative or a decline" -e "about weather" tests/corpus.en.txt
 36:Today's weather is sunny, high of 28 degrees
 43:Stock prices fell 3% after the earnings report missed expectations.
 48:Tomorrow's forecast is rain so I'll bring an umbrella
@@ -444,11 +446,11 @@ $ ./sys1grep -n -e "about economy, finance or markets" -a "the news is negative 
 ### Strictness presets
 
 ```sh
-$ ./sys1grep --level strict -n -e "a security risk or dangerous destructive operation" tests/corpus.en.txt
+$ sys1grep --level strict -n -e "a security risk or dangerous destructive operation" tests/corpus.en.txt
 33:DROP TABLE sessions;
 49:API keys must never be committed to the repository.
 
-$ ./sys1grep --level loose -n -e "a security risk or dangerous destructive operation" tests/corpus.en.txt
+$ sys1grep --level loose -n -e "a security risk or dangerous destructive operation" tests/corpus.en.txt
 11:2026-09-19 09:00:00 ERROR SSL handshake failed: certificate expired
 16:Inquiry from user Sato: I'm being charged for an order I never placed, it looks like fraud, please check urgently
 33:DROP TABLE sessions;
@@ -460,11 +462,11 @@ $ ./sys1grep --level loose -n -e "a security risk or dangerous destructive opera
 ### Recursive search and file names only
 
 ```sh
-$ ./sys1grep -r -n -e "customer is asking for a refund" tests/tickets/
+$ sys1grep -r -n -e "customer is asking for a refund" tests/tickets/
 tests/tickets/a.txt:7:Ticket #16: I want a refund, the item was broken.
 tests/tickets/sub/b.txt:1:The customer wants a refund for the broken lamp.
 
-$ ./sys1grep -rl -e "customer is asking for a refund" tests/tickets/
+$ sys1grep -rl -e "customer is asking for a refund" tests/tickets/
 tests/tickets/a.txt
 tests/tickets/sub/b.txt
 ```
@@ -474,8 +476,8 @@ tests/tickets/sub/b.txt
 that usually hold secrets (`.env*`, `.netrc`, `.npmrc`, `.pypirc`, `.pgpass`, `.git-credentials`, `*.pem`,
 `*.key`, `*.p12`, `*.pfx`, `*.jks`, `*.keystore`, `id_rsa*` and friends; names compared without case) and
 generated files (`*.map`, `*.min.js`, `*.min.css`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`,
-`Cargo.lock`, `poetry.lock`, `composer.lock`, `Gemfile.lock`, `go.sum`). **Every line that is searched is sent
-to the TypeSafe API**, so point `-r` at a directory
+`Cargo.lock`, `poetry.lock`, `composer.lock`, `Gemfile.lock`, `go.sum`), symlinks and `~/.config/sys1grep/settings.json` itself. **Every line that is searched is sent
+to the TypeSafe API** (or wherever `SYS1GREP_URL` points), so point `-r` at a directory
 you mean to scan. Inside a git repository, `-r` also skips what git ignores (`.gitignore`, `.git/info/exclude`, the
 global excludes file), so build output and local files stay home; a tracked file is searched even if it matches.
 A file named `*.gz` (a rotated log: `app.log.1.gz`) is read decompressed, as `zgrep` does, and printed by its
@@ -499,7 +501,7 @@ $ sys1grep -r -e 'Python でリトライ処理を書いている箇所' .
 sys1grep: scope: *.py *.pyi *.pyw (from "Python files: 0.94")
 sys1grep: scope: 12 of 340 files
 $ sys1grep -r -e '昨日変えた箇所で認証を扱っている' src/
-sys1grep: scope: modified since 2026-09-25 00:00 (from "what was changed yesterday: 0.91")
+sys1grep: scope: changed since 2026-09-25 00:00 (git commits; the mtime for files git does not have committed) (from "what was changed yesterday: 0.91")
 sys1grep: scope: 3 of 120 files
 ```
 
@@ -568,12 +570,25 @@ tree, not `git ls-tree`'s own literal/directory-prefix match); `--include` / `--
 **An old `<tree>` can hold a secret an ordinary file once carried and was later removed from**: the skip list
 drops files by name only, not by what changed since.
 
+### Commits instead of files (`-g`)
+
+`-g` (`--gitlog`) searches the commits of `git log` instead of files, one record each (hash, date, subject, body):
+
+```sh
+$ sys1grep -g -e 'a performance fix to the .mjs files today'
+```
+
+With one term, auto-scope becomes `git log`'s own arguments, printed on stderr: a time becomes `--since-as-filter`
+(`--since` on git before 2.37, and `--until` when the span has an end: yesterday, last week, last month), a language
+a pathspec, an author or "mine" `--author`, "this branch" or "not pushed" a range. FILE arguments are pathspecs.
+Each commit is a record, as with `-z`, so `-M` defaults to 8000. Not with `-r` or `git sys1grep`.
+
 ### Everything that is *not* something
 
 ```sh
-./sys1grep -v "a timestamped server log line" mixed.txt   # like grep -v
-./sys1grep -e "source code or SQL" -v "SQL" src.txt       # code, but not SQL
-cat app.log | ./sys1grep -e "the deploy failed or was rolled back"
+sys1grep -v "a timestamped server log line" mixed.txt   # like grep -v
+sys1grep -e "source code or SQL" -v "SQL" src.txt       # code, but not SQL
+cat app.log | sys1grep -e "the deploy failed or was rolled back"
 ```
 
 ### Records that span several lines (`-z`)
@@ -586,9 +601,9 @@ A proposition like "this commit changes user-visible behaviour" is true of a who
 line in it:
 
 ```sh
-$ git log -z --format='%h %s %b' | ./sys1grep -z -n -e "the change alters user-visible behaviour" -v "documentation only"
-7:21120e9 Revert "feat: ship the /sys1grep Claude Code skill" ...
-8:51ae333 feat: ship the /sys1grep Claude Code skill
+$ git log -z --format='%h %s %b' | sys1grep -z -n -e "the change alters user-visible behaviour" -v "documentation only"
+7:21120e9 Revert "feat: ship the /semgrep Claude Code skill" ...
+8:51ae333 feat: ship the /semgrep Claude Code skill
 ```
 
 Matching records are printed NUL-terminated too, so pipe them through `tr '\0' '\n'` to read them.
@@ -603,7 +618,7 @@ Wrapped lines are joined before splitting, so a sentence that runs over several 
 [`tests/prose.txt`](tests/prose.txt) wraps an English paragraph and a Japanese one:
 
 ```sh
-$ ./sys1grep -n --unit=sentence-by-jev -e "the author admits they made a mistake" tests/prose.txt
+$ sys1grep -n --unit=sentence-by-jev -e "the author admits they made a mistake" tests/prose.txt
 1:I should have checked the input
 2:before shipping, and that was my
 3:mistake. Next time I will add a test
@@ -622,7 +637,7 @@ inside a line: lines 3 and 9 are colored only up to the end of the matching sent
 Thai, Lao, Khmer, Myanmar and Tibetan, which do not put spaces between words:
 
 ```sh
-$ ./sys1grep -n -o --unit=sentence-by-jev -e "the author admits they made a mistake" -e "customer is asking for a refund" tests/prose.txt
+$ sys1grep -n -o --unit=sentence-by-jev -e "the author admits they made a mistake" -e "customer is asking for a refund" tests/prose.txt
 1:I should have checked the input before shipping, and that was my mistake.
 8:先週買った掃除機が初日から動かないので返金してほしいです。
 ```
@@ -659,7 +674,7 @@ In code the question is usually about a function ("retries on network failure"),
 says so. `--unit=function` judges each function and prints its lines, with `-n` giving file line numbers:
 
 ```sh
-$ ./sys1grep -n --unit=function -e "retries on network failure" src/net.js
+$ sys1grep -H -n --unit=function -e "retries on network failure" src/net.js
 src/net.js:3:async function fetchWithRetry(url) {
 src/net.js:4:  for (let i = 0; i < 5; i++) {
 src/net.js:5:    try { return await fetch(url); }
@@ -730,7 +745,7 @@ sys1grep: walk: 1 at hop 0, 1 at hop 1, 3 at hop 2, 1 at hop 3, 1 at hop 4, 1 at
   start, and each function is reached once, so a cycle ends. `--hops=N`, `--hops=M..N` and `--hops=M..` pick the
   hops an end may be at (default `0..`: a start that matches the end expression is an end at hop 0). A path that
   reaches no end is left out. stderr says how many functions each hop reached and why the walk stopped: no new
-  function, or `--hops`.
+  unit, or `--hops`.
 - **The cost.** Jev judges every function against the start expression in one batch, then the functions reached
   within `--hops` against the end expression in another. `--max-cost` asks again before the second, counting the
   first. `--dry-run` answers every question 0, so it walks from every function the start expression could hold
@@ -759,7 +774,7 @@ sys1grep: 2040 units fold to at most 31 templates; --dedup=auto would save ~68 r
 line, asking nothing extra. `--verbose` / `--dry-run` print the decision and its numbers for every value.
 
 ```sh
-$ ./sys1grep --dedup -n -e "a request failed" app.log
+$ sys1grep --dedup -n -e "a request failed" app.log
 1:worker request 3fa9c1e27b failed: connection reset
 2:worker request 88d0e41a5c failed: connection reset
 4:worker request 0b7f2a9e13 failed: connection reset
@@ -854,7 +869,7 @@ which is Jev's). `OLLAMA_HOST` moves ollama's host, as it does for the `ollama` 
 
 ### A search page (`--serve`)
 
-`--rank --format=html` answers one question per run. `--serve` opens the same page with a search box, so you can rephrase
+`--rank --format=html` answers one question per run. `--serve` opens such a page (the `search` template, unless `--template` is given) with a search box, so you can rephrase
 and narrow without rerunning the command:
 
 ```
@@ -863,7 +878,7 @@ http://127.0.0.1:51234/?k=3f9e...
 $ sys1grep --serve=8080 -y --level=strict -r src/     # a fixed port; the options given here are the page's first values
 ```
 
-From a clone, `npm run serve -- -r src/` is the same (`--` keeps npm from reading the options; `npm run serve -- --serve=8080 -r src/` fixes the port). With no target, `--serve` searches its own bundled sample corpus (`examples/`, #237) instead of reading an empty stdin, so every example button has something to find; name a target to search that instead.
+From a clone, `npm run serve -- -r src/` is the same (`--` keeps npm from reading the options; `npm run serve -- --serve=8080 -r src/` fixes the port). With no target, `--serve` searches its own bundled sample corpus (`examples/`, #237) instead of reading an empty stdin, so every example button has something to find; name a target to search that instead. A folder named without `-r` is refused at launch, with the command that adds it (`--serve: src is a directory: add -r to search it (sys1grep --serve -r src)`, #222).
 
 The printed URL carries a token made fresh at launch (`?k=...`). Every route needs it, the page itself included: without
 it (in the query, or in a header for the page's own requests) the server answers 404 to everything, so another local
@@ -875,7 +890,7 @@ with `git sys1grep`, or, with neither, the bundled sample corpus (`demo corpus (
 `-g` (in Details) is on, it says git log's commits instead. It is shown only: the page cannot
 change it, and a target in a request is ignored. **Search conditions**
 holds the meaning fields, multi-step and the examples, **Options** the Search button, `rank`, `summarize` and the command
-line, and **Details** the other options; the results come below them. What they hold: the meaning fields (`+` adds one; each takes `-e`, `-a`, `-v` or `-Q`), `rank`, `summarize`, a **multi-step**
+line, and **Details** the other options; the results come below them. What they hold: the meaning fields (`+` adds one; each takes `-e`, `-P`, `-a`, `-v` or `-Q`), `rank`, `summarize`, a **multi-step**
 switch (on, it shows the end fields, `--step-to` and one or more meanings, and the edges, `--hops` and a reverse switch that makes it `--step-reverse-to`; off, they
 leave the command and the search and keep their values), example buttons (searches from this README and
 [docs/use-cases.md](docs/use-cases.md), then multi-step walks; one fills the fields and the controls it needs, puts the rest back to their launch values, and waits for Search; `EN` / `日本語` beside the label switches their labels and
@@ -900,7 +915,7 @@ API settings and `--summarize`'s TOOL are fixed at launch: the page can narrow w
 once (`--serve` has no `/dev/tty` to ask `-y`'s question on, or launch with `-y` to let it through unasked); the error
 carries the same estimate `--dry-run` would show, and a button next to it reruns that one search, once, with
 `--max-cost` just above the estimate (not a change to the Details field).
-The meanings come from the page, so `-e -a -v -Q --step-to` and `-l -c -q -o -z -i --format --color --dry-run` are refused at launch.
+The meanings come from the page, so `-e -P -a -v -Q --step-to --step-reverse-to` and `-l -c -q -o -z --unit=zero -H -i --format --color --dry-run --verbose` are refused at launch.
 
 **Settings** edits `~/.config/sys1grep/settings.json` (see [Install](#install)): `url`, `model`, the key, `opts` (one argument
 per line) and the summarizer's three. Save writes the file, and the next search uses it, as does every later `sys1grep`
@@ -1069,8 +1084,8 @@ claude plugin marketplace add uehaj/uehaj-marketplace
 claude plugin install uehaj@uehaj-marketplace
 ```
 
-No separate install of the command-line tool is needed: the skill uses `sys1grep` from your PATH if present,
-otherwise `npx @uehaj/sys1grep`. Only the API key has to be set (see [Install](#install)).
+No separate install of the command-line tool is needed: the skill runs a version it pins,
+through `npx -y @uehaj/sys1grep@VERSION`, not the `sys1grep` on your PATH. Only the API key has to be set (see [Install](#install)).
 
 Then, inside Claude Code:
 
@@ -1086,14 +1101,15 @@ Claude Code installs plugins, not single skills. If you want just this one skill
 npx skills add uehaj/uehaj-marketplace --skill sys1grep -a claude-code -g
 ```
 
-The skill writes the meaning in English, picks `-e` / `-a` / `-v` for AND / OR / NOT, adds `-n`, narrows large
+The skill writes the meaning in English, picks `-e` / `-a` / `-v` for OR / AND / NOT, adds `-n`, narrows large
 directories to files worth paying for, and re-runs with `--level loose` or `strict` when the first result looks off.
-The API key and endpoint are read the same way as on the command line (`SYS1GREP_API_KEY`, `~/.config/sys1grep/.env`).
+The API key and endpoint are read the same way as on the command line (`SYS1GREP_API_KEY`, `~/.config/sys1grep/settings.json`, `~/.config/sys1grep/.env`).
 
 ## Usage
 
 ```
 usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION|-P /RE/FLAGS [-a MEANING] [-v MEANING]... [FILE...]
+       sys1grep [OPTION]... -e START1 [-e START2]... --step-to END1 [-e END2]... [FILE...]
 
   -e MEANING   lines matching this meaning (several -e are OR'd); MEANING is always sent to Jev, never
                read as a regex — a /RE/flags-shaped value is refused, with a hint naming -P. A meaning
@@ -1102,10 +1118,10 @@ usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION|-P /RE/FLAGS [-a MEANING] [-v
                onto it, same as after -e; -P '!/RE/' is not allowed, negate with -v '/RE/'
   -Q, --question QUESTION  lines that answer QUESTION, not lines asking it; the same as
                -e "the line answers: QUESTION" (see "Lines that answer a question" above)
-  -a MEANING   AND onto the preceding -e/-Q term.      -e A -a B -e C  =  (A and B) or C
-  -v MEANING   AND NOT onto the preceding -e/-Q term.  -e A -v B       =  A and not B
+  -a MEANING   AND onto the preceding -e/-Q/-P term.      -e A -a B -e C  =  (A and B) or C
+  -v MEANING   AND NOT onto the preceding -e/-Q/-P term.  -e A -v B       =  A and not B
                At the front it is a bare negation.  -v B            =  not B  (like grep -v)
-  !MEANING     a leading ! negates just that meaning, in -e / -Q / -a / -v alike
+  !MEANING     a leading ! negates just that meaning, in -e / -Q / -a / -v alike (not -P)
                -e A -e '!B'  =  A or not B.   -a '!C' is the same as -v C
   --level=LEVEL strictness preset, sets both thresholds (default normal)
                  loose  : -t 0.3 -T 0.7  catch more, accept some noise
@@ -1126,6 +1142,8 @@ usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION|-P /RE/FLAGS [-a MEANING] [-v
                or date-time, today, this-week or this-month
   --no-auto-scope  do not narrow those files by what a meaning says about them (see Scope from the meaning);
                --auto-scope turns it back on
+  -g, --gitlog search git log's commits, one record each, instead of files; FILE arguments are pathspecs
+               (see "Scope from the meaning"). Not with -r or git sys1grep
   -l           print only the names of files with a match, not the lines
   -H, --with-filename  prefix file names even for a single file; --no-filename never prefixes them
   -A NUM       print NUM lines of trailing context after each match (context lines use - as separator)
@@ -1149,14 +1167,15 @@ usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION|-P /RE/FLAGS [-a MEANING] [-v
   --step-reverse-to EXPRESSION  --step-to walking the edges backwards, callee to caller
   --edges=FILE walk the edges in FILE instead of the calls
   --hops=N|M..N|M..  the hops an end may be at (default 0..)
-  -o           with --unit=sentence-by-*, print only the matching sentences
+  -o           print only each regex match, one per line, as grep -o (a line only meanings matched prints
+               whole); with --unit=sentence-by-*, only the matching sentences
   -p           print each meaning's probability at the end of the line
   --dry-run    send nothing; print the settings the search would run with (and their source, when not the
                command line), each file searched and each request with its questions
   --verbose    print the same to stderr while searching
   -i, --interactive  show what --dry-run would send, and search only after y on the terminal
   -M NUM, --max-columns=NUM  send at most the first NUM characters of a line (or record, with -z); still
-               searched and judged, just not past that cutoff (default 2000, 8000 with -z)
+               searched and judged, just not past that cutoff (default 2000, 8000 with -z or --unit=function)
   --max-filesize=SIZE  size every target first (K/M/G, default 10M); over it, skip it outright, like rg's own
                --max-filesize (-y does not affect it). stdin is sized once read, and skipped the same way if
                it is over; a --cached / <tree>: target is a blob, sized from its content; -g's commits stay
@@ -1164,6 +1183,7 @@ usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION|-P /RE/FLAGS [-a MEANING] [-v
   --max-cost=USD  price the input about to be sent; over it (default 1), ask to continue on the terminal; -y
                answers yes without asking; no terminal and the limit exceeded is exit 2, unchanged by -q
                (scripts pass -y); -i already asks unconditionally and earlier, so this does not ask again
+  -y, --yes    answer that question yes without asking
   --dedup[=auto|always|never]  judge one line per template and reuse its answer for the rest (default never,
                for now; see "One line per template" above)
   --cache[=on|off|only]  answer a request sent before from ~/.config/sys1grep/cache, free; only: never send,
@@ -1172,9 +1192,15 @@ usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION|-P /RE/FLAGS [-a MEANING] [-v
                --cache=clear (alone) empties it
   --rank[=jev|match]  print the results (a match with its context) best first, under numbered headers; jev
                (bare --rank) asks Jev of each result, match sorts by its best match probability (see "Best first"); --no-rank: file order
-  --serve[=PORT]  serve a search page on 127.0.0.1 instead of searching (see "A search page (`--serve`)")
+  --summarize[=TOOL]  pipe what would print to TOOL (claude by default, or SYS1GREP_SUMMARIZER) and print its
+               summary instead; --summarize=ask prints the lines, then asks on the terminal; --no-summarize
+               turns it off (see "A summary instead of the lines")
+  --summarize-prompt=TEXT  your own instruction, added after the fixed one; needs --summarize
+  --format=FORMAT  plain (default) / markdown / html: --rank's output, or asked of --summarize's TOOL
+  --serve[=PORT]  serve a search page on 127.0.0.1 instead of searching; --suggest=Q:TEXT / e:TEXT adds
+               suggested-question buttons (see "A search page (`--serve`)")
   --template=NAME  the document --rank or --summarize --format=html writes: ~/.config/sys1grep/templates/NAME.html, else the
-               bundled one (default, print, terminal), or a file; default SYS1GREP_TEMPLATE, else default.
+               bundled one (default, print, search, terminal), or a file; default SYS1GREP_TEMPLATE, else default.
                --template=list prints the names (see "HTML templates")
   --install-templates  copy the bundled templates to ~/.config/sys1grep/templates, keeping existing files
   --color[=WHEN] auto (default: color when stdout is a terminal) / always / never; bare --color means auto
@@ -1183,7 +1209,7 @@ usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION|-P /RE/FLAGS [-a MEANING] [-v
                yellow in between. NO_COLOR is honored
   --sys1-model=ID, --sys1-url=URL, --sys1-api-key=KEY
                the API settings, overriding SYS1GREP_MODEL, SYS1GREP_URL, SYS1GREP_API_KEY
-  -h, --help   this help (Japanese when LANG / LC_ALL / LC_MESSAGES starts with ja)
+  -h, --help   this help (Japanese when the first set of LC_ALL / LC_MESSAGES / LANG starts with ja)
   -V, --version  print the version and exit
 ```
 
@@ -1192,7 +1218,7 @@ Exit codes follow grep: 0 matched, 1 no match, 2 error (bad arguments, unreadabl
 Exit 1 after lines were sent prints one line on stderr: the highest probability, its line, the option that
 loosens the threshold (unless even that would not match), and `-p -t 0` (`-T 1` too with a negation) to see every
 probability (`sys1grep: no line reached 0.5 for "…"; the highest was 0.42 (app.log:118). ...`).
-Not with `-q`, `--summarize` or `--step-to`, nor when only a negated meaning kept lines out.
+Not with `-q`, `--summarize` (except `--summarize=ask`), `--step-to` or `--step-reverse-to`, nor when only a negated meaning kept lines out.
 
 ### Expression grammar
 
@@ -1215,7 +1241,7 @@ a leading `!` on a `-P` value is refused instead — negate a regex term with `-
 1. Non-blank lines are cut into chunks of 30 lines (with a character cap, and at most 64 questions a request).
 2. Each chunk goes into `state` as an object `{"L000": "line 1", "L001": "line 2", ...}`,
    and one `noul` (yes/no probability) question per line × meaning goes into the same request.
-3. Up to 8 requests run concurrently. Output is printed in file order.
+3. Up to 8 requests run concurrently (`-j`; 1 for a local URL). Output is printed in file order.
 4. Per line, each meaning's probability is thresholded to a boolean and the AND / OR / NOT expression is evaluated.
 
 Lines sent together are each other's context: Jev judges a line against what the rest of the chunk shows
@@ -1240,19 +1266,24 @@ the runner evaluates the boolean expression on those verdicts and compares with 
 reporting precision and recall. It also sweeps `-t` × `-T` in 0.05 steps and reports the best pair.
 
 ```sh
-node --no-warnings tests/judge.mts [--model sonnet] [--rejudge]
+npm run judge [-- --model sonnet] [--rejudge]     # runs tests/judge.mts; .mts needs Node 23.6+
 ```
 
 Judge verdicts are cached in `tests/verdicts.json`; later runs do not call the judge.
 The result is written to `tests/report.md`. Latest: precision 0.94, recall 0.98.
 
+The judge is one of several test entry points. `npm run test:offline` checks sys1grep itself against a fake Jev
+(`tests/fake-jev.mjs`): no key, no network, the same result every run (`OFFLINE_ONLY=PATTERN` runs only the matching
+sections). `npm test` adds `tests/check.sh` against real Jev. [CLAUDE.md](CLAUDE.md) lists every entry point with what it
+checks and what it needs.
+
 ## Limits
 
-- Every searched line is sent to api.typesafe.ai. Do not run it over files you would not upload there.
+- Every searched line is sent to api.typesafe.ai (or wherever `SYS1GREP_URL` points). Do not run it over files you would not upload there.
 - Blank lines are not sent; they count as probability 0 for every meaning, so `-v X` prints them and `-e X` never does.
-- Lines are truncated to 2,000 characters before sending.
+- Lines are truncated to 2,000 characters before sending (8,000 with `-z` or `--unit=function`; `-M` sets it).
 - The maximum number of questions per request is undocumented; 420 worked. sys1grep itself sends at most 64 a request (Clef's cap); only a single unit asked more than 64 meanings goes out whole.
-- 429 / 529 are retried up to 6 times with exponential backoff.
+- 429, 529 and other 5xx answers, connection errors and timeouts are retried up to 6 times with exponential backoff.
 - Accuracy is best in English. Japanese works but is noisier.
 
 ## FAQ

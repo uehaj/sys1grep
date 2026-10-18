@@ -6,8 +6,8 @@ description: Check sys1grep --serve in a real browser (Chromium, via playwright-
 ## Why this exists
 
 `tests/serve-page.mjs` runs the page's script against a fake DOM built from its own tags. It checks logic, not
-what a browser draws: no real layout, no CSS, no real width, no real dialog. #214 (tooltip clipping), #222/#224/#237
-(examples that never matched) were all found by looking at the page, not by a test. This skill is that look, made
+what a browser draws: no real layout, no CSS, no real width, no real dialog. #214 (tooltip clipping), #222 (a folder target that
+failed every search) and #224/#237 (examples that never matched) were all found by looking at the page, not by a test. This skill is that look, made
 repeatable.
 
 It does not replace `tests/offline.sh` or `tests/serve-page.mjs`. They check logic fast and for free; this skill
@@ -30,14 +30,14 @@ node .claude/skills/serve-check/fixture.mjs workdir/serve-check   # writes workd
 H=$(mktemp -d); echo "$H" > workdir/serve-check/home.path         # a scratch HOME for the --serve process (#206)
 
 # every key variable is unset, as in tests/offline.sh: sys1grep falls back to TYPESAFE_API_KEY and the others
-env -u SYS1GREP_API_KEY -u SEMGREP_API_KEY -u TYPESAFE_API_KEY -u SYS1GREP_SUMMARIZER_API_KEY -u SEMGREP_SUMMARIZER_API_KEY -u SYS1GREP_MODEL -u SEMGREP_MODEL -u SEMGREP_URL -u SEMGREP_SUMMARIZER -u SEMGREP_SUMMARIZER_MODEL -u SYS1GREP_TEMPLATE -u OLLAMA_HOST HOME="$H" nohup node tests/fake-jev.mjs > workdir/serve-check/fake.port 2> workdir/serve-check/fake.log &
+env -u SYS1GREP_API_KEY -u SEMGREP_API_KEY -u TYPESAFE_API_KEY -u SYS1GREP_SUMMARIZER_API_KEY -u SEMGREP_SUMMARIZER_API_KEY -u SYS1GREP_MODEL -u SEMGREP_MODEL -u SEMGREP_URL -u SEMGREP_SUMMARIZER -u SEMGREP_SUMMARIZER_MODEL -u SYS1GREP_TEMPLATE -u SYS1GREP_CACHE -u OLLAMA_HOST HOME="$H" SYS1GREP_OPTS= nohup node tests/fake-jev.mjs > workdir/serve-check/fake.port 2> workdir/serve-check/fake.log &
 echo $! > workdir/serve-check/fake.pid
 # next call: confirm it's alive before using it
 #   ps -p $(cat workdir/serve-check/fake.pid); cat workdir/serve-check/fake.port
 base="http://127.0.0.1:$(cat workdir/serve-check/fake.port)"
 
 H=$(cat workdir/serve-check/home.path)
-env -u SYS1GREP_API_KEY -u SEMGREP_API_KEY -u TYPESAFE_API_KEY -u SYS1GREP_SUMMARIZER_API_KEY -u SEMGREP_SUMMARIZER_API_KEY -u SYS1GREP_MODEL -u SEMGREP_MODEL -u SEMGREP_URL -u SEMGREP_SUMMARIZER -u SEMGREP_SUMMARIZER_MODEL -u SYS1GREP_TEMPLATE -u OLLAMA_HOST HOME="$H" SYS1GREP_URL=$base/v1 SYS1GREP_SUMMARIZER=$base/v1 SYS1GREP_SUMMARIZER_MODEL=fake \
+env -u SYS1GREP_API_KEY -u SEMGREP_API_KEY -u TYPESAFE_API_KEY -u SYS1GREP_SUMMARIZER_API_KEY -u SEMGREP_SUMMARIZER_API_KEY -u SYS1GREP_MODEL -u SEMGREP_MODEL -u SEMGREP_URL -u SEMGREP_SUMMARIZER -u SEMGREP_SUMMARIZER_MODEL -u SYS1GREP_TEMPLATE -u SYS1GREP_CACHE -u OLLAMA_HOST HOME="$H" SYS1GREP_OPTS= SYS1GREP_URL=$base/v1 SYS1GREP_SUMMARIZER=$base/v1 SYS1GREP_SUMMARIZER_MODEL=fake \
   nohup node sys1grep.mjs --serve -r workdir/serve-check/target > workdir/serve-check/serve.url 2> workdir/serve-check/serve.log &
 echo $! > workdir/serve-check/serve.pid
 # next call: ps -p $(cat workdir/serve-check/serve.pid); cat workdir/serve-check/serve.url
@@ -78,8 +78,8 @@ repository dependency.
 
 Run `playwright-cli` itself with the **real** `HOME`, in a separate command from the one that started `--serve`
 (step 1 gave only the fake and `--serve` a scratch `HOME`). The browser never writes `~/.config/sys1grep/settings.json`;
-only `--serve`'s own process does, which is why #206's guard is on the server (and on `tests/serve-page.mjs`), not on
-Chromium. A real `HOME` also means Playwright finds its already-downloaded browser (`~/Library/Caches/ms-playwright`
+only `--serve`'s own process does, which is why #206's guard is the scratch `HOME` the server gets (and `tests/home-guard.mjs`, which
+`tests/serve-page.mjs` uses), not anything on Chromium. A real `HOME` also means Playwright finds its already-downloaded browser (`~/Library/Caches/ms-playwright`
 on macOS); a scratch one would need `PLAYWRIGHT_BROWSERS_PATH` pointed at the real cache, or `open` fails outright.
 
 ```sh
