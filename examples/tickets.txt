@@ -1,0 +1,9 @@
+Ticket #4821 (support, EN): I want my money back. The item arrived broken and nobody answered my emails.
+Ticket #4822 (support, EN): Could you change the delivery address for order #910? I moved last week.
+Ticket #4823 (support, EN): This is infuriating. Three days with no reply and my account is still locked.
+Ticket #4824 (support, EN): Thanks so much, the replacement part fixed it and the team was lovely.
+Ticket #4825 (support, EN): The app crashed once but it worked fine the second time, no need for a refund.
+チケット #4826（サポート, JA）: 注文した覚えのない請求が来ています。至急確認してください。本当に困っています。
+チケット #4827（サポート, JA）: 配送先の住所を変更したいです。来週には新しい住所に届けてほしいです。
+チケット #4828（サポート, JA）: 対応いただきありがとうございました。問題は解決しました。
+チケット #4829（サポート, JA）: サポートに何度連絡しても返事がなく、とても腹が立っています。

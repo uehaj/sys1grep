@@ -1,7 +1,7 @@
 {
   "name": "@uehaj/sys1grep",
-  "version": "0.5.0-next.1",
-  "description": "grep by meaning, across languages. TypeSafe Jev scores every line against a meaning; combine meanings with AND/OR/NOT.",
+  "version": "0.5.0-next.2",
+  "description": "grep by meaning, across languages. TypeSafe Jev scores each line (or record, sentence, function) against a meaning; combine meanings and regexes with AND/OR/NOT. Includes git sys1grep and a local search page (--serve).",
   "keywords": [
     "grep",
     "semantic",
@@ -9,7 +9,10 @@
     "typesafe",
     "jev",
     "cli",
-    "japanese"
+    "japanese",
+    "git",
+    "regex",
+    "llm"
   ],
   "license": "MIT",
   "author": "Junji UEHARA",
@@ -24,7 +27,15 @@
   },
   "files": [
     "sys1grep.mjs",
+    "serve.mjs",
+    "settings.mjs",
+    "options.mjs",
     "git-sys1grep.mjs",
+    "examples/app.js",
+    "examples/app.py",
+    "examples/logs.txt",
+    "examples/prose.txt",
+    "examples/tickets.txt",
     "README.md",
     "README.ja.md",
     "docs/color.svg",
@@ -44,7 +55,10 @@
     "judge": "node --no-warnings --env-file-if-exists=.env tests/judge.mts",
     "scope-eval": "node tests/scope-eval.mjs",
     "dedup-eval": "node tests/dedup-eval.mjs",
+    "cause-eval": "node tests/cause-eval.mjs",
     "skill-eval": "bash tests/skill-eval/run.sh",
-    "release": "sh scripts/release.sh"
+    "serve": "node sys1grep.mjs --serve",
+    "release": "sh scripts/release.sh",
+    "smoke": "node --no-warnings tests/smoke.mts"
   }
 }

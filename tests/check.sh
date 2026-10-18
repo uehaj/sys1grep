@@ -10,7 +10,7 @@ J="node --env-file-if-exists=../.env ../sys1grep.mjs"
 SYS1GREP_OPTS='--level bogus' $J -e x </dev/null 2>&1 | grep -qx 'sys1grep: --level must be one of loose, normal, strict'
 SYS1GREP_OPTS='--level bogus' $J --level strict -e x </dev/null 2>/dev/null || [ $? = 1 ]   # the command line wins
 SYS1GREP_OPTS='-n' $J --no-n -e x </dev/null 2>/dev/null || [ $? = 1 ]                     # --no-X clears a default
-for bad in '-e refund' 'file.txt' '--' '--nope'; do
+for bad in '-e refund' '-P /x/' 'file.txt' '--' '--nope'; do
   SYS1GREP_OPTS="$bad" $J -e x </dev/null 2>&1 | grep -q '^sys1grep: SYS1GREP_OPTS: '
 done
 
@@ -134,42 +134,46 @@ node ../scripts/dedup-measure.mjs "$T/ids" | tail -1 | grep -q " | 4 | 2 | "   #
 # with --sentence the unit is a sentence, and sentences fold like lines
 printf 'The job 3fa9c1e27b failed. The job 88d0e41a5c failed.\n' > "$T/sent"
 [ "$(sent --unit=sentence-by-rule -e "'a job failed'" "$T/sent")" = "1 sent to Jev (1 folded" ]
-# -e '/regex/': matched locally, no Jev involved. NOKEY proves it: no key, no .env, still runs.
+# -P '/regex/': matched locally, no Jev involved. NOKEY proves it: no key, no .env, still runs.
 # $NJ skips $J's --env-file (a ../.env would bring the key back), SYS1GREP_OPTS= drops the user's defaults.
 NOKEY="env -u TYPESAFE_API_KEY -u SYS1GREP_API_KEY -u SEMGREP_API_KEY -u SYS1GREP_URL -u SEMGREP_URL SYS1GREP_OPTS= HOME=/nonexistent-sys1grep-test-home"
 NJ="node ../sys1grep.mjs"
-[ "$($NOKEY $NJ -n -e '/ERROR|FATAL/' fixture.txt 2>/dev/null | cut -d: -f1 | tr '\n' ' ')" = "4 6 13 28 " ]
-[ -z "$(printf 'TIMEOUT here\nfine\n' | $NOKEY $NJ -e '/timeout/' 2>/dev/null)" ]           # without -i, case matters
-[ "$(printf 'TIMEOUT here\nfine\n' | $NOKEY $NJ -e '/timeout/i' 2>/dev/null)" = "TIMEOUT here" ]  # flags
+[ "$($NOKEY $NJ -n -P '/ERROR|FATAL/' fixture.txt 2>/dev/null | cut -d: -f1 | tr '\n' ' ')" = "4 6 13 28 " ]
+[ -z "$(printf 'TIMEOUT here\nfine\n' | $NOKEY $NJ -P '/timeout/' 2>/dev/null)" ]           # without -i, case matters
+[ "$(printf 'TIMEOUT here\nfine\n' | $NOKEY $NJ -P '/timeout/i' 2>/dev/null)" = "TIMEOUT here" ]  # flags
 [ "$($NOKEY $NJ -n -v '/ERROR/' fixture.txt 2>/dev/null | cut -d: -f1 | tr '\n' ' ')" = "1 2 3 5 7 8 9 10 11 12 14 15 16 17 18 19 20 21 22 23 24 25 26 27 29 30 " ]
-[ "$($NOKEY $NJ -n -e '!/ERROR/' fixture.txt 2>/dev/null | cut -d: -f1 | tr '\n' ' ')" = "1 2 3 5 7 8 9 10 11 12 14 15 16 17 18 19 20 21 22 23 24 25 26 27 29 30 " ]
-[ "$($NOKEY $NJ -n -e '/ERROR/' -e '/lookup/' fixture.txt 2>/dev/null | cut -d: -f1 | tr '\n' ' ')" = "4 6 13 14 28 " ]  # OR
-[ "$($NOKEY $NJ -n -e '/ERROR/' -a '/timeout/' fixture.txt 2>/dev/null | cut -d: -f1 | tr '\n' ' ')" = "6 " ]           # AND
-[ "$($NOKEY $NJ -n -e '/ERROR/' -v '/timeout/' fixture.txt 2>/dev/null | cut -d: -f1 | tr '\n' ' ')" = "4 13 28 " ]     # AND NOT
+# #238: -e never accepts a regex any more, bang-negated or not; -P itself refuses a leading !
+if $NOKEY $NJ -e '!/ERROR/' fixture.txt >/dev/null 2>&1; then exit 1; elif [ $? -ne 2 ]; then exit 1; fi
+if $NOKEY $NJ -P '!/ERROR/' fixture.txt >/dev/null 2>&1; then exit 1; elif [ $? -ne 2 ]; then exit 1; fi
+[ "$($NOKEY $NJ -n -P '/ERROR/' -P '/lookup/' fixture.txt 2>/dev/null | cut -d: -f1 | tr '\n' ' ')" = "4 6 13 14 28 " ]  # OR
+[ "$($NOKEY $NJ -n -P '/ERROR/' -a '/timeout/' fixture.txt 2>/dev/null | cut -d: -f1 | tr '\n' ' ')" = "6 " ]           # AND
+[ "$($NOKEY $NJ -n -P '/ERROR/' -v '/timeout/' fixture.txt 2>/dev/null | cut -d: -f1 | tr '\n' ' ')" = "4 13 28 " ]     # AND NOT
 # a regex with no closing / is still a meaning: with no key this errors on "SYS1GREP_API_KEY is not set", a real regex term wouldn't
-$NOKEY $NJ -e '/etc 以下のファイルを変更している' fixture.txt 2>&1 >/dev/null | grep -qx 'sys1grep: SYS1GREP_API_KEY is not set. Export it or put it in ~/.config/sys1grep/.env'
+$NOKEY $NJ -e '/etc 以下のファイルを変更している' fixture.txt 2>&1 >/dev/null | grep -qx 'sys1grep: SYS1GREP_API_KEY is not set. Export it or put it in ~/.config/sys1grep/settings.json as "key"'
+# -e itself refuses a /RE/FLAGS value, naming -P
+$NOKEY $NJ -e '/catch/' fixture.txt 2>&1 >/dev/null | grep -qx "sys1grep: -e '/catch/' is no longer a regex: use -P '/catch/'; for the text itself, add a leading space"
 # an invalid pattern exits 2, one line, like grep
-if $NOKEY $NJ -e '/(/' fixture.txt >/dev/null 2>&1; then exit 1; elif [ $? -ne 2 ]; then exit 1; fi
-[ "$($NOKEY $NJ -e '/(/' fixture.txt 2>&1 | wc -l | tr -d ' ')" = "1" ]
+if $NOKEY $NJ -P '/(/' fixture.txt >/dev/null 2>&1; then exit 1; elif [ $? -ne 2 ]; then exit 1; fi
+[ "$($NOKEY $NJ -P '/(/' fixture.txt 2>&1 | wc -l | tr -d ' ')" = "1" ]
 # $<name> naming no group, and naming a negated regex's group, are errors -- caught before any request
-if $NOKEY $NJ -e '/(?<t>\d+)/' -a '$<nope>' fixture.txt >/dev/null 2>&1; then exit 1; elif [ $? -ne 2 ]; then exit 1; fi
+if $NOKEY $NJ -P '/(?<t>\d+)/' -a '$<nope>' fixture.txt >/dev/null 2>&1; then exit 1; elif [ $? -ne 2 ]; then exit 1; fi
 if $NOKEY $NJ -e A -v '/(?<t>\d+)/' -a '$<t>' fixture.txt >/dev/null 2>&1; then exit 1; elif [ $? -ne 2 ]; then exit 1; fi
 # so is $1 when only a negated regex has a group 1
-if $NOKEY $NJ -e '!/(x)/' -a '$1 is valid' fixture.txt >/dev/null 2>&1; then exit 1; elif [ $? -ne 2 ]; then exit 1; fi
+if $NOKEY $NJ -v '/(x)/' -a '$1 is valid' fixture.txt >/dev/null 2>&1; then exit 1; elif [ $? -ne 2 ]; then exit 1; fi
 # -p over a term whose regex failed: its meaning is 0.00, not a crash (it read the failed match's captures).
 # Nothing is sent: the only line fails /A/. SYS1GREP_URL only gets past the missing-key check.
-[ "$(printf 'B\n' | $NOKEY SYS1GREP_URL=http://127.0.0.1:1 $NJ -p -e '/A/' -a 'a meaning' -e '/B/' 2>/dev/null)" = "$(printf 'B\t[0.00 0.00 1.00]')" ]
+[ "$(printf 'B\n' | $NOKEY SYS1GREP_URL=http://127.0.0.1:1 $NJ -p -P '/A/' -a 'a meaning' -P '/B/' 2>/dev/null)" = "$(printf 'B\t[0.00 0.00 1.00]')" ]
 # --unit=sentence-by-rule (no extra Jev calls) and -z apply regex terms per unit
-[ "$($NOKEY $NJ -n --unit=sentence-by-rule -e '/mistake/i' prose.txt 2>/dev/null | cut -d: -f1 | tr '\n' ' ')" = "1 2 3 " ]
-[ "$(printf 'usage 95%%\0usage 10%%\0' | $NOKEY $NJ -z -c -e '/usage 9\d%/' 2>/dev/null)" = "1" ]
+[ "$($NOKEY $NJ -n --unit=sentence-by-rule -P '/mistake/i' prose.txt 2>/dev/null | cut -d: -f1 | tr '\n' ' ')" = "1 2 3 " ]
+[ "$(printf 'usage 95%%\0usage 10%%\0' | $NOKEY $NJ -z -c -P '/usage 9\d%/' 2>/dev/null)" = "1" ]
 # -p shows 1.00 / 0.00 for a regex term, no request needed
-[ "$($NOKEY $NJ -p -e '/ERROR/' fixture.txt 2>/dev/null | grep -c '\[1.00\]')" = "4" ]
+[ "$($NOKEY $NJ -p -P '/ERROR/' fixture.txt 2>/dev/null | grep -c '\[1.00\]')" = "4" ]
 [ "$(printf 'plain\n' | $NOKEY $NJ -p -v '/ERROR/' 2>/dev/null)" = "$(printf 'plain\t[0.00]')" ]
 
 # Nothing is sent where no term can hold: SYS1GREP_URL points at a closed port, so any request would fail with exit 2.
 DEAD="$NOKEY SYS1GREP_URL=http://127.0.0.1:1 $NJ"
-[ "$(printf 'plain line\n' | $DEAD -c -e '/re/' -a 'anything' 2>/dev/null || echo "exit $?")" = "$(printf '0\nexit 1')" ]  # 1: no match, 2 would be a failed request
-[ "$(printf 'has re in it\n' | $DEAD -c -e '/re/' 2>/dev/null)" = "1" ]
+[ "$(printf 'plain line\n' | $DEAD -c -P '/re/' -a 'anything' 2>/dev/null || echo "exit $?")" = "$(printf '0\nexit 1')" ]  # 1: no match, 2 would be a failed request
+[ "$(printf 'has re in it\n' | $DEAD -c -P '/re/' 2>/dev/null)" = "1" ]
 
 # Captures, offline: the expansion function itself ($<name>, $$, $&, $n with two digits or one, $9 with no group).
 node --input-type=module -e "
@@ -186,15 +190,15 @@ eq('\$100 以上の請求', '03:12' + '00 以上の請求');
 
 # With the API: the stderr summary (printed only to a terminal, hence script(1)) counts the units sent.
 sent() { onpty "$J $* 2>&1 >/dev/null" | grep -o '[0-9]* sent to Jev'; }
-[ "$(sent -e "'/ERROR/'" -a "'a network or remote connection failure'" fixture.txt)" = "4 sent to Jev" ]   # only the 4 ERROR lines
-[ "$(sent -e "'/ERROR/'" -a "'a network or remote connection failure'" -e "'customer is asking for a refund'" fixture.txt)" = "30 sent to Jev" ]  # the second term has no regex
+[ "$(sent -P "'/ERROR/'" -a "'a network or remote connection failure'" fixture.txt)" = "4 sent to Jev" ]   # only the 4 ERROR lines
+[ "$(sent -P "'/ERROR/'" -a "'a network or remote connection failure'" -e "'customer is asking for a refund'" fixture.txt)" = "30 sent to Jev" ]  # the second term has no regex
 # a line without the regex is asked only the other term: A is true of both lines (line 2 alone scores 0.96),
 # yet line 2 does not match through it
 printf 'the invoice was paid on time\nthe weather is sunny today\n' > "$T/ab"
-[ "$($J -n -e '/invoice/' -a 'the line is a complete English sentence' -e 'the line is about cooking' "$T/ab" 2>/dev/null | cut -d: -f1)" = "1" ]
+[ "$($J -n -P '/invoice/' -a 'the line is a complete English sentence' -e 'the line is about cooking' "$T/ab" 2>/dev/null | cut -d: -f1)" = "1" ]
 # the captured value reaches Jev: 03:12 is at night, 14:40 is not, though the meaning's text is the same
 printf '2026-09-19 03:12 alert fired\n2026-09-19 14:40 alert fired\n' > "$T/night"
-[ "$($J -n -e '/(?<t>\d\d:\d\d)/' -a '$<t> is between midnight and 5 a.m.' "$T/night" 2>/dev/null | cut -d: -f1)" = "1" ]
+[ "$($J -n -P '/(?<t>\d\d:\d\d)/' -a '$<t> is between midnight and 5 a.m.' "$T/night" 2>/dev/null | cut -d: -f1)" = "1" ]
 
 # -Q / --question: -e "the line answers: X", lines that answer X, not lines asking it (#22).
 # A fact need matches the line stating it (1), not one asking for it (2) or an on-topic non-answer (3, 4).
@@ -224,7 +228,7 @@ $J -q -Q "the cat's name" intent.txt no-such-file 2>/dev/null
 # raise on bad JSON themselves (0.65-0.85 there); detect_encoding (0.04) is pruned. Skipped without a python3 to find json in.
 jsondir=$(python3 -c 'import json, os; print(os.path.dirname(json.__file__))' 2>/dev/null) || jsondir=
 if [ -n "$jsondir" ]; then
-  out=$($J -e '/^\s*def load\b/' --step-to '不正な JSON のとき、自分で例外を送出している' "$jsondir"/*.py 2>/dev/null)
+  out=$($J -P '/^\s*def load\b/' --step-to '不正な JSON のとき、自分で例外を送出している' "$jsondir"/*.py 2>/dev/null)
   for f in loads decode raw_decode; do echo "$out" | grep -q ":$f\$"; done
   if echo "$out" | grep -q 'detect_encoding'; then exit 1; fi
 fi

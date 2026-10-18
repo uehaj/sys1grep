@@ -12,15 +12,15 @@ Jev は文章を生成せず、typed な質問に確率だけを返すモデル�
 「この行は『ネットワーク障害』の意味に合うか」と聞き、返ってきた確率を閾値で切ります。
 
 ```sh
-./sys1grep -n -e "顧客が怒っている、または不満を持っている" tickets.txt
+sys1grep -n -e "顧客が怒っている、または不満を持っている" tickets.txt
 ```
 
 [![sys1grep のデモ: 日本語の意味で 6 言語の返金要求を探す / 「返金について」と「返金を求めている」の違い / -Q で答えを探す](docs/demo.svg)](https://sys1grep.js.org/)
 
-<sub>▶ デモをクリックするか <a href="https://sys1grep.js.org/">uehaj.github.io/sys1grep</a> を開くと、ランディングページで全編のデモが見られます。</sub>
+<sub>▶ デモをクリックするか <a href="https://sys1grep.js.org/">sys1grep.js.org</a> を開くと、ランディングページで全編のデモが見られます。</sub>
 
-- 依存ゼロ。1 ファイル、Node.js 20.16 以降と `fetch` だけで動きます。
-- 速い。30 行を 1 リクエストにまとめ、8 本並列で投げます。210 行のファイルが 1 秒弱で終わります。
+- 依存ゼロ。Node.js 20.16 以降と `fetch` だけで動きます。
+- 速い。30 行を 1 リクエストにまとめ、8 本並列で投げます（ローカル URL では 1 本）。210 行のファイルが 1 秒弱で終わります。
 - 意味は AND / OR / NOT で自由に組み合わせられます。
 - **言語を問わない。** 意味も本文もどの言語でも構いません。日本語の意味でフランス語・ロシア語・中国語・韓国語の行が同じように見つかります。翻訳は挟まず、速度も費用も同じです。
 
@@ -32,7 +32,7 @@ Jev は文章を生成せず、typed な質問に確率だけを返すモデル�
 **英語**の意味で**日本語**の行が見つかります。どの行にも angry / frustrated の語はなく、うち 2 行は日本語です。
 
 ```sh
-$ ./sys1grep -n -e "customer is angry or frustrated" tests/corpus.txt
+$ sys1grep -n -e "customer is angry or frustrated" tests/corpus.txt
 14:ユーザー山田さんからの問い合わせ: 返金してほしい、商品が壊れていた
 16:ユーザー佐藤さんからの問い合わせ: 注文した覚えのない請求が来ています。至急確認してください
 18:I want my money back. The item arrived broken and customer service ignored me.
@@ -43,7 +43,7 @@ $ ./sys1grep -n -e "customer is angry or frustrated" tests/corpus.txt
 **日本語**の意味で**英語**の行が、日本語の行と同じ確信度で見つかります。
 
 ```sh
-$ ./sys1grep -n -p -e "返金の要求" tests/corpus.txt
+$ sys1grep -n -p -e "返金の要求" tests/corpus.txt
 14:ユーザー山田さんからの問い合わせ: 返金してほしい、商品が壊れていた	[0.97]
 18:I want my money back. The item arrived broken and customer service ignored me.	[0.95]
 ```
@@ -52,7 +52,7 @@ $ ./sys1grep -n -p -e "返金の要求" tests/corpus.txt
 日本語の意味 1 つで 6 言語の返金要求がすべて見つかり、ロシア語で書いた意味でも同じ結果になります。
 
 ```sh
-$ ./sys1grep -n -p -e "顧客が返金を求めている" tests/multi.txt
+$ sys1grep -n -p -e "顧客が返金を求めている" tests/multi.txt
 1:Je veux être remboursé, le produit est arrivé cassé.	[0.98]
 3:Я требую вернуть деньги, товар не работает.	[0.97]
 5:Ich möchte mein Geld zurück, das Gerät ist defekt.	[0.97]
@@ -60,7 +60,7 @@ $ ./sys1grep -n -p -e "顧客が返金を求めている" tests/multi.txt
 9:我要求退款，商品坏了。	[0.97]
 11:환불해 주세요. 제품이 고장났어요.	[0.97]
 
-$ ./sys1grep -n -p -e "клиент требует возврат денег" tests/multi.txt
+$ sys1grep -n -p -e "клиент требует возврат денег" tests/multi.txt
 1:Je veux être remboursé, le produit est arrivé cassé.	[0.94]
 3:Я требую вернуть деньги, товар не работает.	[0.97]
 5:Ich möchte mein Geld zurück, das Gerät ist defekt.	[0.92]
@@ -80,10 +80,11 @@ sys1grep は話題の近さではなく、その行について **命題が成�
 答える（cross-encoder 型の）モデルなので、誰が何をしたか、否定、「求めている」のか「済んだ」のかで答えが変わります。
 行の埋め込みは質問を見る前に固定されるので、測れるのは話題の近さまでです。
 
-次の 6 行はどれも「返金の話」ですが、顧客が返金を求めているのは 2 行だけです。
+`tests/contrast.txt` の 1〜6 行目はどれも「返金の話」ですが、顧客が返金を求めているのは 2 行だけです
+（`-t 0` は 8 行すべてを出します。下は 1〜6 行目の抜粋で、7・8 行目は後の AND の例で使います）。
 
 ```sh
-$ ./sys1grep -n -p -t 0 -e "customer is asking for a refund" tests/contrast.txt
+$ sys1grep -n -p -t 0 -e "customer is asking for a refund" tests/contrast.txt
 1:返金してほしい。商品が壊れていた	[0.98]
 2:返金処理が完了しましたのでご確認ください	[0.10]
 3:当社の返金ポリシーは購入後30日以内です	[0.10]
@@ -97,20 +98,23 @@ $ ./sys1grep -n -p -t 0 -e "customer is asking for a refund" tests/contrast.txt
 
 ```sh
 # 返金の話だが、顧客が求めているのではない → 完了報告、ポリシー、却下、日数
-$ ./sys1grep -n -e "about a refund" -v "the customer is asking for a refund" tests/contrast.txt
+$ sys1grep -n -e "about a refund" -v "the customer is asking for a refund" tests/contrast.txt
 2:返金処理が完了しましたのでご確認ください
 3:当社の返金ポリシーは購入後30日以内です
 4:The manager denied the refund request yesterday
 6:Refunds are processed within 5 business days
 
 # 怒っている、かつ、それが顧客であってスタッフではない
-$ ./sys1grep -n -e "someone is angry" -a "the customer, not the staff, is the one acting" tests/contrast.txt
+$ sys1grep -n -e "someone is angry" -a "the customer, not the staff, is the one acting" tests/contrast.txt
 5:I demand a full refund immediately
 8:顧客が怒って電話を切った
 ```
 
 7 行目の `カスタマーサポート担当者が怒って電話を切った` は、2 つ目の意味で 0.05 となり除外されます。
-7 行目と 8 行目のコサイン類似度はほぼ 1 です。
+8 行目とは 1 語（*カスタマーサポート担当者* と *顧客*）しか違わず、埋め込みなら 8 行目のすぐ隣に置く言い回しです。
+（この 2 行のコサイン類似度の数値は再現できませんでした。この環境では埋め込みモデルを使えず、リポジトリにも
+その履歴にも、再実行できる測定スクリプトがありません。論拠は言い回しだけです: 7 行目の埋め込みには、
+「カスタマーサポート担当者」が文の主語を変えていることを見分ける手段がありません。）
 
 実用上の帰結が 2 つあります。確率は較正されているので閾値 0.5 がどの質問にも使えます。コサイン類似度は
 top-k か質問ごとの閾値調整が要ります。また索引を作らず、目の前のファイルにそのまま当てられます。
@@ -119,18 +123,24 @@ top-k か質問ごとの閾値調整が要ります。また索引を作らず�
 
 ## 正規表現項
 
-`-e`/`-a`/`-v '/pattern/flags'`（先頭と末尾が `/`、フラグは JavaScript のもの）はローカルで判定される
-ただの正規表現で、リクエストは一切発生しません。同じ AND 項の絞り込みになり、これが当たった行だけが
-その項の意味を尋ねられるので、意味の前に安い正規表現を置くと、費用も待ち時間も下がります。行が送られるのは、
-どれかの項の正規表現がすべて当たったときだけです（正規表現の無い項はどの行にも当たる扱い）。そのため
-`-e '/re/' -a A -e B` では、`re` を含まない行も送られ、`B` だけを尋ねられます。正規表現項だけの式は何も
-送りません。`--unit=sentence-by-jev` でも、そのときは折り返しのつなぎ方を規則だけで決めます。`/…/flags` の形をしていないものは今まで通り意味です。`-e '/etc 以下のファイルを変更している'`
-（閉じる `/` が無い）は影響を受けません。本当に `/` で始まり `/` で終わる意味は、正規表現と誤認されない
-よう先頭にスペースを置けます。
+`-P '/pattern/flags'`（先頭と末尾が `/`、フラグは JavaScript のもの）は `-e` と同じく OR 項を始めますが、
+こちらは常に正規表現で、ローカルで判定されリクエストは一切発生しません。`-a`/`-v '/pattern/flags'` は
+その項に AND / AND NOT で重なり、こちらも形で正規表現か意味かが決まるのは変わりません。同じ AND 項の
+絞り込みになり、これが当たった行だけがその項の意味を尋ねられるので、意味の前に安い正規表現を置くと、
+費用も待ち時間も下がります。行が送られるのは、どれかの項の正規表現がすべて当たったときだけです
+（正規表現の無い項はどの行にも当たる扱い）。そのため `-P '/re/' -a A -e B` では、`re` を含まない行も
+送られ、`B` だけを尋ねられます。正規表現項だけの式は何も送りません。`--unit=sentence-by-jev` でも、
+そのときは折り返しのつなぎ方を規則だけで決めます。`-P '!/RE/'` は使えません。正規表現の否定は
+`-v '/RE/'` で行います。`-e` は値を正規表現として読むことがもうありません。`/RE/flags` の形の
+値を渡すと `-P` を案内するエラーで拒否されます（例: `-e '/catch/' is no longer a regex: use -P '/catch/'`）。
+`-Q` は変わっていません。もともと常に質問で正規表現にはならなかったので、`-e '/etc 以下のファイルを
+変更している'`（閉じる `/` が無い）はそのまま意味として通り、拒否されません。`-e`/`-a`/`-v` に渡す、
+本当に `/` で始まり `/` で終わる意味は、先頭にスペースを置けば正規表現と誤認されずに通ります
+（`-e ' /cat/'` は拒否されず、`" /cat/"` という意味を送ります）。
 
 ```sh
-$ ./sys1grep -e '/ERROR|FATAL/' app.log                               # リクエストなし
-$ ./sys1grep -e '/timeout/i' -a '顧客に影響が出ている' app.log         # timeout を含む行だけ Jev へ
+$ sys1grep -P '/ERROR|FATAL/' app.log                               # リクエストなし
+$ sys1grep -P '/timeout/i' -a '顧客に影響が出ている' app.log         # timeout を含む行だけ Jev へ
 ```
 
 正規表現の名前付き・番号付きグループは、同じ AND 項の他の意味に `$<name>`、`$1`-`$99`、`$&`、`$$` として
@@ -140,7 +150,7 @@ $ ./sys1grep -e '/timeout/i' -a '顧客に影響が出ている' app.log        
 文字として残るので、`$100 以上の請求` は影響を受けません。
 
 ```sh
-$ ./sys1grep -e '/(?<date>\d{4}-\d\d-\d\d) (?<time>\d\d:\d\d)/' \
+$ sys1grep -P '/(?<date>\d{4}-\d\d-\d\d) (?<time>\d\d:\d\d)/' \
             -a '$<time> が深夜（0時〜5時）であり、$<date> が週末である' app.log
 #   2026-09-19 03:12 ... → 「03:12 が深夜（0時〜5時）であり、2026-09-19 が週末である」と尋ねる
 ```
@@ -152,7 +162,7 @@ $ ./sys1grep -e '/(?<date>\d{4}-\d\d-\d\d) (?<time>\d\d:\d\d)/' \
 `-o` は一致をそれぞれ 1 行ずつ出します（`grep -o` と同じ）。意味には「一致した部分」がないので、意味だけで当たった行は行全体を出します。
 
 ```sh
-$ ./sys1grep -o -n -e '/[A-Z]+-\d+/' -a 'チケットがまだ閉じていない' notes.txt   # チケット番号を 1 行ずつ
+$ sys1grep -o -n -P '/[A-Z]+-\d+/' -a 'チケットがまだ閉じていない' notes.txt   # チケット番号を 1 行ずつ
 ```
 
 ## 送る量を減らす
@@ -172,9 +182,16 @@ Jev に送る行が増えるほど、費用も時間もかかります。いち�
 - **何回判定するか。** [`--dedup`](#テンプレートごとに-1-行だけ判定する---dedup) は、ID・数値・時刻・パスだけが
   違う行をまとめて、テンプレートごとに 1 行だけ判定します。`auto`/`always`/`never`、当面は既定で off。
   `--dedup=auto` が割に合うときはヒントを出します。
+- **同じ問いを二度送らない。** `--cache` は Jev の答えを `~/.config/sys1grep/cache` に残します。キーは送るリクエスト
+  （モデル・行・問い）と送信先のホスト名で、同じ検索をもう一度すると何も送らず、料金もかかりません。検索した行が
+  残るので既定は off で、`SYS1GREP_CACHE=on`（環境変数か `~/.config/sys1grep/.env`。settings.json には書けません）
+  で既定を変えられます。`--cache=only` はキャッシュだけで答え、無いリクエストがあればそれを名指しして終了コード 2
+  で終わり、何も送りません（`-q` が先に一致を見つけていれば 0）。`--dry-run` はキャッシュ済みの
+  リクエスト数と送る数を出します。期限はありません。モデルはキーに含まれ、Jev の答えは実行ごとに ±0.05 ほど
+  揺れるので、残るのはその 1 回分です。`--cache=clear` で空にします。
 - **払う前に確かめる。** `--dry-run` は何も送らず、この検索が使う設定、検索するファイル、ファイルごとの
-  送る行数、各リクエストとその質問を表示します。最後の行には入力トークン数と、TypeSafe 本体なら料金の
-  見積もりが出ます（`~3178 input tokens, ~$0.000133`。誤差 1 割程度）。`-i` は同じ集計を端末に出し、
+  送る行数、各リクエストとその質問を表示します。最後の行には入力トークン数と、料金の
+  見積もりが出ます（`~3178 input tokens, ~$0.000133`。誤差 1 割程度。誰の価格かは「他のエンドポイント」を参照）。`-i` は同じ集計を端末に出し、
   `y` と答えたときだけ送ります。
   リクエストの本体を送る前に、まず対象のサイズ（`--max-filesize`、既定 10M）を計測し、超えるものは
   rg の `--max-filesize` と同じく無条件に飛ばして stderr に名前を出します（`-y` は効きません）。`.gz` は
@@ -186,19 +203,23 @@ Jev に送る行が増えるほど、費用も時間もかかります。いち�
   送る予定のトークンの値段（`--max-cost`、既定 1 USD）は別に見積もり、超えていれば端末で続けるか聞きます。
   `-y` は聞かずに yes と答え、端末が無く超えていれば終了コード 2 です（`-q` でも同じで、スクリプトからは
   `-y` を渡します）。
+  `-r` と `git sys1grep` では、regex で絞られない term が 10,000 行を超えて送ろうとすると、同じ集計と
+  その term を stderr に 1 行出します（`sys1grep: sending 214,913 of 231,502 lines from 1,247 files
+  (~9.1M input tokens, ~$0.38); the term "…" has no regex to narrow it. Add -a '/RE/' to it, …`）。
+  検索はそのまま続きます。`-q` ではこの行は出ず、`-y` では消えません。
 
 ```sh
-$ sys1grep --dry-run -r --include='*.log' --changed-within=today -e '/ERROR|FATAL/' -a '顧客に影響が出ている' logs/
+$ sys1grep --dry-run -r --include='*.log' --changed-within=today -P '/ERROR|FATAL/' -a '顧客に影響が出ている' logs/
 ```
 
 `--verbose`（や `--dry-run`）は、コマンドラインで指定しなかった設定が*どこから*来たか
-（`SYS1GREP_OPTS`、環境変数、`~/.config/sys1grep/.env`、プリセットの既定値のいずれか）も表示するので、
+（`SYS1GREP_OPTS`、環境変数、`~/.config/sys1grep/settings.json` か `.env`、プリセットの既定値のいずれか）も表示するので、
 想定と違う結果をその設定まで辿れます。キーの値は表示せず、どのオプションや変数が渡したかだけを表示します。
 
 ```sh
 $ SYS1GREP_OPTS='--level strict' sys1grep --verbose -e "APIキーがファイルから読まれている" .
 sys1grep: endpoint api.typesafe.ai/v1/systemone (default), model jev-latest (default)
-sys1grep: key: SYS1GREP_API_KEY (~/.config/sys1grep/.env)
+sys1grep: key: key (~/.config/sys1grep/settings.json)
 sys1grep: SYS1GREP_OPTS: --level strict
 sys1grep: options: --level strict (SYS1GREP_OPTS) = -t 0.7 -T 0.3, --chunk 30, -j 8, scope on, -M 2000, --max-filesize 10M, --max-cost 1
 sys1grep: file ./a.py: 120 lines, 120 to send
@@ -208,7 +229,7 @@ sys1grep: file ./a.py: 120 lines, 120 to send
 ## インストール
 
 使い方は 2 通りあります。コマンドラインツールとして使う（この節）か、Claude Code のスキルとして使う
-（後述の [Claude Code から使う](#claude-code-から使う)）か。スキルは `npx @uehaj/sys1grep` に自動で切り替わるので、
+（後述の [Claude Code から使う](#claude-code-から使う)）か。スキルは `npx` で sys1grep を動かすので、
 Claude Code からしか使わないならここでのインストールは不要で、API キーの設定だけで済みます。
 
 Node.js 20.16 以降が必要です。ほかの依存はありません。
@@ -228,13 +249,31 @@ npx @uehaj/sys1grep -n -e "顧客が怒っている、または不満を持っ�
 
 ```sh
 export SYS1GREP_API_KEY=your-key                       # 環境変数
-echo 'SYS1GREP_API_KEY=your-key' > ~/.config/sys1grep/.env    # ユーザー単位 (先に mkdir -p)
+# ユーザー単位: ~/.config/sys1grep/settings.json (先に mkdir -p。権限は 0600 に)
+(umask 077; echo '{"key": "your-key"}' > ~/.config/sys1grep/settings.json)
 ```
 
-環境変数が優先で、足りない分は `~/.config/sys1grep/.env` から補います。カレントディレクトリの `.env` は読みません。
+環境変数が優先で、足りない分は `~/.config/sys1grep/settings.json` から補います。項目は環境変数 1 つに 1 つです。
+
+| 項目 | 環境変数 |
+|---|---|
+| `url` | `SYS1GREP_URL` |
+| `key` | `SYS1GREP_API_KEY`（と `TYPESAFE_API_KEY`） |
+| `model` | `SYS1GREP_MODEL` |
+| `opts` | `SYS1GREP_OPTS`。配列で書く: `["--level", "strict", "-n"]` |
+| `summarizer` | `SYS1GREP_SUMMARIZER` |
+| `summarizerModel` | `SYS1GREP_SUMMARIZER_MODEL` |
+| `summarizerKey` | `SYS1GREP_SUMMARIZER_API_KEY` |
+
+どの項目も省略できます。型の違う値、JSON でないファイルはエラーです。知らない項目は警告（stderr に項目名を出す）
+だけで無視し、処理は続けます。新しいバージョンが項目を追加しても、古い sys1grep がそのまま動くようにするためです。
+キーを含むファイルを他人が読める権限にしていると警告します。`~/.config/sys1grep/.env`（`名前=値` の行）も引き続き読みますが、settings.json より
+下で、同じ変数なら settings.json の値が勝ちます。カレントディレクトリの `.env` は読みません。
 clone したばかりのリポジトリのものかもしれず、`SYS1GREP_URL` を通じてキーを別のサーバへ送らせ得るからです。
 プロジェクト単位の設定は、自分で読み込ませてください: `node --env-file=.env "$(command -v sys1grep)" ...`。
 `SYS1GREP_API_KEY` が無ければ `TYPESAFE_API_KEY` も使えます。
+
+この settings.json は `--serve` の **Settings** パネルからも編集できます（[検索ページ](#検索ページ---serve)を参照）。
 
 ### 既定のオプション
 
@@ -247,15 +286,18 @@ sys1grep -e "決済の失敗" app.log                    # strict、8 並列、�
 sys1grep --level loose --no-n -e "決済の失敗" app.log
 ```
 
+同じ既定値は settings.json に `"opts": ["--level", "strict", "-j", "8", "-n"]` とも書けます。1 要素が 1 引数なので、
+値に空白を含められます。`SYS1GREP_OPTS` が設定されていれば、足し合わせずにそちらで置き換えます。
+
 sys1grep を呼ぶスクリプトもこの既定値を拾います（grep が `GREP_OPTIONS` を廃止した理由です）。スクリプトからは
-`SYS1GREP_OPTS= sys1grep ...` と空にして呼んでください。
+`SYS1GREP_OPTS= sys1grep ...` と空にして呼んでください。空の変数は settings.json の `opts` も外します。
 
 ### 他のエンドポイント
 
 API の設定は `SYS1GREP_API_KEY`（または `TYPESAFE_API_KEY`）、`SYS1GREP_URL`、`SYS1GREP_MODEL` の 3 つだけです。
 TypeSafe の `POST /v1/systemone` と同じ形で話すエンドポイントなら使えます。キーは `SYS1GREP_URL` の先へそのまま
 送られるので、2 つは組にして設定してください。コマンドラインの `--sys1-model=ID`、`--sys1-url=URL`、`--sys1-api-key=KEY` は
-この 3 つより優先します。コマンドラインのキーは `ps` やシェル履歴に残るので、キーはなるべく `~/.config/sys1grep/.env` に書いてください。
+この 3 つより優先します。コマンドラインのキーは `ps` やシェル履歴に残るので、キーはなるべく `~/.config/sys1grep/settings.json` に書いてください。
 
 ```sh
 # OpenRouter
@@ -266,7 +308,30 @@ SYS1GREP_URL=https://ai-gateway.vercel.sh/typesafe/v1/systemone SYS1GREP_MODEL=t
 SYS1GREP_URL=http://localhost:8000/v1/systemone sys1grep -e ...
 ```
 
-集計行には、エンドポイントが返した費用（`usage.cost`）を出します。TypeSafe 本体の場合は定価での推定を `~` 付きで出します。
+sys1grep が出す価格（`--dry-run`、大量送信の警告、`--max-cost` の質問、集計行）は、エンドポイントが返した費用（`usage.cost`）か、
+返さなければ `~` 付きの推定です。推定の 100 万入力トークンあたりの価格は、ローカルの URL なら 0（無料。`localhost`、`127.0.0.1`、`[::1]`。
+書いたとおりのホスト名で判定し、DNS は引かず、`SYS1GREP_URL` か `--sys1-url` で自分で指定した URL のときだけ）、下の表のモデルなら
+そのモデルの価格（`jev-latest` 0.042、`clef` 0.24、`clef-flash` 0.09、USD）、それ以外のモデルは Jev と同じ 0.042 です。
+別の URL のときは、誰の価格かを添えます（`at TypeSafe's list price`、`at clef's list price`、`(local URL, free)`）。
+`--max-cost` も同じ価格を使うので、ローカルの URL では何も聞きません。
+
+**ローカルの判定モデル。** 同じ `POST /v1/systemone` を話すモデルは、キーもネットワークも無しで Jev の代わりに使えます。
+ただし、これまでに試した 2 つは、どちらも Jev より精度が低いので、`-t` を上げ、`npm run judge` で調整し、偽陽性が増えることを前提にしてください。
+どちらも 1 度に 1 リクエストしか受けないので、ローカルの URL（`localhost`、`127.0.0.1`、`[::1]`）では `-j` の既定が 1 になります。
+指定した `-j`（コマンドライン、`SYS1GREP_OPTS`、settings.json のどれでも）はそちらが優先です。
+
+- [Jeff](https://github.com/firelex/jeff)（`jeff-serve`、0.8B、ベース v1.2、ゼロショット、MLX）:
+  `--sys1-url=http://127.0.0.1:8765/v1/systemone --sys1-model=jeff-latest` で動きます。2 つ目のリクエストにはすぐ
+  `529 "The model is busy"` を返し、`-j 8` では再試行が尽きます。`npm run judge`（51 行、10 ケース、`-j 1`）では、
+  既定のしきい値で適合率 0.68、再現率 0.61、F1 0.64、`-t 0.75 -T 0.85` で F1 0.77 でした。別の日の Jev の実行は F1 0.96 で、
+  置き換えにはなりません。v1.2 はコミュニティプレビューで、アダプタは版をまたいで引き継げません。
+- [strands-decider](https://github.com/strands-labs/strands-decider)（`strands-decider serve`、2B、M4 の `mps`）:
+  `SYS1GREP_URL=http://127.0.0.1:8000/v1/systemone` だけで、キーなしでそのまま動きます（30 行が 2.7 秒）。2 つのリクエストが
+  同時に届くとサーバーが落ちます（exit 134、Metal のアサーション）。同じ `npm run judge` の組で、既定のしきい値で適合率 0.64、
+  再現率 0.94、F1 0.76、`-t 0.6 -T 0.45` で F1 0.81 でした。
+- sys1grep ではまだ試していないもの: Cloudflare の Clef。
+
+1 リクエストの質問数は、どのバックエンドでも 64 までです。
 
 ソースから使うなら `git clone https://github.com/uehaj/sys1grep.git && cd sys1grep && npm install -g .`、
 またはそのまま `node sys1grep.mjs ...` で動きます。
@@ -276,16 +341,18 @@ SYS1GREP_URL=http://localhost:8000/v1/systemone sys1grep -e ...
 例はすべて [`tests/corpus.txt`](tests/corpus.txt) に対するものです。サーバログ、日英の問い合わせ、
 ソースコード、SQL、雑談が混ざった 51 行のファイルです。
 
+仕事別（障害対応、問い合わせの仕分け、リリースノートなど）に実データで試した例は [docs/use-cases.md](docs/use-cases.md)（英語）にあります。
+
 ### 概念で探す。言語は問わない
 
 ```sh
-$ ./sys1grep -n -e "customer is angry or frustrated" tests/corpus.txt
+$ sys1grep -n -e "customer is angry or frustrated" tests/corpus.txt
 14:ユーザー山田さんからの問い合わせ: 返金してほしい、商品が壊れていた
 16:ユーザー佐藤さんからの問い合わせ: 注文した覚えのない請求が来ています。至急確認してください
 18:I want my money back. The item arrived broken and customer service ignored me.
 21:Your product ruined my weekend. Never buying from you again.
 23:This is the third time I'm writing. Nobody has replied to my previous emails.
-5 of 51 lines matched; 51 sent to Jev in 2 requests, 3225 input tokens
+5 of 51 lines matched; 51 sent to Jev in 2 requests, 3225 input tokens, ~$0.000135
 ```
 
 どの行にも「angry」「frustrated」という語はありません。英語の意味で日本語の行も拾えています。
@@ -296,8 +363,8 @@ $ ./sys1grep -n -e "customer is angry or frustrated" tests/corpus.txt
 そのため、問いは尋ねるときのままの疑問文で書ける:
 
 ```sh
-$ echo "ジョブは失敗した" | ./sys1grep -e "ジョブは成功しましたか?"
-$ echo "ジョブは失敗した" | ./sys1grep -Q "ジョブは成功しましたか?"
+$ echo "ジョブは失敗した" | sys1grep -e "ジョブは成功しましたか?"
+$ echo "ジョブは失敗した" | sys1grep -Q "ジョブは成功しましたか?"
 ジョブは失敗した
 ```
 
@@ -307,7 +374,7 @@ $ echo "ジョブは失敗した" | ./sys1grep -Q "ジョブは成功しまし�
 なる:
 
 ```sh
-$ ./sys1grep -n -Q "whether the server is down" tests/intent.txt
+$ sys1grep -n -Q "whether the server is down" tests/intent.txt
 5:The server is down.
 6:The server is healthy and responding normally.
 2 of 17 lines matched; 17 sent to Jev in 1 request, 1087 input tokens, ~$0.000046
@@ -324,12 +391,12 @@ down?` は尋ねているだけで答えていないので一致しない。`-Q 
 ### OR で 2 つの意味。`-p` で確率も見る
 
 ```sh
-$ ./sys1grep -n -p -e "返金の要求" -e "配送先の変更依頼" tests/corpus.txt
+$ sys1grep -n -p -e "返金の要求" -e "配送先の変更依頼" tests/corpus.txt
 14:ユーザー山田さんからの問い合わせ: 返金してほしい、商品が壊れていた	[0.97 0.02]
 17:ユーザー高橋さんからの問い合わせ: 配送先の住所を変更したいのですが	[0.01 0.96]
 18:I want my money back. The item arrived broken and customer service ignored me.	[0.96 0.01]
 22:Can I change the delivery address for order #8821?	[0.02 0.96]
-4 of 51 lines matched; 51 sent to Jev in 2 requests, 4602 input tokens
+4 of 51 lines matched; 51 sent to Jev in 2 requests, 4602 input tokens, ~$0.000193
 ```
 
 末尾の括弧が、指定した順に各意味の確率です。閾値を決めるときの目安になります。
@@ -342,7 +409,7 @@ $ ./sys1grep -n -p -e "返金の要求" -e "配送先の変更依頼" tests/corp
 ### AND NOT。ネットワーク障害のうちリトライ中のものを除く
 
 ```sh
-$ ./sys1grep -n -e "ネットワークやリモート接続の障害" -v "a retry is happening or was attempted" tests/corpus.txt
+$ sys1grep -n -e "ネットワークやリモート接続の障害" -v "a retry is happening or was attempted" tests/corpus.txt
 4:2026-09-19 08:02:30 ERROR connection reset by peer while calling payment-gateway
 6:2026-09-19 08:02:35 ERROR timeout after 5000ms waiting for payment-gateway
 9:2026-09-19 08:10:44 ERROR DNS lookup failed for api.example.com
@@ -350,7 +417,7 @@ $ ./sys1grep -n -e "ネットワークやリモート接続の障害" -v "a retr
 13:network unreachable: no route to host 10.0.0.5
 30:except ConnectionError as e:
 31:    logger.error("upstream unreachable: %s", e)
-7 of 51 lines matched; 51 sent to Jev in 2 requests, 5112 input tokens
+7 of 51 lines matched; 51 sent to Jev in 2 requests, 5112 input tokens, ~$0.000215
 ```
 
 5 行目の `retrying payment-gateway request (attempt 2/3)` はネットワーク障害ですが、`-v` で落ちています。
@@ -358,11 +425,11 @@ $ ./sys1grep -n -e "ネットワークやリモート接続の障害" -v "a retr
 ### 混合。(金融 AND 悪いニュース) OR 天気
 
 ```sh
-$ ./sys1grep -n -e "about economy, finance or markets" -a "the news is negative or a decline" -e "about weather" tests/corpus.txt
+$ sys1grep -n -e "about economy, finance or markets" -a "the news is negative or a decline" -e "about weather" tests/corpus.txt
 36:今日の天気は晴れ、最高気温は28度です
 43:Stock prices fell 3% after the earnings report missed expectations.
 48:明日は雨の予報なので傘を持っていきます
-3 of 51 lines matched; 51 sent to Jev in 2 requests, 5673 input tokens
+3 of 51 lines matched; 51 sent to Jev in 2 requests, 5673 input tokens, ~$0.000238
 ```
 
 `The central bank raised interest rates` は金融の話ですが下落ではないので外れています。
@@ -370,11 +437,11 @@ $ ./sys1grep -n -e "about economy, finance or markets" -a "the news is negative 
 ### 厳しさのプリセット
 
 ```sh
-$ ./sys1grep --level strict -n -e "a security risk or dangerous destructive operation" tests/corpus.txt
+$ sys1grep --level strict -n -e "a security risk or dangerous destructive operation" tests/corpus.txt
 33:DROP TABLE sessions;
 49:API keys must never be committed to the repository.
 
-$ ./sys1grep --level loose -n -e "a security risk or dangerous destructive operation" tests/corpus.txt
+$ sys1grep --level loose -n -e "a security risk or dangerous destructive operation" tests/corpus.txt
 11:2026-09-19 09:00:00 ERROR SSL handshake failed: certificate expired
 16:ユーザー佐藤さんからの問い合わせ: 注文した覚えのない請求が来ています。至急確認してください
 33:DROP TABLE sessions;
@@ -386,11 +453,11 @@ $ ./sys1grep --level loose -n -e "a security risk or dangerous destructive opera
 ### ディレクトリを再帰検索、ファイル名だけ表示
 
 ```sh
-$ ./sys1grep -r -n -e "customer is asking for a refund" tests/tickets/
+$ sys1grep -r -n -e "customer is asking for a refund" tests/tickets/
 tests/tickets/a.txt:7:Ticket #16: I want a refund, the item was broken.
 tests/tickets/sub/b.txt:1:The customer wants a refund for the broken lamp.
 
-$ ./sys1grep -rl -e "customer is asking for a refund" tests/tickets/
+$ sys1grep -rl -e "customer is asking for a refund" tests/tickets/
 tests/tickets/a.txt
 tests/tickets/sub/b.txt
 ```
@@ -400,8 +467,8 @@ tests/tickets/sub/b.txt
 秘密情報になりがちなファイル（`.env*`、`.netrc`、`.npmrc`、`.pypirc`、`.pgpass`、`.git-credentials`、`*.pem`、
 `*.key`、`*.p12`、`*.pfx`、`*.jks`、`*.keystore`、`id_rsa*` など。大文字小文字は区別しない）、
 生成されたファイル（`*.map`、`*.min.js`、`*.min.css`、`package-lock.json`、`yarn.lock`、`pnpm-lock.yaml`、
-`Cargo.lock`、`poetry.lock`、`composer.lock`、`Gemfile.lock`、`go.sum`）を飛ばします。
-**検索対象の行はすべて TypeSafe の API に送られる**ので、スキャンするつもりのディレクトリだけを指定してください。
+`Cargo.lock`、`poetry.lock`、`composer.lock`、`Gemfile.lock`、`go.sum`）、シンボリックリンク、`~/.config/sys1grep/settings.json` 自身を飛ばします。
+**検索対象の行はすべて TypeSafe の API（または `SYS1GREP_URL` の指す先）に送られる**ので、スキャンするつもりのディレクトリだけを指定してください。
 git リポジトリの中では、git が無視するもの（`.gitignore`、`.git/info/exclude`、グローバルの除外ファイル）も `-r` で
 飛ばすので、ビルド成果物や手元だけのファイルは送られません。追跡中のファイルは、無視パターンに当たっても検索します。
 コマンドラインで明示したファイルは、除外リストに該当しても、git が無視していても検索します。git が無視している
@@ -423,7 +490,7 @@ $ sys1grep -r -e 'Python でリトライ処理を書いている箇所' .
 sys1grep: scope: *.py *.pyi *.pyw (from "Python files: 0.94")
 sys1grep: scope: 12 of 340 files
 $ sys1grep -r -e '昨日変えた箇所で認証を扱っている' src/
-sys1grep: scope: modified since 2026-09-25 00:00 (from "what was changed yesterday: 0.91")
+sys1grep: scope: changed since 2026-09-25 00:00 (git commits; the mtime for files git does not have committed) (from "what was changed yesterday: 0.91")
 sys1grep: scope: 3 of 120 files
 ```
 
@@ -492,12 +559,25 @@ v0.3.1:src/job.py:40:    retry(job)
 **古い `<tree>` には、後で削除された秘密情報が普通のファイルとして残っていることがあります**。スキップ対象は
 名前で判定するだけで、変更履歴では判定しません。
 
+### ファイルではなくコミットを探す (`-g`)
+
+`-g`（`--gitlog`）はファイルではなく `git log` のコミットを、1 コミット 1 レコード（ハッシュ、日付、件名、本文）で探します:
+
+```sh
+$ sys1grep -g -e '今日、.mjs のファイルに行った性能向上の修正'
+```
+
+項が 1 つなら、意味からの絞り込みを `git log` 自身の引数にして stderr に出します: 時期は `--since-as-filter`
+（2.37 より前の git では `--since`。昨日・先週・先月のように終わりがある時期は `--until` も）、言語は pathspec、
+作者と「自分」は `--author`、「このブランチ」と「未プッシュ」は範囲です。FILE は pathspec です。
+コミットは `-z` と同じくレコードなので、`-M` の既定は 8000 です。`-r`・`git sys1grep` とは併用できません。
+
 ### 「〜でない」行を全部
 
 ```sh
-./sys1grep -v "a timestamped server log line" mixed.txt   # grep -v 相当
-./sys1grep -e "source code or SQL" -v "SQL" src.txt       # コードだが SQL ではない
-cat app.log | ./sys1grep -e "デプロイが失敗した、またはロールバックされた"
+sys1grep -v "a timestamped server log line" mixed.txt   # grep -v 相当
+sys1grep -e "source code or SQL" -v "SQL" src.txt       # コードだが SQL ではない
+cat app.log | sys1grep -e "デプロイが失敗した、またはロールバックされた"
 ```
 
 ### 複数行にまたがるレコード (`-z`)
@@ -510,9 +590,9 @@ cat app.log | ./sys1grep -e "デプロイが失敗した、またはロールバ
 その中のどの 1 行についてでもありません。
 
 ```sh
-$ git log -z --format='%h %s %b' | ./sys1grep -z -n -e "ユーザーに見える振る舞いを変えている" -v "ドキュメントだけの変更"
-7:21120e9 Revert "feat: ship the /sys1grep Claude Code skill" ...
-8:51ae333 feat: ship the /sys1grep Claude Code skill
+$ git log -z --format='%h %s %b' | sys1grep -z -n -e "ユーザーに見える振る舞いを変えている" -v "ドキュメントだけの変更"
+7:21120e9 Revert "feat: ship the /semgrep Claude Code skill" ...
+8:51ae333 feat: ship the /semgrep Claude Code skill
 ```
 
 一致したレコードも NUL 終端で出力されるので、読むときは `tr '\0' '\n'` に通してください。
@@ -527,7 +607,7 @@ $ git log -z --format='%h %s %b' | ./sys1grep -z -n -e "ユーザーに見える
 段落が入っています。
 
 ```sh
-$ ./sys1grep -n --unit=sentence-by-jev -e "the author admits they made a mistake" tests/prose.txt
+$ sys1grep -n --unit=sentence-by-jev -e "the author admits they made a mistake" tests/prose.txt
 1:I should have checked the input
 2:before shipping, and that was my
 3:mistake. Next time I will add a test
@@ -546,7 +626,7 @@ $ ./sys1grep -n --unit=sentence-by-jev -e "the author admits they made a mistake
 中国語・タイ語・ラオ語・クメール語・ミャンマー語・チベット語も同様です。
 
 ```sh
-$ ./sys1grep -n -o --unit=sentence-by-jev -e "the author admits they made a mistake" -e "customer is asking for a refund" tests/prose.txt
+$ sys1grep -n -o --unit=sentence-by-jev -e "the author admits they made a mistake" -e "customer is asking for a refund" tests/prose.txt
 1:I should have checked the input before shipping, and that was my mistake.
 8:先週買った掃除機が初日から動かないので返金してほしいです。
 ```
@@ -581,7 +661,7 @@ Jev は長い行の中からでも当たる文を自分で見つけるので、�
 そうと分かりません。`--unit=function` は関数ごとに判定し、当たった関数の行を出します。`-n` はファイルの行番号です。
 
 ```sh
-$ ./sys1grep -n --unit=function -e "ネットワーク障害で再試行している" src/net.js
+$ sys1grep -H -n --unit=function -e "ネットワーク障害で再試行している" src/net.js
 src/net.js:3:async function fetchWithRetry(url) {
 src/net.js:4:  for (let i = 0; i < 5; i++) {
 src/net.js:5:    try { return await fetch(url); }
@@ -623,7 +703,7 @@ $ sys1grep -e "--summarize が行をツールに渡している" --step-to "ツ�
 無料で到達可能性を調べられます。Python 3.6 の `json` で、`load` からたどり着き `raise` を含む関数:
 
 ```
-$ cd /usr/lib64/python3.6/json && sys1grep -e '/^\s*def load\b/' --step-to '/\braise\b/' *.py
+$ cd /usr/lib64/python3.6/json && sys1grep -P '/^\s*def load\b/' --step-to -P '/\braise\b/' *.py
 sys1grep: walk: 1 at hop 0, 1 at hop 1, 3 at hop 2, 1 at hop 3, 1 at hop 4, 1 at hop 5; stopped: no new unit
 0 __init__.py-274-load
   1 __init__.py:302:loads
@@ -633,17 +713,20 @@ sys1grep: walk: 1 at hop 0, 1 at hop 1, 3 at hop 2, 1 at hop 3, 1 at hop 4, 1 at
           5 scanner.py:28:_scan_once
 ```
 
-- **式。** `--step-to` の前の式が開始の式で、普通の検索と同じです。後ろの `-e` / `-a` / `-v` / `-Q` はすべて終点の式です。
-  `--step-to 意味` と `--step-to '/RE/'` は `--step-to -e ...` と同じで、ファイル名はその後に置きます。step はホップでは
-  なく検索の段です。間に何ホップあっても、`--step-to` 1 つで 2 段です。
+- **式。** `--step-to` の前の式が開始の式で、普通の検索と同じです。後ろの `-e` / `-P` / `-a` / `-v` / `-Q` はすべて終点の式です。
+  `--step-to 意味` は `--step-to -e 意味` と同じで、`--step-to '/RE/'` は形から正規表現と判定されて
+  `--step-to -P '/RE/'` と同じになります。ファイル名はその後に置きます。正規表現の終点は、上の例のように
+  `-P` を明示する書き方のほうが分かりやすいので、ドキュメントではそちらを使います。step はホップではなく
+  検索の段です。間に何ホップあっても、`--step-to` 1 つで 2 段です。
 - **辺。** `--edges` が無ければ単位は関数 (`--unit=function`) で、辺は呼び出しです。関数本体 (コメント・docstring・
   文字列は除く) の `名前(` が、その名前の関数すべてにつながります。名前は関数名の行 (デコレータの下の `def`) から
   取ります。`--edges=FILE` は別の関係をたどります。1 行 1 本で `FROM_FILE:LINE<TAB>FROM_NAME<TAB>TO_FILE:LINE<TAB>TO_NAME`、
-  行はそれを含む単位を指します。`--reverse` は辺を逆にたどります (呼ばれる側から呼ぶ側へ)。
+  行はそれを含む単位を指します。`--step-to` の代わりに `--step-reverse-to` を使うと辺を逆にたどります (呼ばれる側から呼ぶ側へ)。
+  引数は同じで、`--hops`・`--edges` と併用でき、`--step-to` とは併用できません。
 - **歩き方。** すべての開始点から同時に幅優先でたどります。関数のホップ数は、どれかの開始点からの最短距離です。
   各関数には 1 度しか着かないので、循環しても止まります。`--hops=N`・`--hops=M..N`・`--hops=M..` で終点のホップ数を
   選びます (既定 `0..`。終点の式に当たる開始点はホップ 0 の終点)。終点に着かないパスは出しません。stderr には
-  ホップごとにたどり着いた関数の数と、止まった理由 (新しい関数が無い、または `--hops`) を出します。
+  ホップごとにたどり着いた関数の数と、止まった理由 (新しいユニットが無い、または `--hops`) を出します。
 - **費用。** Jev はまずすべての関数を開始の式と 1 回のバッチで照らし、次に `--hops` の範囲でたどり着いた関数を
   終点の式ともう 1 回のバッチで照らします。`--max-cost` は 2 回目の前にも、1 回目の分を含めて確かめます。
   `--dry-run` はどの問いにも 0 と答えるので、開始の式が当たりうる関数すべてから歩き、その上限を見せます。
@@ -666,11 +749,11 @@ $ sys1grep -e "a request failed" app.log
 sys1grep: 2040 units fold to at most 31 templates; --dedup=auto would save ~68 requests (~44k tokens)
 ```
 
-`--dedup=auto` はその見積もりが割に合うときだけ尋ねてまとめます。ほとんど縮まないファイルは、追加のリクエスト
+`--dedup=auto` はその見積もりが割に合うときだけまとめます。ほとんど縮まないファイルは、追加のリクエスト
 なしに全行を送ります。`--verbose`・`--dry-run` はどの値でもこの判定と数字を表示します。
 
 ```sh
-$ ./sys1grep --dedup -n -e "a request failed" app.log
+$ sys1grep --dedup -n -e "a request failed" app.log
 1:worker request 3fa9c1e27b failed: connection reset
 2:worker request 88d0e41a5c failed: connection reset
 4:worker request 0b7f2a9e13 failed: connection reset
@@ -678,9 +761,16 @@ $ ./sys1grep --dedup -n -e "a request failed" app.log
 ```
 
 どの値をまとめてよいかは意味によります。「ディスク使用率が 90% を超えている」なら数値が、「夜間に起きた」なら
-時刻が答えを決めます。そこで先に、意味ごとに小さなリクエストを 1 つ送って、どの種類の値が判定を変えうるかを
-Jev に聞き、その種類はまとめません（上の 2 リクエストのうち 1 つ）。同じファイルに
+時刻が答えを決めます。そこで `--dedup=always`（と裸の `--dedup`）は先に、意味ごとに小さなリクエストを 1 つ送って、
+どの種類の値が判定を変えうるかを Jev に聞き、その種類はまとめません（上の 2 リクエストのうち 1 つ）。同じファイルに
 `-e "disk usage is above 90%"` で聞くと、`95%` と `12%` は別々に判定され、`5:disk usage 95%` だけが出ます。
+
+`--dedup=auto` はこの問いを送りません（#152）。全種類をまとめ、代わりに各テンプレートから標本を判定します。
+値の違う最大 5 行で、変わる値ごとに、その値が最小の行・最大の行・中央の行を選びます。標本の判定がすべて同じなら、
+テンプレートの残りの行はその答えを共有します。判定が分かれたら残りの行を 2 回目として送り、その前に
+`--max-cost` をもう一度確かめます。標本のあいだにしか無い値は見落とします。`usage 1` から `usage 120` の中で
+意味 `usage 50` はどの標本にも一致しないので、`never` が 50 行目を出すところで `auto` は何も出しません。
+`--verbose` は、判定が揃ったテンプレートの数と、もう一度送った行の数を表示します。
 
 値を何も残さずにまとめた場合の実測では、43,071 行のシステムログが 550 テンプレート（バイト数で 1.2%）に、
 `install.log` が 21.1% に縮みました。Claude Code のトランスクリプト（jsonl）は 56.8% までしか縮みません。
@@ -736,6 +826,16 @@ $ sys1grep -r -n --summarize --summarize-prompt="3 行以内で。どのファ�
 
 `--summarize` が要ります。空の TEXT は指定しないのと同じです。`--format` の文より後に置くので、TEXT で書式を上書きできます。
 
+行を見てから決めたいときは `--summarize=ask` です。行をいつもどおり出し、続けて端末で
+`Summarize these matches? [y/N]` と聞きます。`y` なら、いま出した行を値なしの `--summarize` の TOOL に渡します。
+検索はやり直さず、Jev にも何も送りません。Enter やそれ以外ならそこで終わります。
+
+- 問いは `/dev/tty` で行うので、標準入力をターゲットにしても使えます。端末が無いとき、標準出力が端末でないとき
+  (パイプ・`$(...)`・スクリプト) は聞かず、止まりません。
+- `-y` は聞かずに要約します。`SYS1GREP_OPTS` に `-y` があると毎回要約します。`-q` と `--dry-run` は聞きません。
+- `--dedup` では一致した行はすべて出し、TOOL には `--summarize` と同じく各テンプレートの代表を渡します。
+- 終了コードは要約の成否によらず検索のものです。200 KB を超えるときは、`y` でも送らずにそう伝えます。
+
 他の TOOL:
 
 ```sh
@@ -752,6 +852,73 @@ OpenAI 互換サーバ全般です。3 つとも `SYS1GREP_SUMMARIZER_MODEL` が
 `SYS1GREP_SUMMARIZER_API_KEY` は URL の TOOL にだけ `Authorization: Bearer` として送られます
 （Jev 用の `SYS1GREP_API_KEY` は送りません）。`OLLAMA_HOST` で ollama 側のホストを変えられます
 （`ollama` CLI 自体と同じ）。
+
+### 検索ページ (`--serve`)
+
+`--rank --format=html` は 1 回の実行で 1 つの問いに答えます。`--serve` はそうしたページ（`--template` を指定しなければ `search` テンプレート）を検索ボックス付きで開くので、
+コマンドを打ち直さずに言い換えたり絞り込んだりできます:
+
+```
+$ sys1grep --serve -r src/
+http://127.0.0.1:51234/?k=3f9e...
+$ sys1grep --serve=8080 -y --level=strict -r src/     # ポートを固定。ここで渡したオプションがページの初期値になる
+```
+
+クローンからは `npm run serve -- -r src/` でも同じです（`--` は npm にオプションを読ませないため。ポートを固定するなら
+`npm run serve -- --serve=8080 -r src/`）。ターゲットがないと、`--serve` は空の stdin を読む代わりにパッケージ同梱の
+サンプル（`examples/`、#237）を探すので、どの例ボタンにも見つかるものがあります。ターゲットを指定すればそちらを探します。`-r` なしでフォルダを指定すると、`-r` を足したコマンドを示して起動時に拒否します（`--serve: src is a directory: add -r to search it (sys1grep --serve -r src)`、#222）。
+
+表示される URL には起動のたびに作るトークン（`?k=...`）が付きます。ページ自身を含むすべての経路でこれが要り、
+なければ（クエリにも、ページ自身のリクエストが使うヘッダにもなければ）サーバは何に対しても 404 を返します。
+ポート番号を知っているだけの別のローカルアカウントやプロセスは、ページもトークンも検索結果も読めません。
+
+ページは 4 つのセクションに分かれています（#216）。**Target** はどの検索も読むものを示します: 起動時に渡した
+ファイルとフォルダ（`npm run serve -- src docs/a.md`）、渡さなければ sys1grep が代わりに読むもの、つまり `-r` なら `.`、
+`git sys1grep` なら git が追跡しているファイル全部、どちらでもなければ同梱のサンプル（`demo corpus (bundled): examples/`、#237）
+です。（Details の）`-g` がオンの間は、代わりに git log のコミットと出ます。表示だけで、ページからは変えられず、
+リクエストに含まれたターゲットは無視されます。**Search conditions** には意味の欄と multi-step があり、
+**Options** には `rank` と `summarize`、**Details** にはそれ以外のオプションがあり、
+結果はその下に出ます。Search ボタン（Estimate cost と Stop はその下）は Search conditions の右に大きく置かれ、
+例とオプションはその下に並び（スマホ幅では 1 列）、続いてコマンドラインと Details が出ます。中身は次のとおりです: 意味の欄（`+` で増やせ、それぞれ `-e`、`-P`、`-a`、`-v`、`-Q` のどれか）、
+`rank`、`summarize`、**multi-step** スイッチ（オンにすると終点の欄、つまり `--step-to` と 1 つ以上の意味、および辺の
+設定である `--hops` と、それを `--step-reverse-to` にする reverse スイッチが出ます。オフにするとそれらはコマンドと検索から
+外れ、値は保たれます）、例ボタン（この README と [docs/use-cases.md](docs/use-cases.md) の検索、続いて多段階の
+たどり。押すと欄と必要なコントロールが埋まり、それ以外は起動時の値に戻り、Search を待ちます。ラベルの横の `EN` /
+`日本語` でラベルと意味の言語を切り替えられ、ブラウザに記憶されます）、その他のオプションを畳んだ **Details**
+（`--level`、`-t`/`-T`、`-C`、`-A`/`-B`、`--auto-scope`、`-n`、`-p`、`--dedup`、`--unit`、`-o`（文単位のときだけ表示）、
+`-j`、`--max-cost`、`--include`、`--exclude`、`--changed-within`、`-g`）、そして今のコントロールに対応する
+**コマンドライン**と Copy ボタンです。ターミナルに貼れば同じ検索が走ります。起動時の値のままのオプションは、
+コントロールが足す分に含めません。`rank` がオフなら一致をファイル順のテキストで、オンなら順位付きのカードで出します。
+`summarize` は右の列を足します: Search は 1 回だけ走り、結果が画面に出たら、その結果を要約します（表示中のテキストを、
+rank のカードも含めて要約器に POST します。2 回目の検索はなく、Jev に追加で送るものもなく、`--summarize` と同じく
+200 KB まで）。結果が画面に出ている状態で `summarize` にチェックを入れると、その結果をそのまま要約するかをページ内で
+尋ねます（#227）。OK なら同じようにテキストを送り返し、Not now ならチェックを入れたまま次の Search を待ちます。
+結果が出た後に欄やオプションを変えていれば、問いがそう告げます。画面に結果がないとき、multi-step がオンのときは
+尋ねません。Estimate cost は `--dry-run` です。最初の欄は既定で質問（`-Q`）です。`--suggest=Q:TEXT` /
+`--suggest=e:TEXT`（または `--suggest TEXT`。繰り返せる。TEXT だけなら質問）は、例の行の先頭に質問の候補ボタンを
+置きます。押すとページが埋まり、Search で実行されます。Details の各オプションには、何をするかを示す「?」の
+ヒントがあります。検索中は Search と Estimate が押せなくなり、**Stop** で止められます（子プロセスを kill します）。
+一致は `--color=always` と同じ色（ファイル名、行番号、正規表現の一致）で、カードでは `<mark>` で示します。
+
+どの検索も sys1grep 自身を実行する（起動時のオプションの後にコントロールの分を足す）ので、ページにできることは
+コマンドラインにできることと同じで、それ以上ではありません。サーバは `127.0.0.1` だけで待ち受け、そのホスト名に
+しか答えず、ページが API キーを見ることはありません。ターゲット、`--chunk`、`-M`、`--max-filesize`、`-y`、`--edges`、
+`--template`、API の設定、`--summarize` の TOOL は起動時に決まります: ページは与えられたものを絞り込めても
+広げられません（`--chunk`、`-M`、`--max-filesize` は Settings ダイアログの既定のオプションからは変えられます）。
+`--max-cost` を超える検索はすぐに拒否されます（`--serve` には `-y` の問いを出す `/dev/tty` がありません。問わずに
+通すなら `-y` を付けて起動します）。エラーには `--dry-run` と同じ見積もりが載り、横のボタンでその検索だけを 1 回、
+見積もりを少し上回る `--max-cost` で実行し直せます（Details の欄は変えません）。
+意味はページから来るので、`-e -P -a -v -Q --step-to --step-reverse-to` と `-l -c -q -o -z --unit=zero -H -i --format --color --dry-run --verbose` は起動時に拒否されます。
+
+**Settings** は `~/.config/sys1grep/settings.json`（[インストール](#インストール)を参照）を編集します: `url`、`model`、
+キー、`opts`（1 行に引数 1 つ）、要約器の 3 つです。Save でファイルに書き、次の検索から使われます。以後の `sys1grep`
+の実行でも同じです。各欄の横には、検索が使う値がどこから来るかが出ます。環境変数や起動時のオプションがファイルより
+優先されるときはそう告げます。その場合、保存しても検索は変わらないからです。キーは保存済み / 未保存としか返りません。
+置き換えるなら新しいキーを入力し、消すなら remove にチェックを入れます。`opts` の中の `--sys1-api-key` と `url` の
+userinfo は、`--verbose` と同じく `***` に伏せて返ります。`opts` はターゲット、ページ自身が起動時に拒否するフラグ、
+`--sys1-url` / `--sys1-api-key`（専用の欄があります）を受け付けず、`url` と URL の要約器は `http(s)` でなければ
+なりません。保存はページのトークンを付けた `POST` で、そのリクエスト自身の Host を `Origin` として要求します。
+ファイルは丸ごと書いて（0600、作るときはディレクトリを 0700）置き換えるので、読み手が書きかけを見ることはありません。
 
 ### 良いものから順に出す (`--rank`)
 
@@ -772,17 +939,74 @@ tickets/a.txt-13-確認いたします。
 ```
 
 - `--rank` は `--rank=jev` です。検索の後、各結果（行と文脈をまとめて）が否定でない意味に関係するかを Jev に
-  聞きます。結果ごとに質問が 1 つ増え、1 リクエストに `--chunk` 個まとめます。どんな結果があるかは検索の後で
+  聞きます。結果ごとに質問が 1 つ増え、1 リクエストに `--chunk` 個（64 個まで）まとめます。どんな結果があるかは検索の後で
   しか分からないので、`--dry-run` / `-i` は上限を出します。
 - `--rank=match` は結果の中で最も高い一致の確率で並べ、リクエストを送りません。1 行ずつの yes/no の答えなので、
   はっきりした一致どうしは近い値になり、文脈も読みません。
 - `-p` は見出しに点数を付けます（`1. [0.96] tickets/b.txt`）。`-l` は最良の結果の順にファイル名を出します。
 - `--format=markdown` は結果ごとに `## 1. tickets/b.txt` の見出しとコードブロックを、`--format=html` はテンプレート
   （下記）から 1 つの自己完結した HTML 文書を書きます。ライトとダークに対応し、結果ごとに関連度のバーが付きます。
-  行は表示どおりで、エスケープし、色は付けません。
+  行は表示どおりでエスケープし、一致した部分を `<mark>` で囲みます（正規表現の一致、なければ一致した文、
+  なければ一致した行全体。文脈の行には付けず、`--color=never` で付けなくなります）。
 - `--summarize` には順位どおりに渡します。`--dedup` では代表 1 つが 1 つの結果です。
 - 意味が要ります（正規表現・`!`・`-v` だけでは並べられない）。`-c`・`-o`・`-q` とは併用できません。
   `--no-rank` はそれより前の `--rank`（`SYS1GREP_OPTS` のものなど）を取り消します。
+
+### 失敗したコマンドの原因を探す
+
+失敗したジョブの最後のエラーはたいてい症状だけを言い（`214 accounts out of balance ... day-close aborted`）、
+ほかの `ERROR` / `WARN` はリトライで回復したものです。原因はずっと上の、目立たない `INFO` や `DEBUG` の 1 行である
+ことがよくあります。症状や `-Q "why did the job fail"` で聞くと、そのノイズが見つかります。#156 の 30,000 行の
+ログでは、回復した `ERROR` 行しか返りませんでした。代わりに原因の種類で聞き、結果を並べます。
+
+```sh
+$ sys1grep -n --dedup --level strict --rank \
+    -e "a component, writer, job or feature was paused, disabled, skipped or put on hold" \
+    -e "a configuration, endpoint, region, credential or data source was changed or switched" \
+    -e "an input, file or table was empty, missing, or had fewer records or columns than expected" \
+    -e "a fallback or default value was used instead of the real one" \
+    job.log
+```
+
+この 4 つの意味で、生成した失敗ジョブのログ 24 本（原因の種類ごとに 6 本、各 10,008 行）を測りました
+（`npm run cause-eval`、各行は `tests/cause-results.tsv`。24 行は旧版のスクリプトの出力で、`top 2 jev` 列は
+再実行の 2 行にだけあります）。結果は 1 本あたり 366〜464 件です。`--rank=match` の列は別の走行ではなく、
+`--rank` の走行の `-p` 列から再計算したものです（`--rank=match` は結果をその最大値で並べるため）。この再計算と
+実際の `--rank=match` の走行との突き合わせは、原因が結果に入らなかった config-5 の 1 本だけです。「一致せず」は、
+`strict` 未満と判定されたのか、`--dedup` で似た行に畳まれたのかを区別しません。
+
+| 原因 | 原因が 1 位、`--rank` | 原因が 1 位、`--rank=match` | それ以外 |
+|---|---|---|---|
+| 設定・接続先・認証情報が切り替わった | 6 本中 5 | 6 本中 5 | 1 本は一致せず |
+| 入力が空、または少ない | 6 本中 2 | 6 本中 2 | 2 本は 62 位（`match` では 343〜371 位）と 81 位（同 191〜219 位）、2 本は一致せず |
+| 本来の値の代わりに既定値を使った | 6 本中 6 | 6 本中 5 | `match` で 2〜9 位（上に 1 件、0.90 で並ぶものが 7 件） |
+| 来なかった行（開始したが終了がない） | 6 本中 0 | 6 本中 0 | 開始の行は一度も結果に入らず |
+
+1 本あたり約 $0.088（入力 210 万トークン、643〜646 リクエスト）、16〜17 秒でした。`--rank`（`jev`）は結果ごとに
+質問を 1 つ足し、入力トークンは `--rank=match` より約 3% 多くなります（1 本を両方で走らせた値。TSV には未記録）。
+`--rank=match` より原因を上に置いたログが 3 本、下に置いたログは 0 本です。
+
+上位の結果が関係なさそうに見えるとき（ローテーション、リフレッシュ、最後のエラーそのもの）は、原因はおそらく次のどれかです。
+
+- **値だけを述べる行**: `stock snapshot downloaded: 1204 bytes`、`input directory ... holds 2 files`、
+  `resolved db-primary.internal to 10.0.4.22 (replica-2)`。行のどこにもおかしいとは書いていないので、どの仮説も
+  当たりません。最後のエラーから書いた意味
+  （`-e "the job connected to a read-only replica instead of the primary database"`）でも当たりませんでした。
+  エラーが名指すもので探し（`-P '/snapshot|replica/'`）、数値を読んでください。
+- **来なかった行**: シャードを取ったまま終えなかったワーカー、始まって終わらなかったステップやマイグレーション。
+  この 6 本ではどれも開始の行が結果に入りませんでした。1 位は日常の行か最後のエラー、1 本は前回の実行の
+  `alias products switched to products-20260927` で、09-28 のそれは来ていません。これを狙った意味
+  （`-e "a worker, step or upload started but never reported that it finished"`）でも、1 位は開始の行ではなく最後の
+  エラーでした。`--dedup` は開始の行を似た開始の行に畳むことがあります。開始の行は互いに似ていて、違うのは終了が
+  来ないことだけだからです。開始と終了は目か grep で突き合わせてください。
+- **点数では分からない**: 原因が 1 位だったログでは `--rank` で 0.93〜0.97、一度も一致しなかったログ 2 本では
+  1 位が 0.88 と 0.91 でした。
+
+最初の 2 点の裏付けにした追試（原因の行を 31 行の窓で単独に判定させたもの、エラーから書いた意味、来なかった終了を
+狙った意味）は PR #192 の説明にあります。`tests` には再現の手段がありません。
+
+検索する行はすべて Jev（TypeSafe、または `SYS1GREP_URL` の先）に送られ、`--summarize` では一致した行が TOOL の
+提供元にも送られます。ビルドやジョブのログにはトークン・パスワード・顧客データがよく入っています。
 
 ### HTML のテンプレート (`--template`)
 
@@ -850,8 +1074,8 @@ claude plugin marketplace add uehaj/uehaj-marketplace
 claude plugin install uehaj@uehaj-marketplace
 ```
 
-コマンドラインツールを別途インストールする必要はありません。スキルは PATH に `sys1grep` があればそれを、
-無ければ `npx @uehaj/sys1grep` を使います。必要なのは API キーの設定だけです（[インストール](#インストール) を参照）。
+コマンドラインツールを別途インストールする必要はありません。スキルは PATH の `sys1grep` ではなく、
+スキルが固定した版を `npx -y @uehaj/sys1grep@VERSION` で動かします。必要なのは API キーの設定だけです（[インストール](#インストール) を参照）。
 
 あとは Claude Code の中で次のように打ちます。
 
@@ -867,22 +1091,27 @@ Claude Code のインストール単位はプラグインで、スキル単体�
 npx skills add uehaj/uehaj-marketplace --skill sys1grep -a claude-code -g
 ```
 
-スキルは意味を英語で書き、AND / OR / NOT を `-e` / `-a` / `-v` に振り分け、`-n` を付け、大きなディレクトリは
+スキルは意味を英語で書き、OR / AND / NOT を `-e` / `-a` / `-v` に振り分け、`-n` を付け、大きなディレクトリは
 課金に見合うファイルに絞り、最初の結果が怪しければ `--level loose` や `strict` で引き直します。
-API キーとエンドポイントの読み方はコマンドラインと同じです（`SYS1GREP_API_KEY`、`~/.config/sys1grep/.env`）。
+API キーとエンドポイントの読み方はコマンドラインと同じです（`SYS1GREP_API_KEY`、`~/.config/sys1grep/settings.json`、`~/.config/sys1grep/.env`）。
 
 ## 使い方
 
 ```
-usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION [-a MEANING] [-v MEANING]... [FILE...]
+usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION|-P /RE/FLAGS [-a MEANING] [-v MEANING]... [FILE...]
+       sys1grep [OPTION]... -e START1 [-e START2]... --step-to END1 [-e END2]... [FILE...]
 
-  -e MEANING   この意味に合う行 (複数指定は OR)
+  -e MEANING   この意味に合う行 (複数指定は OR)。MEANING は常に Jev へ送る意味で、正規表現として読むこと
+               はない。/RE/flags の形の値は拒否し、-P を使うよう促す。本当に / で始まり / で終わる意味は、
+               先頭にスペースを置けば通る (-e ' /cat/')
+  -P '/RE/FLAGS' 正規表現項。-e と同じく OR で、ローカルで判定しリクエストは発生しない。直後の -a/-v は
+               -e のときと同じく AND/AND NOT で連結。-P '!/RE/' は使えない。否定は -v '/RE/' で行う
   -Q, --question QUESTION  QUESTION に答えている行 (尋ねている行ではない)。-e "the line answers: QUESTION"
                と同じ (上の「問いに答えている行を探す」参照)
-  -a MEANING   直前の -e/-Q 項に AND で連結。-e A -a B -e C は (A and B) or C
-  -v MEANING   直前の -e/-Q 項に AND NOT で連結。-e A -v B は A and not B
+  -a MEANING   直前の -e/-Q/-P 項に AND で連結。-e A -a B -e C は (A and B) or C
+  -v MEANING   直前の -e/-Q/-P 項に AND NOT で連結。-e A -v B は A and not B
                先頭に置けば単独の否定。-v B は not B (grep -v 相当)
-  !MEANING     -e / -Q / -a / -v のどこでも、先頭に ! を付けるとその意味だけ否定
+  !MEANING     -e / -Q / -a / -v のどこでも、先頭に ! を付けるとその意味だけ否定 (-P では不可)
                -e A -e '!B' は A or not B。-a '!C' は -v C と同じ
   --level=LEVEL 厳しさ。肯定と否定の閾値をまとめて決める (既定 normal)
                  loose  : -t 0.3 -T 0.7  多少あやしくても拾う
@@ -902,6 +1131,8 @@ usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION [-a MEANING] [-v MEANING]... 
   --changed-within=WHEN  -r と git sys1grep で、30m / 2h / 7d / 2w 以内、日付か日時以降、today / this-week /
                this-month に更新したファイルだけを探す
   --no-auto-scope  意味の文面からファイルを絞り込まない (意味からの絞り込みを参照)。--auto-scope で戻す
+  -g, --gitlog ファイルではなく git log のコミットを 1 件 1 レコードとして探す。FILE は pathspec
+               (意味からの絞り込みを参照)。-r・git sys1grep とは併用不可
   -l           一致した行ではなくファイル名だけを表示
   -H, --with-filename  1 ファイルでもファイル名を付ける。--no-filename は常に付けない
   -A NUM       一致行の後ろ NUM 行も表示 (grep と同じ。文脈行の区切りは - )
@@ -909,10 +1140,11 @@ usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION [-a MEANING] [-v MEANING]... 
   -C NUM       前後 NUM 行を表示 (-A NUM -B NUM)
   -c           一致した行数だけをファイルごとに表示 (grep -c 相当)
   -q, --quiet  何も表示せず、最初の一致で止まる。一致があればエラーがあっても終了コード 0 (grep -q 相当)
-  --chunk=LINES 1 リクエストにまとめる行数 (既定 30)
+  --chunk=LINES 1 リクエストにまとめる行数 (既定 30。質問も 1 リクエストに 64 個までなので、意味が 3 つ以上
+               なら行数はそれより少なくなる)
                同じリクエストの行は互いの文脈になるので、小さくすると速さだけでなく曖昧な行の
                判定も変わる
-  -j N         同時リクエスト数 (既定 8)
+  -j N         同時リクエスト数 (既定 8。ローカル URL (localhost・127.0.0.1・[::1]) では 1)
   -n           行番号を付ける
   --unit=UNIT  判定の単位: line (既定)、zero、sentence-by-jev、sentence-by-rule、function
   -z, --null-data  --unit=zero。行ではなく NUL 終端のレコードごとに判定し、NUL 終端で出力する (前述の「複数行にまたがるレコード」を参照)。
@@ -921,16 +1153,18 @@ usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION [-a MEANING] [-v MEANING]... 
   --unit=function  関数ごとに判定し、当たった関数の行を出す (前述の「関数ごとに判定する」を参照)
   --step-to 式  前の式に当たる関数から呼び出しをたどり、後ろの式に当たる関数までのパスを出す
                (前述の「関数から関数へたどる」を参照)
-  --edges=FILE 呼び出しの代わりに FILE の辺をたどる。--reverse は逆向きにたどる
+  --step-reverse-to 式  --step-to と同じだが、辺を逆向きに (呼ばれる側から呼ぶ側へ) たどる
+  --edges=FILE 呼び出しの代わりに FILE の辺をたどる
   --hops=N|M..N|M..  終点のホップ数 (既定 0..)
-  -o           --unit=sentence-by-* と併用し、当たった文だけを出す
+  -o           正規表現の一致だけを grep -o のように 1 行ずつ出す (意味だけで当たった行は行全体)。
+               --unit=sentence-by-* では当たった文だけを出す
   -p           各意味の確率を行末に表示 (閾値調整用)
   --dry-run    何も送らず、この検索が使う設定 (コマンドラインでなければその出どころも)・検索するファイル・
                各リクエストとその質問を表示
   --verbose    同じ表示を検索しながら stderr に出す
   -i, --interactive  --dry-run と同じ内容を見せ、端末で y と答えたときだけ検索する
   -M NUM, --max-columns=NUM  行 (-z ならレコード) の先頭 NUM 文字までを送る。判定はそれでもされる
-               (NUM より先にしか無い一致だけ見つからない)。既定 2000、-z なら 8000
+               (NUM より先にしか無い一致だけ見つからない)。既定 2000、-z と --unit=function なら 8000
   --max-filesize=SIZE  対象を先に計測 (K/M/G、既定 10M)。超えるものは rg の --max-filesize と同じく
                無条件に飛ばす (-y は効かない)。標準入力は読んでから計測し、超えていれば同じく飛ばす。
                --cached / <tree>: の対象は blob で、その内容から計測する。-g のコミットはここに
@@ -938,12 +1172,24 @@ usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION [-a MEANING] [-v MEANING]... 
   --max-cost=USD  送る予定の入力を見積もって値段を出す。超えれば (既定 1) 端末で続けるか聞く。
                -y は聞かずに yes と答える。端末が無く超えていれば終了コード 2、-q でも変わらない
                (スクリプトからは -y)。-i は無条件かつこれより前に聞くので二重には聞かない
+  -y, --yes    その問いに聞かずに yes と答える
   --dedup[=auto|always|never]  テンプレートごとに 1 行だけ判定し、その答えを残りにも使う (当面の既定は never。
                前述の「テンプレートごとに 1 行だけ判定する」を参照)
+  --cache[=on|off|only]  前に送ったリクエストは ~/.config/sys1grep/cache から無料で答える。only は送らず、
+               キャッシュに無ければ終了コード 2 (-q が先に一致を見つけていれば 0。既定 off、SYS1GREP_CACHE。
+               前述の「送る量を減らす」を参照)。
+               --cache=clear (単独で) で空にする
   --rank[=jev|match]  結果 (一致とその文脈) を良いものから順に番号付きの見出しの下に出す。jev (値なしの
                --rank) は各結果を Jev に聞き、match は最も高い一致の確率で並べる (前述の「良いものから順に出す」を参照)。--no-rank でファイル順
+  --summarize[=TOOL]  表示するはずの内容を TOOL (既定 claude、または SYS1GREP_SUMMARIZER) に渡し、行の代わりに
+               その要約を出す。--summarize=ask は行を出してから端末で聞く。--no-summarize で取り消す
+               (前述の「行の代わりに要約を出す」を参照)
+  --summarize-prompt=TEXT  固定の指示の後ろに足す自分の指示。--summarize が要る
+  --format=FORMAT  plain (既定) / markdown / html。--rank の出力、または --summarize の TOOL に求める形式
+  --serve[=PORT]  検索せず、127.0.0.1 で検索ページを開く。--suggest=Q:TEXT / e:TEXT で質問の候補ボタンを足す
+               (前述の「検索ページ」を参照)
   --template=NAME  --rank か --summarize の --format=html が書く文書。~/.config/sys1grep/templates/NAME.html、無ければ同梱のもの
-               (default, print, terminal)、またはファイル。既定は SYS1GREP_TEMPLATE、無ければ default。
+               (default, print, search, terminal)、またはファイル。既定は SYS1GREP_TEMPLATE、無ければ default。
                --template=list は名前を出す (前述の「HTML のテンプレート」を参照)
   --install-templates  同梱のテンプレートを ~/.config/sys1grep/templates へコピーする。既にあるファイルは残す
   --color[=WHEN] 色付け。auto (端末なら付ける、既定) / always / never。=WHEN 省略時は auto
@@ -951,17 +1197,21 @@ usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION [-a MEANING] [-v MEANING]... 
                否定側の閾値未満を赤、あいだを黄で表示。NO_COLOR にも従う
   --sys1-model=ID, --sys1-url=URL, --sys1-api-key=KEY
                API の設定。SYS1GREP_MODEL / SYS1GREP_URL / SYS1GREP_API_KEY より優先
-  -h, --help   このヘルプ (LANG / LC_ALL / LC_MESSAGES が ja 以外なら英語)
+  -h, --help   このヘルプ (LC_ALL / LC_MESSAGES / LANG のうち最初に設定されたものが ja 以外なら英語)
   -V, --version  バージョンを表示して終了
 ```
 
 FILE を省略すると stdin を読みます。複数ファイルなら `file:` を前置きします。
 終了コードは grep と同じで、一致あり 0、なし 1、エラー 2（引数エラー、読めないファイル、API 障害）です。
+行を送ったうえで終了コード 1 になるときは、最も高かった確率とその行、閾値を緩めるオプション (緩めても届かないときは出さない)、全行の確率を見る `-p -t 0` (否定があれば `-T 1` も) を stderr に 1 行出します
+（`sys1grep: no line reached 0.5 for "…"; the highest was 0.42 (app.log:118). ...`）。`-q`・`--summarize`（`--summarize=ask` を除く）・`--step-to`・`--step-reverse-to` のときと、否定の意味だけで行が落ちたときは出しません。
 
 ### 式の書き方
 
-`-e` が OR の項を始め、`-a` / `-v` は直前の項に AND / AND NOT で連結します。
+`-e` と `-P` がそれぞれ OR の項を始めます。前者は常に意味、後者は常に正規表現です。`-a` / `-v` は
+直前の項に AND / AND NOT で連結します。
 意味の先頭に `!` を付けるとその意味だけを否定できます（シェルの履歴展開を避けるためシングルクォートで囲んでください）。
+`-P` の値の先頭に `!` を付けることはできません。正規表現の否定は `-v '/RE/'` で行います。
 
 | コマンド | 意味 |
 |---|---|
@@ -974,10 +1224,10 @@ FILE を省略すると stdin を読みます。複数ファイルなら `file:`
 
 ## 仕組み
 
-1. 空行を除いた行を 30 行ずつ（文字数上限つき）のチャンクに分ける
+1. 空行を除いた行を 30 行ずつ（文字数上限と、1 リクエスト 64 質問までの上限つき）のチャンクに分ける
 2. チャンクを `{"L000": "行1", "L001": "行2", ...}` という object として `state` に入れ、
    行 × 意味 の数だけ `noul`（yes/no 確率）質問を 1 リクエストにまとめて送る
-3. 8 本まで並列にリクエストし、結果はファイル順に出力する
+3. 8 本まで並列にリクエストし（`-j`。ローカル URL では 1 本）、結果はファイル順に出力する
 4. 各行について、意味ごとの確率を閾値で真偽に変え、AND / OR / NOT の式を評価する
 
 一緒に送った行は互いの文脈になります。Jev はチャンクのほかの行から、そのファイルで何が普通かを読み取って
@@ -1000,19 +1250,24 @@ FILE を省略すると stdin を読みます。複数ファイルなら `file:`
 precision / recall を出します。あわせて `-t` × `-T` を 0.05 刻みで総当たりし、最良の閾値を報告します。
 
 ```sh
-node --no-warnings tests/judge.mts [--model sonnet] [--rejudge]
+npm run judge [-- --model sonnet] [--rejudge]     # tests/judge.mts を動かす。.mts には Node 23.6 以降が要る
 ```
 
 ジャッジの判定は `tests/verdicts.json` にキャッシュされ、2 回目以降はジャッジを呼びません。
 結果は `tests/report.md` に書き出されます。直近の結果は precision 0.94、recall 0.98 です。
 
+テストの入口はこれだけではありません。`npm run test:offline` は偽の Jev（`tests/fake-jev.mjs`）を相手に sys1grep 自身を
+確かめます。キーもネットワークも要らず、毎回同じ結果になります（`OFFLINE_ONLY=PATTERN` で一致する節だけ走らせられます）。
+`npm test` はそれに本物の Jev に対する `tests/check.sh` を足します。入口の一覧と、それぞれが何を確かめ何を要するかは
+[CLAUDE.md](CLAUDE.md) にあります。
+
 ## 制約
 
-- 検索した行はすべて api.typesafe.ai に送られます。そこにアップロードしたくないファイルには使わないでください。
+- 検索した行はすべて api.typesafe.ai（または `SYS1GREP_URL` の指す先）に送られます。そこにアップロードしたくないファイルには使わないでください。
 - 空行は送らず、全意味の確率 0 として扱います。`-v X` には当たり、`-e X` には当たりません。
-- 1 行は 2,000 文字で切って送ります。
-- 1 リクエストの質問数上限は公式に書かれていませんが、420 質問は通っています。
-- 429 / 529 は指数バックオフで 6 回まで再試行します。
+- 1 行は 2,000 文字で切って送ります（`-z` と `--unit=function` では 8,000 文字。`-M` で変えられます）。
+- 1 リクエストの質問数上限は公式に書かれていませんが、420 質問は通っています。sys1grep 自身は 1 リクエスト 64 質問で分けます（Clef の上限）。超えるのは 1 単位に 65 以上の意味を聞くときだけです。
+- 429・529 などの 5xx、接続エラー、タイムアウトは指数バックオフで 6 回まで再試行します。
 - 精度は英語がもっとも高く、日本語も使えますがぶれは大きめです。
 
 ## よくある質問

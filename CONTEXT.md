@@ -19,15 +19,15 @@ A revision named on the command line (branch, tag, commit, `@{u}`) whose content
 _Avoid_: revision, ref, snapshot
 
 **Target**:
-One regular file or blob that is searched: from the working tree, the index or a tree. Symlinks and submodules are never targets.
+One regular file or blob that is searched: from the working tree, the index or a tree. `-r` and `git sys1grep` never list a symlink or a submodule as a target; a symlink named on the command line is searched.
 _Avoid_: source (the code uses `sources` for the units printed)
 
 ### What is judged, and multi-step matching
 
-Multi-step matching (`--step-to`, `--edges`, `--reverse`, `--hops`) came in #163. The terms below are its words.
+Multi-step matching (`--step-to`, `--step-reverse-to`, `--edges`, `--hops`) came in #163. The terms below are its words.
 
 **Unit**:
-What one question judges, and what decides which lines are printed for a match: a line, a record (`--unit=zero`, `-z`), a sentence (`--unit=sentence-by-jev` or `sentence-by-rule`), or a function (`--unit=function`). A regex term judges it locally; a meaning is judged by Jev.
+What one question judges, and what decides which lines are printed for a match: a line, a record (`--unit=zero`, `-z`), a sentence (`--unit=sentence-by-jev` or `sentence-by-rule`), or a function (`--unit=function`). A regex term, started with `-P` (or `-a`/`-v` onto a preceding term), judges it locally; a meaning, started with `-e` or `-Q`, is judged by Jev. `-e` is meaning-only since #238: a `/RE/flags`-shaped value there is refused, pointing at `-P` (a leading space still gets a real `/.../`-shaped meaning through). `-Q` was already meaning-only, unchanged by #238.
 _Avoid_: chunk (a chunk is a batch of units sent in one request, `--chunk`), block
 
 **Multi-step matching**:
@@ -43,7 +43,7 @@ The reached Units within `--hops` that match the expression after `--step-to`.
 _Avoid_: target (a Target is a searched file or blob), sink, goal
 
 **Edge**:
-One directed link from one Unit to another: a call by default (caller to callee), or a line of `--edges=FILE`. `--reverse` walks Edges backwards.
+One directed link from one Unit to another: a call by default (caller to callee), or a line of `--edges=FILE`. `--step-reverse-to` walks Edges backwards (#212).
 _Avoid_: call (only one kind of Edge), reference, arc
 
 **Hop**:

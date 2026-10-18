@@ -1,0 +1,10 @@
+I have to admit, the bug was my fault: I shipped the migration without testing it on a copy of production data first.
+Looking back, I should have reviewed the diff more carefully before merging; the mistake was mine, not the reviewer's.
+The weather today is mild, with a light breeze from the west and clear skies through the evening.
+Lunch today was a simple rice bowl with grilled vegetables from the place around the corner.
+Next Friday is a public holiday, so the office will be closed for the long weekend.
+会議は明日の10時からに変更になりました。資料は前日までに共有してください。
+今日の天気は晴れ、最高気温は28度の見込みです。
+料金プランの変更方法については、設定画面の「プラン」から行えます。
+振り返ると、あのバグは自分のミスでした。テストを十分にせずにリリースしてしまったのが原因です。
+新機能のリリースは来月に延期されましたが、理由は品質を優先したためです。

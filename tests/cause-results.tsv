@@ -1,0 +1,27 @@
+id	kind	lines	results	jev rank	match rank	key p	key jev	top 2 jev	requests	input tokens	usd	seconds	top result
+config-1	config	10008	426	1	1	0.98	0.97	-	645	2106193	0.0885	16	2026-09-28 01:01:38.883 INFO  [config] settlement endpoint reloaded: https://settle.bank.example -> 
+config-2	config	10008	427	1	1	0.95	0.95	-	645	2106721	0.0885	16	2026-09-28 01:00:55.983 DEBUG [s3] region override from environment: S3_REGION=eu-west-1 (profile de
+config-3	config	10008	442	1	1	0.96	0.95	-	645	2108189	0.0885	17	2026-09-28 01:01:16.256 INFO  [auth] credential provider now uses profile 'audit-readonly'
+config-4	config	10008	396	1	1	0.93	0.93	-	644	2101633	0.0883	17	2026-09-28 01:01:09.992 INFO  [flags] feature flags now read from file:///etc/app/flags.local.json
+config-5	config	10008	400	-	-	-	-	-	644	2102168	0.0883	16	2026-09-28 01:00:52.496 INFO  [ops] route table rotated (generation 7870)
+config-6	config	10008	400	1	1	0.96	0.96	-	644	2102924	0.0883	16	2026-09-28 01:01:15.486 INFO  [config] config push 7781 applied: report.timezone=UTC (was Asia/Tokyo
+empty-1	empty	10008	450	1	1	0.97	0.97	-	645	2110022	0.0886	16	2026-09-28 01:01:09.401 INFO  [extract] loaded customers_20260928.csv: 0 rows (0 bytes)
+empty-2	empty	10008	397	62	343-371	0.71	0.82	-	644	2102785	0.0883	16	2026-09-28 01:01:44.187 INFO  [auth] route table rotated for tenant t4921
+empty-3	empty	10008	456	81	191-219	0.79	0.81	-	646	2111337	0.0887	17	2026-09-28 01:00:39.334 INFO  [region] rule set rotated at offset 6485
+empty-4	empty	10008	434	-	-	-	-	-	645	2107686	0.0885	17	2026-09-28 01:00:06.426 INFO  [tls] tax table rotated for tenant t8446
+empty-5	empty	10008	436	1	1	0.96	0.96	-	645	2107918	0.0885	16	2026-09-28 01:01:15.221 DEBUG [fx] reference table fx_rates returned no rows for 2026-09-28
+empty-6	empty	10008	406	-	-	-	-	-	644	2103475	0.0883	17	2026-09-28 01:02:40.639 ERROR [train] validation set too small (n=31); training aborted
+default-1	default	10008	405	1	1	0.97	0.97	-	644	2103683	0.0884	16	2026-09-28 01:01:07.387 DEBUG [fx] no rate for JPY/USD, using 1.0
+default-2	default	10008	382	1	1	0.97	0.97	-	643	2099184	0.0882	16	2026-09-28 01:00:49.620 INFO  [export] PAGE_SIZE not set, falling back to 10
+default-3	default	10008	366	1	1	0.96	0.95	-	643	2097428	0.0881	17	2026-09-28 01:00:58.122 DEBUG [tenant] tenant t-4471 has no locale, assuming en-US
+default-4	default	10008	414	1	2-9	0.9	0.93	-	644	2104108	0.0884	16	2026-09-28 01:01:03.381 INFO  [client] no retry policy configured for client 'ledger', using built-i
+default-5	default	10008	396	1	1	0.97	0.97	-	644	2102257	0.0883	16	2026-09-28 01:01:51.319 WARN  [pool] could not read max_connections from pool.yaml, using 2
+default-6	default	10008	398	1	1	0.96	0.96	-	644	2102068	0.0883	17	2026-09-28 01:01:01.941 INFO  [pricing] price list for channel 'wholesale' unavailable, serving reta
+missing-1	missing	10008	404	-	-	-	-	-	644	2103025	0.0883	16	2026-09-28 01:01:27.016 INFO  [webhook] limit profile rotated in 8832ms
+missing-2	missing	10008	426	-	-	-	-	-	645	2106233	0.0885	17	2026-09-28 01:02:40.854 ERROR [restore] step 3/4: snapshot orders_20260928 not found; job aborted
+missing-3	missing	10008	400	-	-	-	-	-	644	2102268	0.0883	17	2026-09-28 01:01:21.724 INFO  [tls] token set rotated (generation 8334)
+missing-4	missing	10008	464	-	-	-	-	-	646	2111787	0.0887	17	2026-09-28 01:02:40.549 ERROR [api] column orders.currency does not exist; 500 on POST /orders, depl
+missing-5	missing	10008	422	-	-	-	-	-	645	2106061	0.0885	16	2026-09-28 01:02:38.717 INFO  [region] shard map rotated after 6671 attempts
+missing-6	missing	10008	406	-	-	-	-	-	644	2103424	0.0883	17	2026-09-28 01:00:55.339 INFO  [index] alias products switched to products-20260927
+config-5-rerun	config	10008	392	-	-	-	-	0.88 0.88	644	2101099	0.0882	17	2026-09-28 01:00:52.496 INFO  [ops] route table rotated (generation 7870)
+missing-1-rerun	missing	10008	401	-	-	-	-	0.91 0.89	644	2102611	0.0883	17	2026-09-28 01:01:13.584 INFO  [api] segment rotated for tenant t7581

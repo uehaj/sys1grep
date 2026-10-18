@@ -6,13 +6,107 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 ## [Unreleased]
 
 ### Added
+- `--serve`: when searches go to the fake Jev of the offline tests (`tests/fake-jev.mjs`), the page says so in a
+  banner under the title: its probabilities are dummies, not real answers. `--serve` asks only a loopback URL, with
+  a GET that never follows a redirect (never judged or billed), at launch and again after every settings save, so a
+  url switched in the settings panel shows or hides the banner right away; a remote Jev gets no request from this.
+- `--cache[=on|off|only]` keeps Jev's answers in `~/.config/sys1grep/cache`, one file per request, named by the
+  SHA-256 of the endpoint's host and the request body (model, lines, questions); the API key is never stored or
+  hashed in, and usage is not kept (#252, the first step of #200). A hit sends nothing and counts no request and no
+  cost (`--max-cost`'s estimate leaves it out too); a miss sends as before and stores the answers. Off by default,
+  since the questions carry the searched lines; `SYS1GREP_CACHE` (environment or `.env`, not settings.json) sets
+  the default. `only` never sends: a request not cached is exit 2 unless `-q` already found a match, naming it.
+  `--dry-run` says `N requests to send, M cached`; its line count and the summary's count only the lines of
+  requests sent. `--cache=clear` empties the cache and must stand alone. A failed write is a warning; the search result stands. No expiry: the model is in the key.
+- `--serve`: a small sample corpus now ships in the package (`examples/`: logs, support tickets, prose in English
+  and Japanese, and a `.js`/`.py` pair with a call chain, tens of KB total), so every example button has something
+  to find (#237). With no target on the command line, and only when `-r`, `-g` and `git sys1grep` are all off
+  (checked against what sys1grep itself would resolve, SYS1GREP_OPTS and settings.json opts included, not just the
+  launch's own argv), `--serve` searches that bundled corpus instead of reading empty stdin; Target says so plainly
+  (`demo corpus (bundled): examples/`), and results print its real path, same as any other target. Any target given
+  on the command line, `-r`, `-g` (at launch or toggled per search in Details) or `git sys1grep` all replace it, as
+  before. Only the copy-command box and the page's own script keep showing the command with no target (a note next
+  to Copy says the pasted command reads stdin instead, and names what to add); the bundled path is added only to
+  what each search actually runs, and only when that search is not itself reading git log.
+- `--serve`: Details now has `-A`/`-B` (lines of context, each side, like `-C`), `-j` (concurrent requests) and
+  `--max-cost` (the cost guard), and `-o` shown only when the unit is a sentence (#234, #211 item 10, decided).
+  `-A`/`-B`/`-o` go inert during a multi-step walk, like `-C`/`--dedup` already do; `-j`/`--max-cost` still apply
+  there. `--chunk`, `--max-columns`, `--max-filesize` and `--template` stay in Settings > default options; `-l`/`-c`
+  stay with the CLI (#211 item 11). A search that crosses `--max-cost` is refused at once (`--serve` has no
+  `/dev/tty` to ask `-y`'s question on), naming `-y` and `--max-cost`; the page now shows that refusal's own
+  estimate next to it and a button to rerun that one search, once, with `--max-cost` just above it (not offered
+  in a multi-step walk, where a retry would really spend the start side's cost and could still be refused again
+  at the end with no button of its own; Details' `--max-cost` field is the way there).
+- `--serve`: the `unit` select in Details also offers `function` (#233), matching `--unit=function`'s CLI set
+  (`line` / `sentence-by-jev` / `sentence-by-rule` / `function`; `zero` stays out, it's `-z`, refused on purpose).
+  A launch's `--unit=function` no longer turns into `--unit=line` once multi-step is on: the control used to force
+  itself back to `line` there, which broke a walk (sys1grep.mjs's own "needs `--edges`" refusal) instead of leaving
+  the launch's unit, or the walk's own function default, in effect.
+- `--summarize=ask` (#229): the lines print as usual, then, on a terminal, `Summarize these matches? [y/N]`; `y`
+  summarizes the lines just printed with the TOOL of a bare `--summarize`, with no second search. No terminal, or
+  stdout not one: no question. `-y` summarizes unasked; `-q` and `--dry-run` never ask; the exit status is the search's.
+- `--serve`: checking `summarize` while results are on screen asks whether to summarize those results as they are
+  (#227). OK posts the text on screen back and only the summarizer runs on it (no search, nothing sent to Jev, at most
+  200 KB); Not now leaves the box checked for the next Search; a field or option changed since the results came is
+  said in the question. In English or Japanese, with the examples' `EN` / `日本語`.
+- `--serve`: `EN` / `日本語` beside the examples switches their labels and meanings between English and Japanese (#215);
+  the multi-step ones keep their regexes, `--suggest`'s pills stay as given, and the choice is remembered in the browser
+  (English when storage is blocked).
+- `--serve`: the page is laid out as four sections, Target, Search conditions, Options and Details (#216). Target shows
+  the launch's targets (or, when none were given, `.` with `-r`, every tracked file with `git sys1grep`, git log with
+  `-g`, else the bundled sample corpus: see #237 above), read-only: the
+  page cannot change them. Results stay below the sections; the examples are under Search conditions.
+- `--serve`: the first field is a question (`-Q`), `--suggest=Q:TEXT` / `--suggest=e:TEXT` (repeatable) puts your own suggested-question buttons first in the examples, and the options in Details have "?" hints.
+- `~/.config/sys1grep/settings.json` holds the settings as JSON, one optional field per variable: `url`, `key`,
+  `model`, `opts` (an array, one argument each), `summarizer`, `summarizerModel`, `summarizerKey`. The command line
+  wins, then the environment, then settings.json, then `~/.config/sys1grep/.env`, then the defaults. An environment
+  variable set to empty counts as unset and falls through to settings.json, except `SYS1GREP_OPTS=`, which still
+  drops the default options. Every environment variable works as before.
+  A wrong type or a file that is not JSON is an error naming the file and the field, never a value; an unknown field
+  only warns (so an older sys1grep keeps working once a newer one adds a field) and is ignored. A key in a file
+  others can read gets a warning. `--verbose` / `--dry-run` name a value's field and the file
+  (`key: key (~/.config/sys1grep/settings.json)`, `(settings.json opts)`). The no-key error points at the file.
+- `-r` (and git sys1grep) now also skips `~/.config/sys1grep/settings.json` by its one known path, not by name: its
+  basename matches no existing skip pattern, so a recursive search whose scope happened to reach it (e.g. `-r` over
+  `$HOME`) would otherwise hand a match on the saved key to whatever reads the results.
+- `--serve`: every route, the page itself included, now needs the launch's token (`?k=...` in the printed URL, carried
+  on every request the page makes): without it the server answers 404 to everything, so another local account or
+  process cannot read the page, its token, or a search's results merely by knowing the port.
+- `--serve`: a Settings panel edits `~/.config/sys1grep/settings.json` and saves it for the next search. Each field says
+  where the value in effect comes from (command line, environment variable, settings.json, `.env`, default), so a save
+  that an environment variable would override says so. A key is only ever sent in, never shown as saved/not-saved; a
+  `--sys1-api-key` inside `opts`, and a `url`'s userinfo, come back masked as `***` (as `--verbose` masks them), and
+  resending a masked value unchanged does not overwrite the real one. `opts` refuses a target, a flag `--serve` itself
+  refuses at launch, or `--sys1-url` / `--sys1-api-key` (their own fields); `url` and a URL summarizer must be
+  `http(s)`. Saving is a `POST` with the page's token and this request's own Host as the required `Origin`; the file
+  is written whole at 0600 (directory 0700 when created) and renamed into place, and a value that fails the file's
+  checks is refused.
+- `--format=html` marks what matched with `<mark>` (the regex matches, else the matching sentences, else the whole matching line);
+  `--color=never` turns it off. `--serve` shows the colors of `--color=always` on the matches in file order, and the marks on the cards, by default.
+- `--serve[=PORT]` serves a search page on `127.0.0.1` (#166): a box for the meanings, `--rank` / `--summarize` and the other
+  options as controls, results as the `--rank --format=html` cards, and the command line for the current controls with a Copy
+  button. Each search runs sys1grep with the launch options plus the controls' changes. `node:http` only.
+- `--serve`: a multi-step switch takes the place of the `--step-to:` field kind. On, it shows the ends (`--step-to`, one or
+  more meanings) and the edges (`--hops`, and a reverse switch that makes the end `--step-reverse-to`); off, they leave the command line and the search. Example buttons turn it
+  on with a walk filled in. A meaning field added with `+` is now searched (it was read from its remove button).
+- `--serve`: eight example buttons for ordinary searches, from the README and docs/use-cases.md (a meaning, `-Q`, two
+  meanings with `-p`, `-v`, a regex with a meaning, `--level strict`, `--dedup`, `--unit=sentence-by-jev`), before the
+  multi-step ones. Each fills the fields and the controls it needs, puts the rest back to their launch values (a plain
+  example turns multi-step off), and sends nothing until Search.
+- `-r` and `git sys1grep` warn before sending a large tree through a term no regex narrows (#138). When such a
+  term is about to send more than 10,000 units, one stderr line before the judging requests gives the totals
+  `--dry-run` would (units, files, estimated input tokens and the price), names the term and
+  suggests `-a '/RE/'`, `--include` / `--changed-within` or `--dry-run`. The run goes on: it is a warning, not a
+  refusal. `-q` silences it, `-y` does not; `--dry-run` and `-i` show the same totals already and do not print it.
+  A negated regex does not narrow its term, and a regex in another OR term (`-P '/RE/' -e MEANING`) does not
+  narrow this one.
 - A meaning may start with a dash on any search, not only around `--step-to`: `-e "--summarize hands the lines on"`, and the same for `-a`, `-v` and `-Q`. An option holds no space; a value that starts with `-` and is not an option is taken as the meaning.
 - Multi-step matching: `EXPRESSION --step-to EXPRESSION` finds the functions the expression before `--step-to`
   matches, walks the calls from them breadth first, and prints the paths to the reached functions the expression
   after it matches, as a tree of hop, `file:line` and name (#163). No score steers the walk: Jev judges every function
   against the start expression in one batch and the functions reached within `--hops=N|M..N|M..` against the end in another;
-  regex-only ends send nothing. `--edges=FILE` walks any other relation between lines, `--reverse` walks
-  backwards. stderr gives the functions reached at each hop and why the walk stopped. `--max-cost` counts both
+  regex-only ends send nothing. `--edges=FILE` walks any other relation between lines, `--step-reverse-to` walks
+  backwards (callee to caller). stderr gives the functions reached at each hop and why the walk stopped. `--max-cost` counts both
   batches, and `--dry-run` shows a bound. Refused with `-z`, `-g`, `-o`, `-c`, `-l`, `-A/-B/-C`, `--rank`,
   `--summarize` and `--dedup`.
 - `--rank[=jev|match]` prints the results best first, each under a numbered header (`1. FILE`, `1. [SCORE] FILE`
@@ -38,7 +132,7 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 - `--template` also applies to `--summarize --format=html`. The TOOL is asked for plain text instead of a whole
   HTML document, and its answer goes, escaped, into the template's `{{answer}}` (empty with `--rank`) once the
   TOOL is done; the `<!--result-->` part is not written. A template used with `--summarize` must have `{{answer}}`
-  outside that part, or it is exit 2. The bundled `default`, `print` and `terminal` have it.
+  outside that part, or it is exit 2. The bundled `default`, `print`, `search` and `terminal` have it.
 - `--no-summarize` turns off an earlier `--summarize`, and `SYS1GREP_OPTS` now takes `--summarize` and `--rank`
   (both used to be refused there, having no `--no-` form to undo them for `-l` / `-c`). A `--summarize` in
   `SYS1GREP_OPTS` sends every search's matches to TOOL's provider too.
@@ -53,7 +147,8 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   (`sys1grep: big.log: skipped, 25 MB is over --max-filesize=10M`), named on stderr, and `-y` does not affect it
   (a named file over the limit is skipped too). Separately, the input about to be sent (including the setup
   requests above, if any ran) is priced (`--max-cost`, default 1 USD) and asks to continue on the terminal if it
-  is over; a custom `SYS1GREP_URL` is still priced at TypeSafe's list price, and the question says so.
+  is over; the price is Jev's unless the URL is local or the model has its own price (see Changed), and the
+  question says whose.
   `-y`/`--yes` answers that question yes without asking, and without a terminal a limit exceeded is exit 2.
   `-i` already asks unconditionally and earlier, so this does not ask again; `--dry-run` and `-i` show the same
   verdict. `-M`/`--max-columns` (default 2000, 8000 with `-z`) is unchanged from before this PR: it bounds only
@@ -135,9 +230,9 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   that held, never a negated regex.
 - `-o` without `--unit=sentence-by-*` prints each regex match on a line of its own, as `grep -o`, with no context. A line only
   meanings matched prints whole. Before, `-o` without `--sentence` was ignored.
-- The `--dry-run` summary line (also shown by `-i`) estimates the input tokens and, for TypeSafe itself, the price:
+- The `--dry-run` summary line (also shown by `-i`) estimates the input tokens and the price:
   `…, 2315 chars, ~3178 input tokens, ~$0.000133; nothing sent`. The estimate is 650 tokens a request plus 0.21 a
-  request-body byte, fitted on real requests in English and Japanese; it was within -8% to +12% of what Jev billed.
+  request-body byte (0.33 a byte of CJK text), fitted on real requests in English and Japanese; it was within -8% to +12% of what Jev billed.
 - Auto-scope (#43): with `-r` and `git sys1grep`, each meaning first asks Jev, in one small request, whether it
   restricts its matches to a language or format (26 of them) or to what changed within a span (the last minute
   … this fiscal year, 14 of them); a yes at 0.6 or more searches only those files. Per term, reported on stderr as
@@ -153,11 +248,67 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   states (uncommitted, staged, untracked, this branch, not pushed, mine) and the 30 most active authors are
   candidates too. One git process per repository and question.
 - `--dedup=auto` (#143): before anything is sent, `--dedup` locally estimates the best case (every kind
-  folded) and, when folding would save at least twice the cost of its own question, asks and folds; otherwise
-  it sends every unit, asking nothing extra. `--verbose` / `--dry-run` print the decision and its numbers
+  folded) and, when folding would save at least twice the cost of its own question, folds (by sampling, #152 under
+  Changed); otherwise it sends every unit, asking nothing extra. `--verbose` / `--dry-run` print the decision and its numbers
   (units, templates, requests, tokens) for every `--dedup` value.
 
+- Exit 1 after lines were sent prints one stderr line naming the highest probability and its line, the option that
+  would loosen the threshold, and `-p -t 0` to see every probability (#139). Not with `-q`, `--summarize` (except
+  `=ask`), `--step-to` / `--step-reverse-to`, nor when only a negated meaning kept lines out.
+- A request carries at most 64 questions, whatever the backend (#174): with three or more meanings, a chunk holds
+  fewer lines than `--chunk`.
+- `npm run serve` starts `--serve` from a clone (`npm run serve -- -r src/`); with several `--serve`, the last one's
+  port counts (#210).
+- `--serve`: Settings opens as a dialog from a gear icon (#208); a Stop button ends a running search, and Search and
+  Estimate are disabled while one runs (#189).
+
+### Fixed
+- `--serve` refuses a folder target without `-r` at launch, naming the command with `-r` added, instead of failing
+  every search with "Is a directory" (#222). Whether `-r` is in effect is asked of sys1grep itself, so
+  `SYS1GREP_OPTS` and settings.json opts count.
+- `--serve` refuses `--reverse` at launch, and a reverse walk's requests are tagged `--step-reverse-to` (#218 review).
+- `-g`'s time scope uses `--since-as-filter` (git 2.37 and later), so a commit dated earlier than its parent no
+  longer hides the period behind it (#136).
+- `--serve` settings (the default-options panel): `opts` now refuses `--unit=zero` the way the launch already does
+  (`-z`'s output shape, not for `--serve`); it previously slipped through DENY, which never sees `unit` as a plain
+  string option (#233 review on #198).
+
 ### Changed
+- `--dedup=auto` no longer asks Jev which kinds of value a meaning reads (#152). Each template, every kind folded,
+  sends up to 5 members whose values differ (for each varying value, the lowest, the highest and the middle); when
+  their verdicts agree the rest share their answers, and when they differ the rest are sent in a second wave, with
+  `--max-cost` checked again before it. A value only between the samples is missed. `--verbose` prints how many
+  templates agreed and how many units were sent again. `--dedup=always` (and a bare `--dedup`) still asks and keeps
+  those kinds apart.
+- `--serve`: Search is a large primary button, with Estimate cost and Stop beside it, right under the meaning fields
+  and multi-step, above the examples; it used to sit in Options. The `OK` / `Not now` row (summarize the results on
+  screen?) and the `-o` control (only for a sentence unit) no longer show while hidden.
+- `--serve`: a blue look: a header band, cards (Target and Search conditions with Search at their right, the examples
+  with an `EN` / `日本語` switch beside Options, a dark command-line card), blue light and dark palettes, and one
+  column on a phone. Every control and what it runs are unchanged.
+- `--serve`: Search with `summarize` checked now runs the search once (#231): once the results arrive, the page
+  summarizes them the way #227's OK does (POSTs the text on screen to `/summarize`; only the summarizer runs, nothing
+  more goes to Jev). Before, Search sent `results` and a whole second search with `--summarize --format=plain`, which
+  could describe different matches from the ones on screen (#193) and paid Jev twice; the startup notice about that
+  second request is gone.
+- `--serve`'s examples also find something when it is started on this repository (#224): the multi-step ones start
+  at a module's entry points (`export function`, `export const f = (...) =>`, `function main`, Python's `def main`),
+  end at `throw` / `raise` and `process.exit(` / `sys.exit(`, and walk source files only (`*.mjs *.cjs *.js *.jsx *.ts *.tsx *.py`);
+  "what reaches it" walks back from a rethrown error. Two meaning examples are new, "where an API key is read" and
+  "a request is retried".
+- `--step-reverse-to` replaces `--reverse` (#212): `--reverse --step-to X` is now `--step-reverse-to X`, with the
+  same arguments, `--hops` and `--edges=FILE`. `--reverse` and `--no-reverse` (0.5.0-next.2 only) stop with
+  `--reverse was replaced by --step-reverse-to`; `--step-to` and `--step-reverse-to` together are an error.
+- The price shown and checked by `--max-cost` (`--dry-run`, the large-send warning, the question, the summary line)
+  depends on the URL and the model: a local URL (`localhost`, `127.0.0.1`, `[::1]`, by the host as typed, only for a
+  URL you set) is free, so `--max-cost` asks about nothing there and no longer stops a run without a terminal; a
+  model in the table is priced at its own price (`jev-latest` 0.042, `clef` 0.24, `clef-flash` 0.09 USD per M input
+  tokens); any other model at Jev's 0.042. For another URL the price says whose it is (`at TypeSafe's list price`,
+  `at clef's list price`, `(local URL, free)`). Before, a custom URL was priced at Jev's list price whatever it was
+  (the owner's decision of 2026-09-27, replaced on 2026-10-04). An endpoint that reports `usage.cost` still shows that.
+- `-j` defaults to 1 for a local URL (the same hosts as the price above), since the local decision models tried so
+  far serve one request at a time: Jeff answers a second with `529`, strands-decider crashes (#180, #181). A `-j` given on
+  the command line, in `SYS1GREP_OPTS` or in settings.json still wins; `--verbose` shows `-j 1 (local URL)`.
 - `--dedup` takes `auto`, `always` or `never` (#143); a bare `--dedup` is `--dedup=always`, unchanged from
   before. **Default is `never` for now**, kept off until real-run stats say `auto` should be the default; a
   run that would have paid to fold prints one stderr hint naming `--dedup=auto` (not with `-q`, gated like the
@@ -168,6 +319,13 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   `-z` / `--null-data` stay, as `--unit=zero`, and still combine with the sentence units to split each record into
   sentences.
 - `--unit=sentence-by-*` colors the matching sentence bold yellow instead of bold red, so a regex match inside it stands out.
+- **Breaking:** `-e` no longer accepts a `/RE/flags` value ([#238](https://github.com/uehaj/sys1grep/issues/238)):
+  a regex-shaped value there is now refused with an error naming the new option (a real meaning that looks like
+  `/.../` still gets through with a leading space). `-Q` is unchanged: it was already always a question, never a
+  regex. A regex term now goes through `-P '/RE/flags'`, which OR's like `-e` and takes `-a`/`-v` AND / AND NOT
+  onto it the same way; `-P` does not accept a leading `!`, negate it with `-v '/RE/'` instead. One combination is
+  no longer expressible as a single `-e`: `-e A -e '!/B/'` (`A or not /B/`) now needs `-P '/B/'`'s negation spelled
+  through `-v`, which cannot stand as its own OR term the way a bang-negated `-e` could.
 
 ### Renamed
 `semgrep` collided with the trademarked static-analysis tool [Semgrep](https://semgrep.dev/) (#93).
@@ -380,11 +538,11 @@ First release as `@uehaj/semgrep`.
 - Errors are one line plus exit code 2, no stack traces.
 - LLM-as-judge test (`tests/judge.mts`) with threshold sweep; self-check (`tests/check.sh`).
 
-[Unreleased]: https://github.com/uehaj/jev-semgrep/compare/v0.4.0...HEAD
-[0.4.0]: https://github.com/uehaj/jev-semgrep/compare/v0.3.0...v0.4.0
-[0.3.1]: https://github.com/uehaj/jev-semgrep/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/uehaj/jev-semgrep/compare/v0.2.2...v0.3.0
-[0.2.2]: https://github.com/uehaj/jev-semgrep/compare/v0.2.0...v0.2.2
-[0.2.0]: https://github.com/uehaj/jev-semgrep/compare/v0.1.1...v0.2.0
-[0.1.1]: https://github.com/uehaj/jev-semgrep/compare/40b0d5d...v0.1.1
-[0.1.0]: https://github.com/uehaj/jev-semgrep/commits/40b0d5d
+[Unreleased]: https://github.com/uehaj/sys1grep/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/uehaj/sys1grep/compare/v0.3.1...v0.4.0
+[0.3.1]: https://github.com/uehaj/sys1grep/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/uehaj/sys1grep/compare/v0.2.2...v0.3.0
+[0.2.2]: https://github.com/uehaj/sys1grep/compare/v0.2.0...v0.2.2
+[0.2.0]: https://github.com/uehaj/sys1grep/compare/v0.1.1...v0.2.0
+[0.1.1]: https://github.com/uehaj/sys1grep/compare/40b0d5d...v0.1.1
+[0.1.0]: https://github.com/uehaj/sys1grep/commits/40b0d5d

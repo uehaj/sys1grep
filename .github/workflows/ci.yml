@@ -25,7 +25,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      - run: OFFLINE_VERBOSE=1 npm run test:offline | tee offline.log
+      # shell: bash is bash -eo pipefail: without pipefail the exit status of the run is tee's, and a failed check stays green
+      - run: OFFLINE_VERBOSE=1 npm run test:offline 2>&1 | tee offline.log
+        shell: bash
       - run: tail -1 offline.log >> "$GITHUB_STEP_SUMMARY"
         if: always()
 

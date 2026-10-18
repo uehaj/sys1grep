@@ -2,7 +2,10 @@
 .env.*
 workdir/
 node_modules/
-.claude/
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/serve-check/
 *~
 *.bak
 .DS_Store
