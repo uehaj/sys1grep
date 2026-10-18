@@ -533,7 +533,7 @@ body { background: var(--band) top / 100% 132px no-repeat, var(--page); }
 .kcard { background: var(--bg); border: 1px solid var(--rule); border-radius: 18px; padding: 20px 24px; box-shadow: var(--shadow); margin-top: 20px; }
 .search-layout { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 24px; }
 .actions { border-left: 1px solid var(--rule); padding-left: 22px; display: flex; flex-direction: column; justify-content: center; gap: 12px; }
-#go { width: 100%; min-height: 96px; border: 0; border-radius: 12px; background: var(--go); color: #fff; font-size: 22px; font-weight: 800; box-shadow: 0 7px 16px rgba(20,105,250,.15); }
+#go { width: 100%; min-height: 56px; border: 0; border-radius: 12px; background: var(--go); color: #fff; font-size: 18px; font-weight: 700; box-shadow: 0 7px 16px rgba(20,105,250,.15); }
 .actions .row { margin: 0; flex-wrap: nowrap; } .actions .row > button { flex: 1; padding: 10px 6px; }
 .columns { display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 20px; align-items: start; }
 .columns .kcard { padding: 20px; }
@@ -547,7 +547,7 @@ body { background: var(--band) top / 100% 132px no-repeat, var(--page); }
 .command .sech { color: #fff; } .command #cmd { background: #03162e; color: #dbe7ff; border: 1px solid #7799ca; }
 .command #copy { background: transparent; color: #fff; border-color: #7f9fca; } .command .note, .command .note code { color: #c9dbf7; }
 #d { margin-top: 20px; } main { margin-top: 20px; border-color: var(--rule); border-radius: 18px; box-shadow: var(--shadow); }
-@media (max-width: 850px) { .search-layout, .columns { grid-template-columns: 1fr; } .actions { border-left: 0; border-top: 1px solid var(--rule); padding: 16px 0 0; } #go { min-height: 60px; } }
+@media (max-width: 850px) { .search-layout, .columns { grid-template-columns: 1fr; } .actions { border-left: 0; border-top: 1px solid var(--rule); padding: 16px 0 0; } #go { min-height: 48px; } }
 @media (max-width: 520px) { .title h1 { font-size: 26px; } .title .icon { width: 44px; height: 44px; } .kcard { padding: 16px; } }
 </style></head><body>
 <div class="card" id="card">
