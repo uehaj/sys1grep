@@ -163,7 +163,7 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
   -a MEANING   AND onto the preceding -e/-Q/-P term.      -e A -a B -e C  =  (A and B) or C
   -v MEANING   AND NOT onto the preceding -e/-Q/-P term.  -e A -v B       =  A and not B
                At the front it is a bare negation.  -v B            =  not B  (like grep -v)
-               -v also takes a /RE/ (a regex AND NOT: -P '/RE/' -v '/other/')
+               -a and -v also take a /RE/ (a regex AND / AND NOT: -P '/RE/' -a '/one/' -v '/other/')
   !MEANING     a leading ! negates just that meaning, in -e / -Q / -a / -v alike (not -P)
                -e A -e '!B'  =  A or not B.   -a '!C' is the same as -v C
   --level=LEVEL strictness preset, sets both thresholds (default normal)
@@ -176,9 +176,10 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
   -r           recurse into directories (current directory when FILE is omitted). Skips .git,
                node_modules, .ssh/.aws/.gnupg/.kube/.docker, binary files, likely secrets (.env*,
                .netrc, .npmrc, .git-credentials, *.pem, *.key, id_rsa*...) and generated files
-               (*.map, *.min.js, *.min.css, package-lock.json and other lock files). Every searched
-               line is sent to the TypeSafe API. Inside a git repository, what git ignores (.gitignore)
-               is skipped too; a file or directory named on the command line is searched even so.
+               (*.map, *.min.js, *.min.css, package-lock.json and other lock files), symlinks and
+               settings.json itself. Every searched line is sent to SYS1GREP_URL. Inside a git repository,
+               what git ignores (.gitignore) is skipped too; a file or directory named on the command line
+               is searched even so.
                A .gz file (a rotated log) is read decompressed, as zgrep does, and printed by its name
   --cached     git sys1grep only: search the blobs staged in the index instead of the working tree, as
                git grep --cached. A file deleted from the working tree but still staged is still found.
@@ -199,7 +200,8 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
                * also matches a leading dot (*.md matches .notes.md), as in rg --glob
   --changed-within=WHEN  with -r and git sys1grep, only files modified within WHEN: 30m, 2h, 7d, 2w;
                since a date or time (2026-09-01 is local midnight, 2026-09-01T09:00, ...Z); or today,
-               this-week (from Monday) or this-month, in local time. By mtime, not git history
+               this-week (from Monday) or this-month, in local time. By mtime, not git history, so not with
+               --cached or a <tree>
   --no-auto-scope  do not narrow the files -r and git sys1grep find by what a meaning says about them. By default
                each meaning first asks Jev, in one small request, whether it restricts its matches to a
                language or format (Python files, YAML files, ...) or to what changed within a span (the last
@@ -207,20 +209,20 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
                month, the last year, this fiscal year) or to a place (test code, migrations, the README, the
                changelog, documentation, source code, logs), a git state (uncommitted, staged, untracked, this
                branch, not pushed, mine) or an author (the 30 with the most commits); a yes at 0.6 or more
-               searches only those files. In a repository a time goes by commits: a committed file needs a
-               commit since then, an uncommitted one its mtime
-               (*.py *.pyi *.pyw; modified since then). Jev reads the whole meaning, so "案A、B、Cで" is not
-               about C files. Per term: -e A -e B still searches B in the files A leaves out. Each scope goes
-               to stderr as sys1grep: scope: ... (with --verbose, also the scopes each matching file got through
-               and the files left out); with -r a file named on the command line is never narrowed,
-               git sys1grep's pathspecs are narrowed like the rest (as with --include)
+               searches only those files (*.py *.pyi *.pyw; modified since then). In a repository a time goes
+               by commits: a committed file needs a commit since then, an uncommitted one its mtime. Jev reads the
+               whole meaning, so "案A、B、Cで" is not about C files. Per term: -e A -e B still searches B in the
+               files A leaves out. Each scope goes to stderr as sys1grep: scope: ... (with --verbose, also the
+               scopes each matching file got through and the files left out); with -r a file named on the
+               command line is never narrowed, git sys1grep's pathspecs are narrowed like the rest (as with
+               --include)
   --auto-scope turn it back on after --no-auto-scope in SYS1GREP_OPTS
   -g, --gitlog search the commits of git log, one record each (hash, date, subject, body), instead of
                files. With one term, auto-scope becomes git log's arguments: a time --since-as-filter
                (--since on git before 2.37, which stops at the first older commit; and --until when
-               the span has an end: yesterday, last week, last month), a language
-               pathspecs, an author or mine --author, this branch or not pushed a range; the command goes
-               to stderr. FILE arguments are pathspecs. Not with -r or git sys1grep
+               the span has an end: yesterday, last week, last month), a language pathspecs, an author or
+               mine --author, this branch or not pushed a range; the command goes to stderr. FILE
+               arguments are pathspecs. Not with -r or git sys1grep
                  sys1grep -g -e 'a performance fix to the .mjs files today'
   -l           print only the names of files with a match, not the lines
   -H, --with-filename  prefix each line (and -c count) with its file name, even for a single file
@@ -304,14 +306,13 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
                terminal; search only on y. Nothing is sent before the answer; no terminal is an error
   -M NUM, --max-columns=NUM  send at most the first NUM characters of a line (or record, with -z); it
                is still searched and judged, but a match past NUM cannot be found there. Default 2000
-               (8000 with -z)
+               (8000 with -z or --unit=function)
   --max-filesize=SIZE  before any target is read, every one is sized (K/M/G suffix, default 10M); one
                over this is skipped outright and named on stderr, like rg's own --max-filesize. -y does
                not affect it (a named file over the limit is skipped too). stdin is sized once it is
                read, and skipped the same way if it is over. --cached / <tree>: targets are blobs, sized
-               from their content too. a .gz is
-               sized decompressed (zlib stops at the limit). -g's commits stay out of this: each is already bounded by -M
-               when sent
+               from their content too. A .gz is sized decompressed (zlib stops at the limit). -g's commits
+               stay out of this: each is already bounded by -M when sent
   --max-cost=USD  the input tokens about to be sent are estimated and priced (a local URL is free; jev-latest 0.042,
                clef 0.24, clef-flash 0.09 USD per M tokens; any other model as Jev); over this (default 1) the
                run asks to continue, on the terminal. No terminal and the limit exceeded is exit 2,
@@ -321,8 +322,8 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
   --cache[=on|off|only]  keep Jev's answers in ~/.config/sys1grep/cache, keyed by what is sent (model, lines,
                questions) and the endpoint's host, so the same request again is answered from there: no
                request, no cost. Default off (SYS1GREP_CACHE): the cache holds the lines searched. Bare
-               --cache is on; only answers from the cache alone, and a request not there is exit 2 unless -q
-               already found a match, naming it, with nothing sent. No expiry: Jev drifts about 0.05 between
+               --cache is on; only answers from the cache alone: a request not there is exit 2, naming that
+               request, with nothing sent (unless -q already found a match). No expiry: Jev drifts about 0.05 between
                runs, a cached answer is one of them. --dry-run says how many requests are cached and how many
                to send. --cache=clear empties it; it must stand alone, and is refused in SYS1GREP_OPTS
   --dedup[=auto|always|never]  judge one line per template instead of every line. Lines that differ only in
@@ -354,13 +355,13 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
   --summarize[=TOOL]  pipe what would print (file names, -n, -A/-B/-C, -p) to TOOL, asked to summarize it as it
                bears on the meanings, and print TOOL's answer instead. TOOL: claude (default, or SYS1GREP_SUMMARIZER),
                run as claude -p --model haiku with no tools and no settings; llm (Simon Willison's, likewise no
-               tools); pi (--no-tools and every --no-session/--no-context-files/--no-extensions/--no-skills/
-               --no-prompt-templates); ollama or lmstudio (a local OpenAI-compatible server, no CLI); or an
-               http(s):// URL, the same
-               request to any OpenAI-compatible server (llama.cpp, vLLM, LocalAI, a gateway). ollama, lmstudio and a
-               URL need SYS1GREP_SUMMARIZER_MODEL: none has a default model. The matching lines are sent a second
-               time, to TOOL's provider (nowhere a second time with ollama, lmstudio or a local URL). No match runs
-               nothing (exit 1); TOOL failing is exit 2. Not with -q, -l, -c.
+               tools); pi (--no-tools, --no-approve, --thinking off and every --no-session/--no-context-files/
+               --no-extensions/--no-skills/--no-prompt-templates); ollama or lmstudio (a local OpenAI-compatible
+               server, no CLI); or an http(s):// URL, the same request to any OpenAI-compatible server
+               (llama.cpp, vLLM, LocalAI, a gateway). ollama, lmstudio and a URL need SYS1GREP_SUMMARIZER_MODEL:
+               none has a default model. The matching lines are sent a second time, to TOOL's provider
+               (nowhere a second time with ollama, lmstudio or a local URL). No match runs nothing (exit 1);
+               TOOL failing is exit 2. Not with -q, -l, -c.
                In SYS1GREP_OPTS it is the default for every search, so every match goes to TOOL's provider too.
                With --dedup, each template's representative goes once, marked (×N like it). Over 200 KB nothing
                is sent to TOOL (exit 2): narrow the expression or add --dedup
@@ -379,16 +380,19 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
                --template's {{answer}} and prints when TOOL is done. Before --summarize-prompt's TEXT, which can override it. Needs
                --rank (not with -l) or --summarize, except in SYS1GREP_OPTS. (It replaces --summarize-format.)
   --serve[=PORT]  serve a search page on 127.0.0.1 (a random free port, printed, or PORT) instead of searching: a box for
-               the meanings (-e -P -a -v -Q --step-to), rank / summarize and the other options (including -A/-B/-j/
-               --max-cost, and -o with a sentence unit) as controls, results as cards (--rank --format=html), and the
-               command line for the current controls, to copy. Each search runs this program with the options given
-               here plus what the controls changed; the targets and --chunk, -M, --max-filesize, -y, --edges,
-               --template and the API settings stay as given. The meanings come from the page, so -e -P -a -v -Q
-               --step-to and what the page replaces (-l -c -q -o -z -i --format --color --dry-run) are refused at
-               launch (-o is still a Details control, just not a launch option).
+               the meanings (-e -P -a -v -Q --step-to / --step-reverse-to), rank / summarize and the other
+               options (including -A/-B/-j/--max-cost, and -o with a sentence unit) as controls, results as
+               cards (--rank --format=html), and the command line for the current controls, to copy. Each
+               search runs this program with the options given here plus what the controls changed; the
+               targets and --chunk, -M, --max-filesize, -y, --edges, --template and the API settings stay as
+               given. With no target (and no -r, -g or git sys1grep) each search reads the bundled sample
+               corpus (examples/); a folder target without -r is refused at launch. The meanings come from
+               the page, so -e -P -a -v -Q --step-to --step-reverse-to and what the page replaces (-l -c -q -o
+               -z --unit=zero -H -i --format --color --dry-run --verbose) are refused at launch (-o is still a
+               Details control, just not a launch option).
                A search over the cost guard (no -y, or --max-cost too low) is refused at once, naming -y and
                --max-cost; the page shows the same estimate --dry-run would and a button to rerun that one search
-               with --max-cost just above it. One Jev request per search.
+               with --max-cost just above it.
                --suggest=Q:TEXT or --suggest=e:TEXT (or --suggest TEXT; repeat; a bare TEXT is a question) sets suggested-question buttons
   --template=NAME  the document --rank or --summarize --format=html writes (default: SYS1GREP_TEMPLATE, else default):
                ~/.config/sys1grep/templates/NAME.html, else the bundled one (default, print, search, terminal); a
@@ -402,11 +406,12 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
   --sys1-model=ID, --sys1-url=URL, --sys1-api-key=KEY
                the API settings, overriding SYS1GREP_MODEL, SYS1GREP_URL, SYS1GREP_API_KEY below.
                A key on the command line shows up in ps and shell history; prefer settings.json (below)
-  -h, --help   this help (Japanese when LANG / LC_ALL / LC_MESSAGES starts with ja)
+  -h, --help   this help (Japanese when the first set of LC_ALL / LC_MESSAGES / LANG starts with ja)
   -V, --version  print the version and exit
 
-Exit status: 0 matched / 1 no match / 2 error
-  On 1, when lines were sent, stderr names the highest probability and its line (not with -q, --summarize, --step-to, or when only a negation failed)
+Exit status: 0 matched / 1 no match / 2 error (bad arguments, unreadable file, API failure)
+  On 1, when lines were sent, stderr names the highest probability and its line (not with -q,
+  --summarize but =ask, --step-to, --step-reverse-to, or when only a negation failed)
 
 Environment (read from the environment, else from ~/.config/sys1grep/settings.json, else from
 ~/.config/sys1grep/.env; ./.env is never read):
@@ -419,9 +424,11 @@ Environment (read from the environment, else from ~/.config/sys1grep/settings.js
                      ollama, lmstudio and a URL
   SYS1GREP_SUMMARIZER_API_KEY  sent as Authorization: Bearer to a --summarize=URL server only (never
                      SYS1GREP_API_KEY, which is Jev's)
-  SYS1GREP_TEMPLATE   --template's default, for --rank or --summarize --format=html
+  SYS1GREP_TEMPLATE   --template's default, for --rank or --summarize --format=html; the environment or
+                     .env only, not settings.json
   SYS1GREP_CACHE      --cache's default: on, off or only (default off); the environment or .env only, not
                      settings.json
+  OLLAMA_HOST         the host:port --summarize=ollama talks to (default 127.0.0.1:11434), as for ollama
   SYS1GREP_OPTS       default options, split on spaces and put before the command line, which wins;
                      --no-X turns a boolean flag off (--color takes --color=never). Options only: no
                      meanings, files or --. e.g. SYS1GREP_OPTS='--level strict -n'. Scripts: SYS1GREP_OPTS= sys1grep
@@ -445,7 +452,7 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                否定の答えにも一致する。-e / -a / -v / ! とは -e と同じように組み合わせられる。常に質問で、
                正規表現にはならない
   -P /RE/FLAGS 正規表現項 (先頭と末尾が /、フラグは JS の dgimsuvy)。-e と同じく OR される。ローカルで
-               判定しリクエストなし。同じ AND 項の絞り込みになり、これが当たった行だけその項の意味を尋ねる
+               判定しリクエストなし。同じ AND 項の絞り込みになり、これが当たったユニットだけその項の意味を尋ねる
                  -P '/ERROR|FATAL/'  -a '/timeout/i'  -v '/^DEBUG/'
                名前付き・番号付きグループは同じ項の意味に $<name>, $1-$99, $&, $$ として渡る
                (ECMAScript の置換パターン)。$<name> が存在しないグループを指す、または否定した
@@ -453,8 +460,8 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                のダブルクォート内で生き残らない)。-P '!/RE/' は使えない。否定は -v '/RE/' で行う
   -a MEANING   直前の -e/-Q/-P 項に AND で連結。-e A -a B -e C は (A and B) or C
   -v MEANING   直前の -e/-Q/-P 項に AND NOT で連結。-e A -v B は A and not B
-               先頭に置けば単独の否定。-v B は not B (grep -v 相当)。-v も /RE/ を取れる
-               (正規表現の AND NOT: -P '/RE/' -v '/other/')
+               先頭に置けば単独の否定。-v B は not B (grep -v 相当)。-a と -v も /RE/ を取れる
+               (正規表現の AND / AND NOT: -P '/RE/' -a '/one/' -v '/other/')
   !MEANING     -e / -Q / -a / -v のどこでも、先頭に ! を付けるとその意味だけ否定 (-P では不可)
                -e A -e '!B' は A or not B。-a '!C' は -v C と同じ
   --level=LEVEL 厳しさ。肯定と否定の閾値をまとめて決める (既定 normal)
@@ -467,10 +474,11 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
   -r           ディレクトリを再帰的に探す (FILE 省略時はカレント)。.git、node_modules、
                .ssh/.aws/.gnupg/.kube/.docker、バイナリ、秘密情報らしいファイル (.env*, .netrc, .npmrc,
                .git-credentials, *.pem, *.key, id_rsa*...)、生成されたファイル (*.map, *.min.js,
-               *.min.css, package-lock.json などのロックファイル) は飛ばす。git リポジトリの中では
+               *.min.css, package-lock.json などのロックファイル)、シンボリックリンク、settings.json 自身は飛ばす。
+               git リポジトリの中では
                git が無視するもの (.gitignore) も飛ばす。コマンドラインで指定したファイル・ディレクトリは
                それでも探す。.gz (ローテートしたログ) は zgrep のように展開して読み、その名前で表示する。
-               検索した行はすべて TypeSafe の API に送られる
+               検索した行はすべて SYS1GREP_URL の先に送られる
   --cached     git sys1grep 限定。作業ツリーではなくインデックス (ステージ済み) の blob を探す
                (git grep --cached と同じ)。作業ツリーから消したファイルもステージ済みなら見つかる。
                --untracked や <tree> とは併用できない
@@ -490,7 +498,8 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                * は先頭のドットにも合う (*.md は .notes.md にも合う。rg --glob と同じ)
   --changed-within=WHEN  -r と git sys1grep で、WHEN 以内に更新したファイルだけを探す。30m / 2h / 7d / 2w、
                日付か日時以降 (2026-09-01 はその日のローカル時刻 0 時、2026-09-01T09:00、...Z)、
-               または today / this-week (月曜から) / this-month (ローカル時刻)。git の履歴ではなく mtime で見る
+               または today / this-week (月曜から) / this-month (ローカル時刻)。git の履歴ではなく mtime で見るので、
+               --cached や <tree> とは併用できない
   --no-auto-scope  意味の文面からファイルを絞り込まない。既定では意味ごとにまず Jev へ小さなリクエストを 1 つ
                送り、その意味が一致を言語・形式 (Python のファイル、YAML のファイル…) や変更時期 (1 分以内、
                1 時間以内、今日、昨日、1・2・3・7・30 日以内、今月、先週、先月、この 1 年、今年度) に限定して
@@ -507,10 +516,10 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
   -g, --gitlog ファイルではなく git log のコミットを、1 コミット 1 レコード (ハッシュ、日付、件名、本文) で探す。
                項が 1 つなら絞り込みを git log の引数にする: 時期は --since-as-filter (2.37 より前の git では
                --since。最初の古いコミットで止まる。昨日・先週・先月のように終わりがある時期は --until も)、
-               言語は pathspec、作者と自分は
-               --author、このブランチと未プッシュは範囲。そのコマンドを stderr に出す。FILE は pathspec。
+               言語は pathspec、作者と自分は --author、このブランチと未プッシュは範囲。そのコマンドを
+               stderr に出す。FILE は pathspec。
                -r と git sys1grep とは併用できない
-                 sys1grep -g -Q '今日、.mjsにおこなった性能向上の修正'
+                 sys1grep -g -e '今日、.mjs に行った性能向上の修正'
   -l           一致した行ではなくファイル名だけを表示
   -H, --with-filename  1 ファイルだけでも、各行 (と -c の件数) の前にファイル名を付ける
   --no-filename  複数ファイル・-r・git sys1grep でもファイル名を付けない
@@ -532,7 +541,7 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                  (grep -z と同じ)。ファイル名と件数は改行のまま。-n はレコード番号、-A/-B/-C は前後の
                  レコード数、--chunk はレコード数を数える。レコードを出すツールと繋がる: git log -z、find -print0、
                  xargs -0。例: git log -z --format='%h %s %b' | sys1grep -z -e "..."
-               sentence-by-jev: 行ではなく文ごとに判定。上の CJK 文字に接する句点の無い改行を Jev にも聞く。
+               sentence-by-jev: 行ではなく文ごとに判定。CJK 文字に接する句点の無い改行を Jev にも聞く。
                  句点で終わらない 1 行 1 件のデータをつながないため。そうした改行がある 30 行ごとに
                  リクエストが 1 つ増える。出力は当たった文がかかる元の行のままで、文の部分を太字の黄で強調
                sentence-by-rule: 文単位の判定。規則だけで決める。追加のリクエストなし
@@ -552,8 +561,8 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                よい呼び出し (hop) でつなぐ。両側はそれぞれ別の式で、片側に -e を複数並べると OR。step は
                ホップではなく検索の段: --step-to の後の -e / -P / -a / -v / -Q はすべて終点の式。--step-to 意味
                は --step-to -e 意味 と同じ。--step-to '/RE/' は --step-to -P '/RE/' と同じ。たどる道はスコアで
-               決めない。--hops の範囲で
-               たどり着いたユニットを 1 回のバッチで終点の式と照らす。開始と終点の式が正規表現だけなら何も送らない。
+               決めない。--hops の範囲でたどり着いたユニットを 1 回のバッチで終点の式と照らす。
+               開始と終点の式が正規表現だけなら何も送らない。
                --edges が無ければ単位は関数 (--unit=function) で、辺は呼び出し: 関数本体 (コメント・docstring・
                文字列は除く) の 名前( が、その名前の関数すべてにつながる。
                パスは木の形で出す: ホップ数、file:line、関数名。終点は :、途中のユニットは - で区切る。-p は
@@ -591,7 +600,7 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
   -i, --interactive  まず --dry-run と同じ内容 (ファイル・行数・リクエスト数) を見せて端末で聞き、
                y のときだけ検索する。答えるまで何も送らない。端末が無ければエラー
   -M NUM, --max-columns=NUM  行 (-z ならレコード) の先頭 NUM 文字までを送る。それでも検索・判定は
-               される (NUM より先にある一致だけは見つからない)。既定 2000 (-z なら 8000)
+               される (NUM より先にある一致だけは見つからない)。既定 2000 (-z と --unit=function なら 8000)
   --max-filesize=SIZE  読む前に、検索対象を 1 つずつ計測する
                (K/M/G の接尾辞、既定 10M)。これを超えるものは rg の --max-filesize と同じく無条件に飛ばし、
                stderr に名前を出す。-y は効かない (明示的に指定したファイルでも超えていれば飛ばす)。
@@ -639,8 +648,9 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
   --summarize[=TOOL]  出力するはずの内容 (ファイル名・-n・-A/-B/-C・-p) を TOOL に渡し、意味に照らした要約を
                頼んで、その答えを代わりに表示する。TOOL: claude (既定。SYS1GREP_SUMMARIZER で変えられる)。
                claude -p --model haiku をツールなし・設定なしで動かす。llm (Simon Willison 氏の、同じくツールなし)。
-               pi (--no-tools と --no-session・--no-context-files・--no-extensions・--no-skills・
-               --no-prompt-templates すべて)。ollama・lmstudio (ローカルの OpenAI 互換サーバ、CLI なし)。または http(s):// URL、任意の
+               pi (--no-tools・--no-approve・--thinking off と --no-session・--no-context-files・--no-extensions・
+               --no-skills・--no-prompt-templates すべて)。ollama・lmstudio (ローカルの OpenAI 互換サーバ、
+               CLI なし)。または http(s):// URL、任意の
                OpenAI 互換サーバへ同じリクエストを送る (llama.cpp・vLLM・LocalAI・ゲートウェイ)。
                ollama・lmstudio・URL は SYS1GREP_SUMMARIZER_MODEL が要る (既定モデルが無い)。
                一致した行は TOOL の提供元へもう一度送られる (ollama・lmstudio・ローカル URL ならどこへも送られない)。
@@ -662,15 +672,17 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                --summarize-prompt の TEXT より前に置くので TEXT で上書きできる。
                --rank (-l とは併用不可) か --summarize が要る (SYS1GREP_OPTS では要らない)。--summarize-format の後継
   --serve[=PORT]  検索せずに、127.0.0.1 で検索ページを出す (空いているポートを選んで表示、または PORT)。意味を
-               入れる欄 (-e -P -a -v -Q --step-to)、rank / summarize などのオプション (-A/-B/-j/--max-cost、文単位
+               入れる欄 (-e -P -a -v -Q --step-to / --step-reverse-to)、rank / summarize などのオプション (-A/-B/-j/--max-cost、文単位
                のときだけの -o も含む) をコントロールにし、結果はカード (--rank --format=html)、いまのコントロール
                のコマンドラインをコピー用に表示する。検索のたびにここで指定したオプションにコントロールの変更を
                足してこのプログラムを実行する。対象と --chunk・-M・--max-filesize・-y・--edges・--template・API 設定は
-               指定のまま。意味はページから来るので -e -P -a -v -Q --step-to と、起動時にページが置き換えるもの
-               (-l -c -q -o -z -i --format --color --dry-run) は受け付けない (-o は起動オプションではないが、
+               指定のまま。対象が無ければ (-r・-g・git sys1grep でもなければ) 同梱のサンプル (examples/) を探す。
+               -r の無いフォルダの対象は起動時に拒む。意味はページから来るので -e -P -a -v -Q --step-to
+               --step-reverse-to と、起動時にページが置き換えるもの (-l -c -q -o -z --unit=zero -H -i --format
+               --color --dry-run --verbose) は受け付けない (-o は起動オプションではないが、
                コントロールとしては使える)。費用の確認を越える検索はその場で拒まれ、-y と --max-cost を名指しする。
                ページはその拒否が持つ見積もり (--dry-run と同じもの) を示し、--max-cost をそれより上げてその検索
-               だけやり直すボタンを出す。検索ごとに Jev へ 1 リクエスト。
+               だけやり直すボタンを出す。
                --suggest=Q:TEXT か --suggest=e:TEXT (--suggest TEXT でもよい。繰り返せる。TEXT だけなら質問) でおすすめ質問のボタンを指定する
   --template=NAME  --rank か --summarize の --format=html が書く文書 (既定は SYS1GREP_TEMPLATE、無ければ default)。
                ~/.config/sys1grep/templates/NAME.html、無ければ同梱のもの (default, print, search, terminal)。/ を含むか
@@ -685,11 +697,12 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
   --sys1-model=ID, --sys1-url=URL, --sys1-api-key=KEY
                API の設定。下の SYS1GREP_MODEL / SYS1GREP_URL / SYS1GREP_API_KEY より優先。
                コマンドラインのキーは ps やシェル履歴に残るので、なるべく settings.json (下) に書く
-  -h, --help   このヘルプ (LANG / LC_ALL / LC_MESSAGES が ja 以外なら英語)
+  -h, --help   このヘルプ (LC_ALL / LC_MESSAGES / LANG のうち最初に設定されたものが ja 以外なら英語)
   -V, --version  バージョンを表示して終了
 
 終了コード: 一致あり 0 / なし 1 / エラー 2 (引数・読めないファイル・API 障害)
-  行を送って 1 のときは、最も高かった確率とその行を stderr に出す (-q・--summarize・--step-to と、否定だけで落ちたときは出さない)
+  行を送って 1 のときは、最も高かった確率とその行を stderr に出す (-q・--summarize (=ask を除く)・--step-to・
+  --step-reverse-to と、否定だけで落ちたときは出さない)
 
 環境変数 (環境、無ければ ~/.config/sys1grep/settings.json、それも無ければ ~/.config/sys1grep/.env から読む。
 ./.env は読まない):
@@ -702,8 +715,10 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                      ollama・lmstudio・URL では必須
   SYS1GREP_SUMMARIZER_API_KEY  --summarize=URL のサーバへ Authorization: Bearer で送る
                      (Jev 用の SYS1GREP_API_KEY とは別)
-  SYS1GREP_TEMPLATE   --rank か --summarize の --format=html の --template の既定
+  SYS1GREP_TEMPLATE   --rank か --summarize の --format=html の --template の既定。環境か .env だけで、
+                     settings.json には書けない
   SYS1GREP_CACHE      --cache の既定: on・off・only (既定 off)。環境か .env だけで、settings.json には書けない
+  OLLAMA_HOST         --summarize=ollama の接続先 host:port (既定 127.0.0.1:11434)。ollama と同じ
   SYS1GREP_OPTS       既定のオプション。空白で区切ってコマンドラインの前に置くので、コマンドラインが
                      優先する。--no-X で真偽のフラグを消せる (--color は --color=never)。書けるのは
                      オプションだけで、意味・ファイル・-- は書けない。例 SYS1GREP_OPTS='--level strict -n'。
@@ -712,7 +727,8 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
   ~/.config/sys1grep/settings.json: JSON のオブジェクト。どの項目も省略でき、それぞれ 1 つの環境変数の既定値になる:
     url key model opts summarizer summarizerModel summarizerKey = SYS1GREP_URL SYS1GREP_API_KEY SYS1GREP_MODEL
     SYS1GREP_OPTS SYS1GREP_SUMMARIZER SYS1GREP_SUMMARIZER_MODEL SYS1GREP_SUMMARIZER_API_KEY。opts は配列で、
-    1 要素が 1 引数。環境変数は空だと未設定扱いでこの先へ進むが、SYS1GREP_OPTS= だけは空のまま勝ち、opts を外す。権限は 0600 に
+    1 要素が 1 引数。環境変数は空だと未設定扱いでこの先へ進むが、SYS1GREP_OPTS= だけは空のまま勝ち、opts を外す。
+    ファイルの権限は 0600 にしておく
   例:  {"key": "your-key", "opts": ["--level", "strict", "-n"]}`;
 if (opt.version) {
   console.log(`sys1grep ${JSON.parse(readFileSync(new URL('package.json', import.meta.url), 'utf8')).version}`);

@@ -28,7 +28,7 @@ export const OPTIONS = {
   C: { type: 'string' }, // N lines of context on both sides
   n: { type: 'boolean', default: false }, // line numbers
   z: { type: 'boolean', default: false }, // records are NUL-terminated, on input and output (grep -z); --unit=zero
-  unit: { type: 'string', default: 'line' }, // line / zero / sentence-by-jev / sentence-by-rule
+  unit: { type: 'string', default: 'line' }, // line / zero / sentence-by-jev / sentence-by-rule / function
   o: { type: 'boolean', default: false }, // with --unit=sentence-by-*, print only the matching sentences (grep -o)
   p: { type: 'boolean', default: false }, // print each meaning's probability
   dedup: { type: 'string', default: 'never' }, // auto|always|never: judge one representative per template, reuse its answer
