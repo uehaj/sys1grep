@@ -883,14 +883,19 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
   --dedup[=auto|always|never]  judge one line per template instead of every line. Lines that differ only in
                ids, hashes, numbers, dates and times, paths and URLs share a template; one of them is sent and
                its answer is reused for the rest. Which of those may be folded depends on the meaning: a number
-               decides "disk usage above 90%", a time decides "happened at night". Jev is asked first, one small
-               request per meaning, and the kinds that could change a match are kept apart. Built for
+               decides "disk usage above 90%", a time decides "happened at night". always asks Jev first, one
+               small request per meaning, and keeps apart the kinds that could change a match. auto asks
+               nothing: it judges up to 5 sampled members of each template (the lowest, highest and middle of
+               each varying value). When their verdicts agree, the members not sampled share the first
+               sample's answers and the samples keep their own; when they differ, the rest are sent after
+               --max-cost is checked again (a few percent more than never). A value only between the samples
+               is missed, and --dry-run assumes every sample agrees, so its count is the floor. Built for
                machine-generated logs, where it can cut the cost by a factor of 30 or more; prose has no
                shared skeleton and barely folds, and a meaning that reads a value folds little.
                never (default, for now: see #143) never asks or folds, but still estimates locally, before
                anything is sent, what folding every kind (the best case) would save; when that would be at
                least twice the cost of --dedup's own question, one stderr hint names --dedup=auto (not with -q).
-               auto asks and folds only when that estimate says it pays; bare --dedup is --dedup=always, which
+               auto folds only when that estimate says it pays; bare --dedup is --dedup=always, which
                always asks and folds, as every --dedup did before this option took a value. --verbose /
                --dry-run print the decision and its numbers for every value.
                With --unit=zero or --unit=sentence-by-* the unit that folds is the record or the sentence
@@ -1177,14 +1182,18 @@ git sys1grep \u3068\u3057\u3066\u547C\u3076\u3068 git grep \u3068\u540C\u3058\u3
   --dedup[=auto|always|never]  \u5168\u884C\u3067\u306F\u306A\u304F\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u3054\u3068\u306B 1 \u884C\u3060\u3051\u5224\u5B9A\u3059\u308B\u3002ID\u30FB\u30CF\u30C3\u30B7\u30E5\u30FB\u6570\u5024\u30FB\u65E5\u4ED8\u3068\u6642\u523B\u30FB
                \u30D1\u30B9\u30FBURL \u3060\u3051\u304C\u9055\u3046\u884C\u306F\u540C\u3058\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u3068\u307F\u306A\u3057\u3001\u4EE3\u8868 1 \u884C\u3092\u9001\u3063\u3066\u305D\u306E\u7B54\u3048\u3092\u6B8B\u308A\u306B\u3082\u4F7F\u3046\u3002
                \u3069\u308C\u3092\u307E\u3068\u3081\u3066\u3088\u3044\u304B\u306F\u610F\u5473\u306B\u3088\u308B\u3002\u300C\u30C7\u30A3\u30B9\u30AF\u4F7F\u7528\u7387\u304C 90% \u3092\u8D85\u3048\u3066\u3044\u308B\u300D\u306A\u3089\u6570\u5024\u304C\u3001
-               \u300C\u591C\u9593\u306B\u8D77\u304D\u305F\u300D\u306A\u3089\u6642\u523B\u304C\u7B54\u3048\u3092\u6C7A\u3081\u308B\u3002\u305D\u3053\u3067\u610F\u5473\u3054\u3068\u306B\u5C0F\u3055\u306A\u30EA\u30AF\u30A8\u30B9\u30C8\u3092 1 \u3064\u9001\u3063\u3066
-               Jev \u306B\u805E\u304D\u3001\u7B54\u3048\u3092\u5909\u3048\u3046\u308B\u7A2E\u985E\u306F\u307E\u3068\u3081\u306A\u3044\u3002\u6A5F\u68B0\u304C\u5410\u304F\u30ED\u30B0\u5411\u3051\u3067\u3001\u8CBB\u7528\u304C 30 \u5206\u306E 1
-               \u4EE5\u4E0B\u306B\u306A\u308B\u3053\u3068\u3082\u3042\u308B\u3002\u6563\u6587\u306B\u306F\u5171\u901A\u306E\u9AA8\u683C\u304C\u306A\u3044\u306E\u3067\u307B\u3068\u3093\u3069\u7E2E\u307E\u305A\u3001\u5024\u3092\u8AAD\u3080\u610F\u5473\u3082\u3042\u307E\u308A
+               \u300C\u591C\u9593\u306B\u8D77\u304D\u305F\u300D\u306A\u3089\u6642\u523B\u304C\u7B54\u3048\u3092\u6C7A\u3081\u308B\u3002always \u306F\u610F\u5473\u3054\u3068\u306B\u5C0F\u3055\u306A\u30EA\u30AF\u30A8\u30B9\u30C8\u3092 1 \u3064\u9001\u3063\u3066
+               Jev \u306B\u805E\u304D\u3001\u7B54\u3048\u3092\u5909\u3048\u3046\u308B\u7A2E\u985E\u306F\u307E\u3068\u3081\u306A\u3044\u3002auto \u306F\u805E\u304B\u305A\u3001\u5404\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u304B\u3089\u6700\u5927 5 \u884C\u306E
+               \u6A19\u672C (\u5909\u308F\u308B\u5024\u3054\u3068\u306B\u6700\u5C0F\u30FB\u6700\u5927\u30FB\u4E2D\u592E\u306E\u884C) \u3092\u5224\u5B9A\u3059\u308B\u3002\u5224\u5B9A\u304C\u63C3\u3048\u3070\u3001\u6A19\u672C\u3067\u306A\u3044\u884C\u306F\u6700\u521D\u306E
+               \u6A19\u672C\u306E\u7B54\u3048\u3092\u5171\u6709\u3057\u3001\u6A19\u672C\u306F\u81EA\u5206\u306E\u7B54\u3048\u3092\u4FDD\u3064\u3002\u5206\u304B\u308C\u305F\u3089 --max-cost \u3092\u3082\u3046\u4E00\u5EA6\u78BA\u304B\u3081\u3066\u304B\u3089
+               \u6B8B\u308A\u3092\u9001\u308B (never \u3088\u308A\u6570\u30D1\u30FC\u30BB\u30F3\u30C8\u9AD8\u304F\u3064\u304F)\u3002\u6A19\u672C\u306E\u3042\u3044\u3060\u306B\u3057\u304B\u7121\u3044\u5024\u306F\u898B\u843D\u3068\u3059\u3002
+               --dry-run \u306F\u3059\u3079\u3066\u306E\u6A19\u672C\u304C\u63C3\u3046\u3068\u4EEE\u5B9A\u3059\u308B\u306E\u3067\u3001\u305D\u306E\u6570\u306F\u4E0B\u9650\u3002\u6A5F\u68B0\u304C\u5410\u304F\u30ED\u30B0\u5411\u3051\u3067\u3001
+               \u8CBB\u7528\u304C 30 \u5206\u306E 1 \u4EE5\u4E0B\u306B\u306A\u308B\u3053\u3068\u3082\u3042\u308B\u3002\u6563\u6587\u306B\u306F\u5171\u901A\u306E\u9AA8\u683C\u304C\u306A\u3044\u306E\u3067\u307B\u3068\u3093\u3069\u7E2E\u307E\u305A\u3001\u5024\u3092\u8AAD\u3080\u610F\u5473\u3082\u3042\u307E\u308A
                \u7E2E\u307E\u306A\u3044\u3002
                never (\u65E2\u5B9A\u3002\u5F53\u9762\u306F #143 \u53C2\u7167) \u306F\u5C0B\u306D\u3082\u7E2E\u3081\u3082\u3057\u306A\u3044\u304C\u3001\u9001\u308B\u524D\u306B\u30ED\u30FC\u30AB\u30EB\u3067\u3001\u5168\u7A2E\u985E\u3092
                \u7E2E\u3081\u305F\u5834\u5408 (\u6700\u826F\u306E\u30B1\u30FC\u30B9) \u306B\u3069\u308C\u3060\u3051\u6D6E\u304F\u304B\u3092\u898B\u7A4D\u3082\u308B\u3002\u305D\u308C\u304C --dedup \u81EA\u8EAB\u306E\u8CEA\u554F\u306E\u8CBB\u7528\u306E
                2 \u500D\u4EE5\u4E0A\u306A\u3089\u3001stderr \u306B --dedup=auto \u3092\u52E7\u3081\u308B\u4E00\u884C\u3092\u51FA\u3059 (-q \u3067\u306F\u51FA\u3055\u306A\u3044)\u3002auto \u306F\u305D\u306E
-               \u898B\u7A4D\u3082\u308A\u304C\u5272\u306B\u5408\u3046\u3068\u304D\u3060\u3051\u5C0B\u306D\u3066\u7E2E\u3081\u308B\u3002\u88F8\u306E --dedup \u306F --dedup=always \u3067\u3001\u3053\u306E
+               \u898B\u7A4D\u3082\u308A\u304C\u5272\u306B\u5408\u3046\u3068\u304D\u3060\u3051\u7E2E\u3081\u308B\u3002\u88F8\u306E --dedup \u306F --dedup=always \u3067\u3001\u3053\u306E
                \u30AA\u30D7\u30B7\u30E7\u30F3\u304C\u5024\u3092\u53D6\u308B\u524D\u306E --dedup \u3068\u540C\u3058\u304F\u5E38\u306B\u5C0B\u306D\u3066\u7E2E\u3081\u308B\u3002--verbose\u30FB--dry-run \u306F
                \u5024\u3054\u3068\u306B\u3053\u306E\u5224\u5B9A\u3068\u6570\u5B57\u3092\u8868\u793A\u3059\u308B\u3002--unit=zero \u3084 --unit=sentence-by-* \u3067\u306F\u30EC\u30B3\u30FC\u30C9\u3084\u6587\u3092
                \u5358\u4F4D\u306B\u307E\u3068\u3081\u308B
@@ -2654,7 +2663,48 @@ if (logPlan && dedupEstimate) {
   const state = opt.dedup === "always" ? "on (always)" : opt.dedup === "never" ? "off (never)" : dedupEstimate.pays ? "on" : "off (auto)";
   logPlan(`dedup: ${dedupEstimate.units} units fold to at most ${dedupEstimate.templates} templates (~${dedupEstimate.requests} requests, ~${dedupEstimate.saved} tokens saved): ${state}`);
 }
-if (willFold && sent.length) {
+var SAMPLE = 5;
+var valuesOf = (text) => {
+  const vals = [];
+  MASK.reduce((s, [, re, to]) => s.replace(re, (v) => (vals.push(v), to)), text);
+  return vals;
+};
+function sampleOf(group) {
+  if (group.length <= SAMPLE) return group;
+  const vals = group.map((l) => valuesOf(l.text));
+  const num = (v) => {
+    const n = Number(v.replace(/[,_]/g, ""));
+    return Number.isFinite(n) ? n : null;
+  };
+  const slots = vals[0].map((_, i) => [i, new Set(vals.map((v) => v[i])).size]).filter(([, n]) => n > 1).sort((a, b) => a[1] - b[1]);
+  const picked = /* @__PURE__ */ new Set();
+  for (const [i] of slots) {
+    const order = group.map((_, j) => j).sort((a, b) => {
+      const [x, y] = [num(vals[a][i]), num(vals[b][i])];
+      return x !== null && y !== null ? x - y : vals[a][i] < vals[b][i] ? -1 : vals[a][i] > vals[b][i] ? 1 : 0;
+    });
+    for (const j of [order[0], order.at(-1), order[order.length >> 1]]) if (picked.size < SAMPLE) picked.add(j);
+  }
+  if (!picked.size) picked.add(0);
+  return [...picked].map((j) => group[j]);
+}
+var waiting = [];
+if (willFold && sent.length && opt.dedup === "auto") {
+  const groups = /* @__PURE__ */ new Map();
+  for (const l of sent) {
+    const key = [templateKey(l.text, [], MASK), ...asksByUnit.get(l).keys()].join("\0\0");
+    if (groups.has(key)) groups.get(key).push(l);
+    else groups.set(key, [l]);
+  }
+  for (const g of groups.values()) {
+    const s = sampleOf(g);
+    if (s.length < g.length) waiting.push([s, g.filter((l) => !s.includes(l))]);
+  }
+  const held = new Set(waiting.flatMap(([, rest]) => rest));
+  sent = sent.filter((l) => !held.has(l));
+  if (logPlan) logPlan(`dedup: ${waiting.length} templates sampled, ${held.size} units wait for their samples' verdicts`);
+}
+if (willFold && sent.length && opt.dedup === "always") {
   const meanings = [...new Set(expr.flat().filter((lit) => lit.kind === "m").map((lit) => lit.text))];
   spin.set("asking which values a meaning reads (--dedup)");
   const keep = await Promise.all(meanings.map((text) => pooled(() => post({ meaning: text }, Object.fromEntries(MASK.map(([kind, , , what]) => [kind, {
@@ -2728,20 +2778,38 @@ function guardCost(chunks2, asks, terms) {
   if (estPrice > MAX_COST) askToContinue(`sys1grep: about ${estTokens.toLocaleString("en-US")} input tokens, ~$${estPrice.toFixed(2)}${at}  (--max-cost ${MAX_COST})`);
 }
 guardCost(chunks, asksByUnit, starting);
-var cachedUnits = cacheMode === "off" ? 0 : chunks.reduce((t, c) => {
+var cachedOf = (chunks2) => cacheMode === "off" ? 0 : chunks2.reduce((t, c) => {
   const { state, questions } = requestOf(c);
   return cached(JSON.stringify({ model, state, questions }), questions) ? t + c.length : t;
 }, 0);
+var cachedUnits = cachedOf(chunks);
 var isHit = (l) => starting.some((term) => termHolds(term, l));
-var answered = 0;
-spin.set(`0 of ${chunks.length} requests`);
-await Promise.all(chunks.map((chunk) => pooled(() => evaluate(chunk).then(() => {
-  if (opt.quiet && !multiStep && chunk.some(isHit)) process.exit(0);
-}, (e) => {
-  if (!opt.quiet) throw e;
-  console.error(`sys1grep: ${e.message}`);
-  hadError = true;
-}).finally(() => spin.set(`${++answered} of ${chunks.length} requests`)))));
+async function judgeAll(chunks2) {
+  let answered = 0;
+  spin.set(`0 of ${chunks2.length} requests`);
+  await Promise.all(chunks2.map((chunk) => pooled(() => evaluate(chunk).then(() => {
+    if (opt.quiet && !multiStep && chunk.some(isHit)) process.exit(0);
+  }, (e) => {
+    if (!opt.quiet) throw e;
+    console.error(`sys1grep: ${e.message}`);
+    hadError = true;
+  }).finally(() => spin.set(`${++answered} of ${chunks2.length} requests`)))));
+}
+await judgeAll(chunks);
+if (waiting.length) {
+  const verdict = (l) => [...asksByUnit.get(l).values()].map((x) => (x >= tPos) + 2 * (x < tNeg)).join();
+  const split = waiting.filter(([s]) => new Set(s.map(verdict)).size > 1);
+  for (const [s, rest] of waiting) if (!split.some(([t]) => t === s)) rest.forEach((l) => asksByUnit.set(l, asksByUnit.get(s[0])));
+  const again = split.flatMap(([, rest]) => rest);
+  if (logPlan) logPlan(`dedup: ${waiting.length - split.length} templates agreed, ${split.length} split; ${again.length} units sent again`);
+  if (again.length) {
+    const more = chunked(again);
+    guardCost(more, asksByUnit, starting);
+    cachedUnits += cachedOf(more);
+    await judgeAll(more);
+    sent = [...sent, ...again];
+  }
+}
 spin.stop();
 var outFormat = opt.rank && !summarizer ? opt.format : "plain";
 var color = (!summarizer || askSummary) && outFormat === "plain" && (opt.color === "always" || opt.color === "auto" && process.stdout.isTTY && !process.env.NO_COLOR);
@@ -3160,11 +3228,12 @@ async function summarizeText(text, count) {
   return true;
 }
 if (dry) {
-  const assumed = [willFold && `--dedup=${opt.dedup}`, opt.unit === "sentence-by-jev" && "--unit=sentence-by-jev"].filter(Boolean);
+  const assumed = [willFold && opt.dedup === "always" && "--dedup=always", opt.unit === "sentence-by-jev" && "--unit=sentence-by-jev"].filter(Boolean);
+  const agreed = willFold && opt.dedup === "auto" ? " (--dedup=auto samples assumed to agree; a split sends the rest)" : "";
   const toSend = traced - cacheHits, tokens2 = estimateTokens(toSend, tracedBytes, tracedCjkBytes), price = `, ~$${(tokens2 * pricePerM / 1e6).toFixed(6)}${priceTag}`;
   const guard = tokens2 * pricePerM / 1e6 > MAX_COST ? `; over --max-cost ${MAX_COST}, would ask` : "";
   const split = cacheMode === "off" ? "" : ` to send, ${cacheHits} cached`;
-  logPlan(`dry run: ${toSend} request${toSend === 1 ? "" : "s"}${split}, ${sent.length - cachedUnits} of ${totalUnits} ${unitName} to send, ${tracedQuestions} questions, ${tracedChars} chars, ~${tokens2} input tokens${price}; nothing sent${assumed.length ? ` (${assumed.join(" and ")} questions assumed no)` : ""}${guard}`);
+  logPlan(`dry run: ${toSend} request${toSend === 1 ? "" : "s"}${split}, ${sent.length - cachedUnits} of ${totalUnits} ${unitName} to send, ${tracedQuestions} questions, ${tracedChars} chars, ~${tokens2} input tokens${price}; nothing sent${assumed.length ? ` (${assumed.join(" and ")} questions assumed no)` : ""}${agreed}${guard}`);
 } else if ((process.stderr.isTTY || opt.verbose) && !opt.quiet) {
   if (opt.dedup === "never" && dedupEstimate?.pays) {
     console.error(`sys1grep: ${dedupEstimate.units} units fold to at most ${dedupEstimate.templates} templates; --dedup=auto would save ~${dedupEstimate.requests} requests (~${kify(dedupEstimate.saved)} tokens)`);
