@@ -510,6 +510,26 @@ eq "$(cd "$tmp/checkout" && $E node "$OLDPWD/../sys1grep.mjs" -e cat "$F" 2>&1 >
 mkdir -p "$tmp/.config/sys1grep"; printf 'SYS1GREP_URL=%s/v1\n' "$base" >"$tmp/.config/sys1grep/.env"
 reset; eq "$(cd "$tmp/checkout" && $E node "$OLDPWD/../sys1grep.mjs" -e cat "$F" 2>&1 >/dev/null)" "" "~/.config/sys1grep/.env wins over ~/.config/semgrep/.env, no deprecation line"
 rm -rf "$tmp/.config/semgrep" "$tmp/.config/sys1grep"
+section 'retries'
+# 429 / 529 / 5xx and timeouts are retried six times with exponential backoff; SYS1GREP_RETRY_MS=1 and
+# SYS1GREP_TIMEOUT_MS shrink the waits (31.5 s of backoff and a 60 s timeout otherwise). "count" is every attempt.
+R="$E SYS1GREP_RETRY_MS=1 SYS1GREP_TIMEOUT_MS=200 SYS1GREP_URL=$base/v1 node ../sys1grep.mjs"
+for w in 429 529 503 hang; do
+  printf 'cat @fail:%s:2\n' "$w" >"$tmp/retry"
+  reset; eq "$($R -c -e cat "$tmp/retry")" "1" "$w twice, then an answer: the match"
+  eq "$(stat count)" "3" "$w twice: two retries"
+  printf 'cat @fail:%s:7\n' "$w" >"$tmp/retry"
+  reset; code 2 "$w seven times: the retries run out" -- $R -e cat "$tmp/retry"
+  eq "$(stat count)" "7" "$w seven times: seven attempts, then it gives up"
+done
+host=${base#http://}
+reset; eq "$($R -e cat "$tmp/retry" 2>&1 >/dev/null | head -1)" "sys1grep: $host: The operation was aborted due to timeout" "the last timeout is the error"
+printf 'cat @fail:429:7\n' >"$tmp/retry"
+reset; eq "$($R -e cat "$tmp/retry" 2>&1 >/dev/null | head -1)" "sys1grep: $host 429: overloaded" "the last 429 is the error, with its body"
+printf 'cat @fail:json:1\n' >"$tmp/retry"
+reset; eq "$($R -e cat "$tmp/retry" 2>&1 >/dev/null | head -1)" "sys1grep: $host: the response is not JSON" "a body that is not JSON is an error, not retried"
+eq "$(stat count)" "1" "a body that is not JSON: one attempt"
+
 section 'settings.json'
 # ~/.config/sys1grep/settings.json: each field is the default for its variable. The command line wins, then the real
 # environment, then the file, then ~/.config/sys1grep/.env. $E sets SYS1GREP_OPTS= (empty), which would replace the
