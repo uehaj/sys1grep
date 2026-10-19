@@ -780,7 +780,7 @@ const run = kind => {
   gen++; ctl = new AbortController(); busy(true); onScreen = null; ask.hidden = true;
   left.textContent = 'searching...';
   const sum = kind === 'results' && p.summarize && !p.x.some(x => x[0] === 'S');
-  document.getElementById('m').classList.toggle('two', sum);
+  document.getElementById('m').classList.toggle('two', !!sum);
   right.hidden = !sum; right.textContent = sum ? 'summarizing...' : '';
   const mine = gen;
   // #231: one search, not two. Reserve the summarize step's slot so busy(false) does not fire in the gap between the
