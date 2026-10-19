@@ -38,6 +38,7 @@ class El {
       add: c => { if (!names().includes(c)) self.className = [...names(), c].join(' '); },
       remove: c => { self.className = names().filter(x => x !== c).join(' '); },
       contains: c => names().includes(c),
+      toggle: (c, on) => { on ? self.classList.add(c) : self.classList.remove(c); return on; },
     };
   }
   // <dialog>: a no-op model good enough for the page's own onclose/backdrop-click logic to run against.
@@ -179,9 +180,12 @@ console.log(`first start row: ${byId.fields.children[0].children.length} childre
 const fire = () => { for (const fn of byId.f.ls.change ?? []) fn(); };
 const search = async () => {
   byId.f.onsubmit({ preventDefault() {} });
+  // the ring and the dimmed results are #m.busy's CSS, aria-busy the screen reader's word for them: on with Search, off at the end
+  const busyAt = () => (byId.m.classList.contains('busy') ? 'busy' : 'idle') + '/aria-busy=' + byId.m.getAttribute('aria-busy');
+  const during = busyAt();
   while (byId.go.disabled) await new Promise(r => setTimeout(r, 20));
   const q = sent.at(-1);
-  return `x=${q.getAll('x').join('|')} hops=${q.get('hops')} reverse=${q.get('reverse')} -> ${text(byId.left).split('\n').filter(Boolean).length} lines`;
+  return `x=${q.getAll('x').join('|')} hops=${q.get('hops')} reverse=${q.get('reverse')} -> ${text(byId.left).split('\n').filter(Boolean).length} lines; ${during} then ${busyAt()}`;
 };
 const state = () => `steps ${!byId.steps ? 'missing' : byId.steps.hidden ? 'hidden' : 'shown'}: ${byId.cmd.textContent.replace(/^sys1grep \S+ /, '')}`;
 
