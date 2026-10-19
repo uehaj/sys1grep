@@ -539,11 +539,13 @@ summary.dot::after { content: " \\25CF"; color: var(--link); }
 .grid .withhint { align-items: flex-start; } .grid .withhint > label { flex: 1; min-width: 0; }
 .grid label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); } .grid label.chk { flex-direction: row; align-items: center; gap: 6px; }
 .grid input:not([type=checkbox]), .grid select, .grid textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); width: 100%; font: inherit; }
-main { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin: 12px 0 4px; position: relative; display: grid; gap: 16px; grid-template-columns: 1fr; } main.two { grid-template-columns: 3fr 2fr; }
-/* while a search runs (busy()): the results dimmed, a ring in the middle of the screen. Both fade in after 250ms, so a
-   search answered at once (the demo's recording) never flashes them; the buttons and aria-busy change at once */
-main.busy::before, main.busy::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--bg); opacity: .6; pointer-events: none; animation: fade .15s .25s both; }
-main.busy::after { position: fixed; inset: 0; margin: auto; width: 44px; height: 44px; border-radius: 50%; background: none; opacity: 1; border: 4px solid var(--rule); border-top-color: var(--accent); animation: fade .15s .25s both, spin .8s linear infinite; }
+main { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin: 12px 0 4px; display: grid; gap: 16px; grid-template-columns: 1fr; } main.two { grid-template-columns: 3fr 2fr; }
+/* while a search runs (busy()): the page veiled, a ring in the middle of the screen. Both fade in after 250ms, so a search
+   answered at once (the demo's recording answers in under 100ms) never flashes them; the buttons and aria-busy change at once.
+   Nothing blocks the pointer: Stop stays clickable and the next search can be typed meanwhile */
+main.busy::before, main.busy::after { content: ""; position: fixed; inset: 0; z-index: 5; pointer-events: none; animation: fade .15s .25s both; }
+main.busy::before { background: var(--page); opacity: .6; }
+main.busy::after { margin: auto; width: 52px; height: 52px; border-radius: 50%; background: var(--bg); box-shadow: var(--shadow); border: 5px solid var(--border); border-top-color: var(--accent); animation: fade .15s .25s both, spin .8s linear infinite; }
 @keyframes fade { from { opacity: 0; } } @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { main.busy::after { animation-duration: .15s, 3s; } }
 @media (max-width: 880px) { main.two { grid-template-columns: 1fr; } }
