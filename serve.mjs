@@ -546,6 +546,7 @@ main { background: var(--bg); border: 1px solid var(--border); border-radius: 12
 main.busy::before, main.busy::after { content: ""; position: fixed; inset: 0; z-index: 5; pointer-events: none; animation: fade .15s .25s both; }
 main.busy::before { background: var(--page); opacity: .6; }
 main.busy::after { margin: auto; width: 52px; height: 52px; border-radius: 50%; background: var(--bg); box-shadow: var(--shadow); border: 5px solid var(--border); border-top-color: var(--accent); animation: fade .15s .25s both, spin .8s linear infinite; }
+#stop:enabled { position: relative; z-index: 6; } /* above the veil: the one live control while a search runs */
 @keyframes fade { from { opacity: 0; } } @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { main.busy::after { animation-duration: .15s, 3s; } }
 @media (max-width: 880px) { main.two { grid-template-columns: 1fr; } }
