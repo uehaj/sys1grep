@@ -1,6 +1,6 @@
 {
   "name": "@uehaj/sys1grep",
-  "version": "0.5.0-next.2",
+  "version": "0.5.0",
   "description": "grep by meaning, across languages. TypeSafe Jev scores each line (or record, sentence, function) against a meaning; combine meanings and regexes with AND/OR/NOT. Includes git sys1grep and a local search page (--serve).",
   "keywords": [
     "grep",
