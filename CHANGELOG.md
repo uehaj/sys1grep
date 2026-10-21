@@ -5,6 +5,11 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 
 ## [Unreleased]
 
+### Fixed
+- `--serve`'s launch refusal now reads the options as parsed, not the raw arguments: a cluster like `-nq` or `-Hn`
+  and a long name like `--with-filename`, `--l` or `--z` were let through and the page started. A negation such as
+  `--no-verbose` still starts it, as before. `-h` is refused at launch too (it was missed).
+
 ## [0.5.0] - 2026-10-19
 
 ### Added
