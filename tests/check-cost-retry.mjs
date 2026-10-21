@@ -31,7 +31,7 @@ class El {
   focus() {} blur() {}
   setAttribute(k, v) { this.attrMap[k] = String(v); }
   getAttribute(k) { return this.attrMap[k]; }
-  get classList() { const self = this; return { add() {}, remove() {}, contains: () => false }; }
+  get classList() { return { add() {}, remove() {}, toggle() {}, contains: () => false }; }
   get textContent() { return this.children.length ? this.children.map(c => c.textContent).join('') : String(this.text); }
   set textContent(t) { this.children = []; this.text = t; }
   set innerHTML(h) { this.children = []; for (const [, t, a] of h.matchAll(/<(select|input|button)(\s[^>]*)?>/g)) this.append(new El(t, a ?? '')); }

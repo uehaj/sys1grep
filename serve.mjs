@@ -544,6 +544,15 @@ summary.dot::after { content: " \\25CF"; color: var(--link); }
 .grid label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); } .grid label.chk { flex-direction: row; align-items: center; gap: 6px; }
 .grid input:not([type=checkbox]), .grid select, .grid textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); width: 100%; font: inherit; }
 main { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin: 12px 0 4px; display: grid; gap: 16px; grid-template-columns: 1fr; } main.two { grid-template-columns: 3fr 2fr; }
+/* while a search runs (busy()): the page veiled, a ring in the middle of the screen. Both fade in after 250ms, so a search
+   answered at once (the demo's recording answers in under 100ms) never flashes them; the buttons and aria-busy change at once.
+   Nothing blocks the pointer: Stop stays clickable and the next search can be typed meanwhile */
+main.busy::before, main.busy::after { content: ""; position: fixed; inset: 0; z-index: 5; pointer-events: none; animation: fade .15s .25s both; }
+main.busy::before { background: var(--page); opacity: .6; }
+main.busy::after { margin: auto; width: 52px; height: 52px; border-radius: 50%; background: var(--bg); box-shadow: var(--shadow); border: 5px solid var(--border); border-top-color: var(--accent); animation: fade .15s .25s both, spin .8s linear infinite; }
+#stop:enabled { position: relative; z-index: 6; } /* above the veil: the one live control while a search runs */
+@keyframes fade { from { opacity: 0; } } @keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { main.busy::after { animation-duration: .15s, 3s; } }
 @media (max-width: 880px) { main.two { grid-template-columns: 1fr; } }
 iframe { width: 100%; border: 0; min-height: 80px; } pre.out { white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.5 ui-monospace, Menlo, monospace; }
 .c32 { color: #188038; } .c35 { color: #a142f4; } .c36 { color: #0c7a88; } .c31 { color: #d93025; } .c33 { color: #b06000; } .c01_31 { color: #d93025; font-weight: 700; } .c01_33 { color: #b06000; font-weight: 700; background: #fff3b055; }\n@media (prefers-color-scheme: dark) { .c32 { color: #81c995; } .c35 { color: #d7aefb; } .c36 { color: #78d9ec; } .c31, .c01_31 { color: #f28b82; } .c33, .c01_33 { color: #fdd663; } .err { color: #f28b82; } }\nbutton:disabled { opacity: .45; cursor: default; } #ex button { border-radius: 999px; background: var(--pill-bg); color: var(--pill-fg); border: none; } #ex .label, #ex .grp { flex-basis: 100%; font-weight: 700; color: var(--muted); margin-top: 4px; }
@@ -715,7 +724,10 @@ const ansi = (text, into) => { // the SGR colors of --color=always, as spans; no
 };
 let gen = 0;
 let ctl = null, running = 0;
-const busy = on => { for (const id of ['go', 'est']) document.getElementById(id).disabled = on; document.getElementById('stop').disabled = !on; };
+const busy = on => { // the ring and the dimmed results are #m.busy's CSS; aria-busy says the same to a screen reader
+  for (const id of ['go', 'est']) document.getElementById(id).disabled = on; document.getElementById('stop').disabled = !on;
+  const m = document.getElementById('m'); m.classList.toggle('busy', on); m.setAttribute('aria-busy', String(on));
+};
 const get = async (kind, p, into, post) => {
   const mine = gen;
   running++;
@@ -773,7 +785,7 @@ const run = kind => {
   gen++; ctl = new AbortController(); busy(true); onScreen = null; ask.hidden = true;
   left.textContent = 'searching...';
   const sum = kind === 'results' && p.summarize && !p.x.some(x => x[0] === 'S');
-  document.getElementById('m').className = sum ? 'two' : '';
+  document.getElementById('m').classList.toggle('two', !!sum);
   right.hidden = !sum; right.textContent = sum ? 'summarizing...' : '';
   const mine = gen;
   // #231: one search, not two. Reserve the summarize step's slot so busy(false) does not fire in the gap between the
@@ -815,7 +827,7 @@ askOk.onclick = () => {
   const text = frame ? frame.contentDocument.body.innerText : left.textContent;
   ask.hidden = true;
   gen++; ctl = new AbortController(); busy(true);
-  document.getElementById('m').className = 'two'; right.hidden = false; right.textContent = 'summarizing...';
+  document.getElementById('m').classList.add('two'); right.hidden = false; right.textContent = 'summarizing...';
   get('summarize', { ...onScreen, 'summarize-prompt': read()['summarize-prompt'] }, right, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: text });
 };
 f.onsubmit = e => { e.preventDefault(); go(); return false; };
