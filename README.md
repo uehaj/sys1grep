@@ -1232,7 +1232,7 @@ Exit codes follow grep: 0 matched, 1 no match, 2 error (bad arguments, unreadabl
 Exit 1 after lines were sent prints one line on stderr: the highest probability, its line, the option that
 loosens the threshold (unless even that would not match), and `-p -t 0` (`-T 1` too with a negation) to see every
 probability (`sys1grep: no line reached 0.5 for "…"; the highest was 0.42 (app.log:118). ...`).
-Not with `-q`, `--summarize` (except `--summarize=ask`), `--step-to` or `--step-reverse-to`, nor when only a negated meaning kept lines out.
+Not with `-q`, `--step-to` or `--step-reverse-to`, nor when only a negated meaning kept lines out.
 
 ### Expression grammar
 
