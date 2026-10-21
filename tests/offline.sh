@@ -2487,12 +2487,13 @@ section 'demo: browser bundle (#200)'
 # Built here twice: from this checkout, and from a copy of only its tracked files, which must give the same bytes.
 # Recorded on the fake (scripts/record-demo-cache.mjs) into $tmp, never under docs/, then each example pill replayed: the
 # bundle in a worker thread, as the page's worker runs it, against the CLI on the same files, arguments and recording
-# (tests/demo-core.mjs).
+# (tests/demo-core.mjs). Then the same replay on the committed recording (docs/demo/cache.json, real Jev's answers,
+# PR 2 of #200), which the deployed page serves: $tmp/demo2 keeps it and is built next to it.
 eq "$(node demo-shims.mjs)" "parseArgs = node:util on 21873 argvs
 sha256 = node:crypto on 9 texts" "demo: the parseArgs and sha256 stand-ins agree with Node's"
 mkdir -p "$tmp/demo" "$tmp/demo-src" "$tmp/demo2"
-[ ! -f ../docs/demo/cache.json ] || cp ../docs/demo/cache.json "$tmp/demo/"
-[ ! -f ../docs/demo/cache.json ] || cp ../docs/demo/cache.json "$tmp/demo2/"
+cp ../docs/demo/cache.json "$tmp/demo/"
+cp ../docs/demo/cache.json "$tmp/demo2/"
 node ../scripts/demo-build.mjs "$tmp/demo" >"$tmp/demo-build.out" 2>&1 || fail "demo build: $(cat "$tmp/demo-build.out")"
 (cd .. && git ls-files -z | tar --null -T - -cf -) | tar -xf - -C "$tmp/demo-src"
 node "$tmp/demo-src/scripts/demo-build.mjs" "$tmp/demo2" >"$tmp/demo-build2.out" 2>&1 || fail "demo build from the tracked files alone: $(cat "$tmp/demo-build2.out")"
@@ -2505,15 +2506,19 @@ $E SYS1GREP_URL=$base/v1 node ../scripts/record-demo-cache.mjs --record --out "$
 case $(tail -1 "$tmp/demo-record.out") in *"every pill replays from $tmp/demo/cache.json") ;; *) fail "demo: recording on the fake: $(tail -1 "$tmp/demo-record.out")" ;; esac
 node ../scripts/demo-build.mjs "$tmp/demo" >/dev/null 2>&1
 eq "$(grep -c 'id="demo-missing"' "$tmp/demo/index.html") $(grep -o 'data-recorded="."' "$tmp/demo/index.html")" '0 data-recorded="1"' "demo: built next to a recording, the page runs searches"
-$E node demo-core.mjs "$tmp/demo" "$tmp/demo/cache.json" >"$tmp/demo-core.out" 2>"$tmp/demo-core.err" || fail "demo-core.mjs: $(cat "$tmp/demo-core.err")"
-eq "$(cat "$tmp/demo-core.out")" "pills, bundle = CLI, answered from the recording: 24 (en 14, ja 10)
+demo_core_ok="pills, bundle = CLI, answered from the recording: 24 (en 14, ja 10)
 meaning pills with -t 0 -T 1 -p, bundle = CLI, lines and recorded probabilities printed: 20
 multi-step pills found something with no recording at all: 4 of 4
 free-typed regex searches, bundle = CLI, no recording: 4 of 4
 a meaning not recorded: exit 2, not cached
 estimate (--dry-run) of the first pill, bundle = CLI: true
 the first pill with --rank=jev (html, its template), bundle = CLI: true
-differences: 0" "demo: the bundled core prints what the CLI prints, with the same exit code$(head -c 2000 "$tmp/demo-core.err")"
+differences: 0"
+$E node demo-core.mjs "$tmp/demo" "$tmp/demo/cache.json" >"$tmp/demo-core.out" 2>"$tmp/demo-core.err" || fail "demo-core.mjs: $(cat "$tmp/demo-core.err")"
+eq "$(cat "$tmp/demo-core.out")" "$demo_core_ok" "demo: the bundled core prints what the CLI prints, with the same exit code$(head -c 2000 "$tmp/demo-core.err")"
+eq "$(node -e 'console.log(JSON.parse(require("fs").readFileSync("../docs/demo/cache.json","utf8")).url)')" "https://api.typesafe.ai/v1/systemone" "demo: the committed recording was made on the real endpoint"
+$E node demo-core.mjs "$tmp/demo2" "$tmp/demo2/cache.json" >"$tmp/demo-core2.out" 2>"$tmp/demo-core2.err" || fail "demo-core.mjs on the committed recording: $(cat "$tmp/demo-core2.err")"
+eq "$(cat "$tmp/demo-core2.out")" "$demo_core_ok" "demo: the committed recording answers all 24 pills, bundle = CLI, nothing sent$(head -c 2000 "$tmp/demo-core2.err")"
 # owner, 2026-10-18: the demo is reached at /demo/ but linked from nowhere until it is announced
 eq "$(grep -lE 'sys1grep\.js\.org/demo|href="/?demo/?"|\(/?demo/?\)' ../README.md ../README.ja.md ../docs/index.html ../sys1grep.mjs ../CHANGELOG.md)" "" "demo: no link to it from the README, the site, --help or the changelog"
 # offline-sections: end
