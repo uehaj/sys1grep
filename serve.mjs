@@ -698,6 +698,7 @@ const show = () => {
   if (!ask.hidden) drawAsk();
   document.getElementById('ds').className = CONTROLS.some(c => !['rank'].includes(c.k) && !c.step && p[c.k] !== INIT[c.k]
     && !(c.nostep && multi) && !(c.sentenceOnly && !/^sentence-by-/.test(p.unit))) ? 'dot' : '';
+  if (!running) busy(false);
   return p;
 };
 const query = p => { const q = new URLSearchParams({ k: TOKEN }); for (const x of p.x) q.append('x', x); for (const [k, v] of Object.entries(p)) if (k !== 'x') q.set(k, v === true ? '1' : v === false ? '0' : v); return q; };
@@ -711,7 +712,18 @@ const ansi = (text, into) => { // the SGR colors of --color=always, as spans; no
 };
 let gen = 0;
 let ctl = null, running = 0;
-const busy = on => { for (const id of ['go', 'est']) document.getElementById(id).disabled = on; document.getElementById('stop').disabled = !on; };
+// Search and Estimate cost wait for a field to search for (and, on the demo, for its recording). A search that starts
+// below the fold scrolls the results into view, so the answer is never written off screen.
+const ready = () => !window.sys1demo?.noRun && read().x.some(x => x[0] !== 'S');
+const busy = on => {
+  for (const id of ['go', 'est']) document.getElementById(id).disabled = on || !ready();
+  document.getElementById('stop').disabled = !on;
+  // after the caller's turn, once it has written "searching..." (an empty #m has no box to measure)
+  if (on) setTimeout(() => {
+    const m = document.getElementById('m');
+    if (m.getBoundingClientRect?.().top > window.innerHeight * 0.6) m.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  });
+};
 const get = async (kind, p, into, post) => {
   const mine = gen;
   running++;
