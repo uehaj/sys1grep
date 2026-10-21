@@ -329,14 +329,19 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
   --dedup[=auto|always|never]  judge one line per template instead of every line. Lines that differ only in
                ids, hashes, numbers, dates and times, paths and URLs share a template; one of them is sent and
                its answer is reused for the rest. Which of those may be folded depends on the meaning: a number
-               decides "disk usage above 90%", a time decides "happened at night". Jev is asked first, one small
-               request per meaning, and the kinds that could change a match are kept apart. Built for
+               decides "disk usage above 90%", a time decides "happened at night". always asks Jev first, one
+               small request per meaning, and keeps apart the kinds that could change a match. auto asks
+               nothing: it judges up to 5 sampled members of each template (the lowest, highest and middle of
+               each varying value). When their verdicts agree, the members not sampled share the first
+               sample's answers and the samples keep their own; when they differ, the rest are sent after
+               --max-cost is checked again (a few percent more than never). A value only between the samples
+               is missed, and --dry-run assumes every sample agrees, so its count is the floor. Built for
                machine-generated logs, where it can cut the cost by a factor of 30 or more; prose has no
                shared skeleton and barely folds, and a meaning that reads a value folds little.
                never (default, for now: see #143) never asks or folds, but still estimates locally, before
                anything is sent, what folding every kind (the best case) would save; when that would be at
                least twice the cost of --dedup's own question, one stderr hint names --dedup=auto (not with -q).
-               auto asks and folds only when that estimate says it pays; bare --dedup is --dedup=always, which
+               auto folds only when that estimate says it pays; bare --dedup is --dedup=always, which
                always asks and folds, as every --dedup did before this option took a value. --verbose /
                --dry-run print the decision and its numbers for every value.
                With --unit=zero or --unit=sentence-by-* the unit that folds is the record or the sentence
@@ -623,14 +628,18 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
   --dedup[=auto|always|never]  全行ではなくテンプレートごとに 1 行だけ判定する。ID・ハッシュ・数値・日付と時刻・
                パス・URL だけが違う行は同じテンプレートとみなし、代表 1 行を送ってその答えを残りにも使う。
                どれをまとめてよいかは意味による。「ディスク使用率が 90% を超えている」なら数値が、
-               「夜間に起きた」なら時刻が答えを決める。そこで意味ごとに小さなリクエストを 1 つ送って
-               Jev に聞き、答えを変えうる種類はまとめない。機械が吐くログ向けで、費用が 30 分の 1
-               以下になることもある。散文には共通の骨格がないのでほとんど縮まず、値を読む意味もあまり
+               「夜間に起きた」なら時刻が答えを決める。always は意味ごとに小さなリクエストを 1 つ送って
+               Jev に聞き、答えを変えうる種類はまとめない。auto は聞かず、各テンプレートから最大 5 行の
+               標本 (変わる値ごとに最小・最大・中央の行) を判定する。判定が揃えば、標本でない行は最初の
+               標本の答えを共有し、標本は自分の答えを保つ。分かれたら --max-cost をもう一度確かめてから
+               残りを送る (never より数パーセント高くつく)。標本のあいだにしか無い値は見落とす。
+               --dry-run はすべての標本が揃うと仮定するので、その数は下限。機械が吐くログ向けで、
+               費用が 30 分の 1 以下になることもある。散文には共通の骨格がないのでほとんど縮まず、値を読む意味もあまり
                縮まない。
                never (既定。当面は #143 参照) は尋ねも縮めもしないが、送る前にローカルで、全種類を
                縮めた場合 (最良のケース) にどれだけ浮くかを見積もる。それが --dedup 自身の質問の費用の
                2 倍以上なら、stderr に --dedup=auto を勧める一行を出す (-q では出さない)。auto はその
-               見積もりが割に合うときだけ尋ねて縮める。裸の --dedup は --dedup=always で、この
+               見積もりが割に合うときだけ縮める。裸の --dedup は --dedup=always で、この
                オプションが値を取る前の --dedup と同じく常に尋ねて縮める。--verbose・--dry-run は
                値ごとにこの判定と数字を表示する。--unit=zero や --unit=sentence-by-* ではレコードや文を
                単位にまとめる
@@ -2154,7 +2163,46 @@ if (logPlan && dedupEstimate) {
   const state = opt.dedup === 'always' ? 'on (always)' : opt.dedup === 'never' ? 'off (never)' : dedupEstimate.pays ? 'on' : 'off (auto)';
   logPlan(`dedup: ${dedupEstimate.units} units fold to at most ${dedupEstimate.templates} templates (~${dedupEstimate.requests} requests, ~${dedupEstimate.saved} tokens saved): ${state}`);
 }
-if (willFold && sent.length) {
+// #152: --dedup=auto asks no question about which values a meaning reads. Each template (every MASK kind
+// folded) sends a sample of members whose values differ: for each varying value, fewest distinct values first, the
+// member holding its lowest, its highest and its middle value, up to SAMPLE. The rest wait. If every sample gets the
+// same verdict, the members not sampled share the first sample's answers and the samples keep their own; if not,
+// the rest are sent too.
+const SAMPLE = 5;
+const valuesOf = text => { const vals = []; MASK.reduce((s, [, re, to]) => s.replace(re, v => (vals.push(v), to)), text); return vals; };
+function sampleOf(group) {
+  if (group.length <= SAMPLE) return group;
+  const vals = group.map(l => valuesOf(l.text));
+  const num = v => { const n = Number(v.replace(/[,_]/g, '')); return Number.isFinite(n) ? n : null; };
+  const slots = vals[0].map((_, i) => [i, new Set(vals.map(v => v[i])).size]).filter(([, n]) => n > 1).sort((a, b) => a[1] - b[1]);
+  const picked = new Set();
+  for (const [i] of slots) {
+    const order = group.map((_, j) => j).sort((a, b) => {
+      const [x, y] = [num(vals[a][i]), num(vals[b][i])];
+      return x !== null && y !== null ? x - y : vals[a][i] < vals[b][i] ? -1 : vals[a][i] > vals[b][i] ? 1 : 0;
+    });
+    for (const j of [order[0], order.at(-1), order[order.length >> 1]]) if (picked.size < SAMPLE) picked.add(j);
+  }
+  if (!picked.size) picked.add(0);
+  return [...picked].map(j => group[j]);
+}
+let waiting = []; // [samples, the rest] per template that sent a sample only
+if (willFold && sent.length && opt.dedup === 'auto') {
+  const groups = new Map();
+  for (const l of sent) {
+    const key = [templateKey(l.text, [], MASK), ...asksByUnit.get(l).keys()].join('\0\0');
+    if (groups.has(key)) groups.get(key).push(l);
+    else groups.set(key, [l]);
+  }
+  for (const g of groups.values()) {
+    const s = sampleOf(g);
+    if (s.length < g.length) waiting.push([s, g.filter(l => !s.includes(l))]);
+  }
+  const held = new Set(waiting.flatMap(([, rest]) => rest));
+  sent = sent.filter(l => !held.has(l));
+  if (logPlan) logPlan(`dedup: ${waiting.length} templates sampled, ${held.size} units wait for their samples' verdicts`);
+}
+if (willFold && sent.length && opt.dedup === 'always') {
   // Asked with the unexpanded meaning, for meanings only; a regex-only expression sends nothing and gets here with no lines.
   const meanings = [...new Set(expr.flat().filter(lit => lit.kind === 'm').map(lit => lit.text))];
   // One request per meaning, the meaning as the only state: this is the form measured in #19. Keeping a kind that
@@ -2248,17 +2296,35 @@ function guardCost(chunks, asks, terms) {
 }
 guardCost(chunks, asksByUnit, starting);
 // #252 review: the units of chunks the cache answers, left out of "N sent" (summary) and "N of M to send" (--dry-run)
-const cachedUnits = cacheMode === 'off' ? 0 : chunks.reduce((t, c) => {
+const cachedOf = chunks => cacheMode === 'off' ? 0 : chunks.reduce((t, c) => {
   const { state, questions } = requestOf(c);
   return cached(JSON.stringify({ model, state, questions }), questions) ? t + c.length : t;
 }, 0);
+let cachedUnits = cachedOf(chunks);
 const isHit = l => starting.some(term => termHolds(term, l));
 // -q: a failed request is reported and the rest still run, since a later match means exit 0 (grep -q).
-let answered = 0;
-spin.set(`0 of ${chunks.length} requests`);
-await Promise.all(chunks.map(chunk => pooled(() => evaluate(chunk).then(() => {
-  if (opt.quiet && !multiStep && chunk.some(isHit)) process.exit(0);
-}, e => { if (!opt.quiet) throw e; console.error(`sys1grep: ${e.message}`); hadError = true; }).finally(() => spin.set(`${++answered} of ${chunks.length} requests`)))));
+async function judgeAll(chunks) {
+  let answered = 0;
+  spin.set(`0 of ${chunks.length} requests`);
+  await Promise.all(chunks.map(chunk => pooled(() => evaluate(chunk).then(() => {
+    if (opt.quiet && !multiStep && chunk.some(isHit)) process.exit(0);
+  }, e => { if (!opt.quiet) throw e; console.error(`sys1grep: ${e.message}`); hadError = true; }).finally(() => spin.set(`${++answered} of ${chunks.length} requests`)))));
+}
+await judgeAll(chunks);
+if (waiting.length) {
+  const verdict = l => [...asksByUnit.get(l).values()].map(x => (x >= tPos) + 2 * (x < tNeg)).join();
+  const split = waiting.filter(([s]) => new Set(s.map(verdict)).size > 1);
+  for (const [s, rest] of waiting) if (!split.some(([t]) => t === s)) rest.forEach(l => asksByUnit.set(l, asksByUnit.get(s[0])));
+  const again = split.flatMap(([, rest]) => rest);
+  if (logPlan) logPlan(`dedup: ${waiting.length - split.length} templates agreed, ${split.length} split; ${again.length} units sent again`);
+  if (again.length) {
+    const more = chunked(again);
+    guardCost(more, asksByUnit, starting);
+    cachedUnits += cachedOf(more);
+    await judgeAll(more);
+    sent = [...sent, ...again];
+  }
+}
 spin.stop();
 
 // What --summarize pipes is never colored: escape sequences would reach the summarizer as text.
@@ -2658,13 +2724,15 @@ async function summarizeText(text, count) {
 }
 // Summary only when interactive; grep prints nothing to stderr when scripted.
 if (dry) {
-  const assumed = [willFold && `--dedup=${opt.dedup}`, opt.unit === 'sentence-by-jev' && '--unit=sentence-by-jev'].filter(Boolean);
+  const assumed = [willFold && opt.dedup === 'always' && '--dedup=always', opt.unit === 'sentence-by-jev' && '--unit=sentence-by-jev'].filter(Boolean);
+  // --dedup=auto asks no question; a dry run answers every sample no, so they always agree: the count is the floor
+  const agreed = willFold && opt.dedup === 'auto' ? ' (--dedup=auto samples assumed to agree; a split sends the rest)' : '';
   const toSend = traced - cacheHits, tokens = estimateTokens(toSend, tracedBytes, tracedCjkBytes), price = `, ~$${(tokens * pricePerM / 1e6).toFixed(6)}${priceTag}`;
   // #125 review: the size guard is gone (an oversized file is skipped outright above, not asked about); --dry-run
   // and -i show only the cost guard's verdict here, consistent with what a real run would ask.
   const guard = (tokens * pricePerM) / 1e6 > MAX_COST ? `; over --max-cost ${MAX_COST}, would ask` : '';
   const split = cacheMode === 'off' ? '' : ` to send, ${cacheHits} cached`;
-  logPlan(`dry run: ${toSend} request${toSend === 1 ? '' : 's'}${split}, ${sent.length - cachedUnits} of ${totalUnits} ${unitName} to send, ${tracedQuestions} questions, ${tracedChars} chars, ~${tokens} input tokens${price}; nothing sent${assumed.length ? ` (${assumed.join(' and ')} questions assumed no)` : ''}${guard}`);
+  logPlan(`dry run: ${toSend} request${toSend === 1 ? '' : 's'}${split}, ${sent.length - cachedUnits} of ${totalUnits} ${unitName} to send, ${tracedQuestions} questions, ${tracedChars} chars, ~${tokens} input tokens${price}; nothing sent${assumed.length ? ` (${assumed.join(' and ')} questions assumed no)` : ''}${agreed}${guard}`);
 } else if ((process.stderr.isTTY || opt.verbose) && !opt.quiet) {
   // #143: dedup off by default until real-run stats say auto should be it; meanwhile a run that would have paid
   // says so, once, so a user stuck on the default default learns --dedup=auto exists.

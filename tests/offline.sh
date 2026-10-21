@@ -1,5 +1,6 @@
 #!/bin/sh
-# Offline self-check against tests/fake-jev.mjs: no API key, no network, the same answer every run.
+# Offline self-check against tests/fake-jev.mjs: no API key, no network (but npx fetching the demo's pinned esbuild
+# once), the same answer every run.
 # The fake scores a line 0.9 when it contains the meaning verbatim ("@N" in the line sets N instead), else 0.05,
 # so these checks are about sys1grep itself: the expression, output shapes, options, requests and exit codes.
 set -e
@@ -418,8 +419,21 @@ echo "$V" | grep -q -- 'would save' && fail "-q: no would-save hint on stderr (#
 reset; V=$($J --verbose --dedup=auto -e cat "$tmp/rep.txt" 2>&1 >/dev/null)
 echo "$V" | grep -Eq '^sys1grep: dedup: 120 units fold to at most 1 templates .*: on$' || fail "--verbose --dedup=auto, pays: on: $V"
 echo "$V" | grep -q -- 'would save' && fail "--dedup=auto, pays: no separate would-save hint, only the decision line (#143 review): $V"
-eq "$(echo "$V" | grep -c '\[dedup\]')" "1" "--dedup=auto, pays: exactly one [dedup] request"
-eq "$(stat count)" "2" "--dedup=auto, pays: the pre-question plus one judge request"
+eq "$(echo "$V" | grep -c '\[dedup\]')" "0" "--dedup=auto (#152): no [dedup] question"
+echo "$V" | grep -q '^sys1grep: dedup: 1 templates agreed, 0 split; 0 units sent again$' || fail "--dedup=auto: the samples agreed: $V"
+eq "$(stat count)" "1" "--dedup=auto: the samples in one judge request, the rest share their answers"
+# The samples of "usage N" are the lowest, the highest and the middle N (1, 120, 61). A meaning they disagree on
+# sends the rest; one that only a value between them holds is missed: the weakness of sampling.
+awk 'BEGIN { for (i = 1; i <= 120; i++) print "usage " i }' >"$tmp/use120.txt"
+reset; eq "$($J -n --dedup=auto -e 'usage 120' "$tmp/use120.txt" | nums)" "120 " "--dedup=auto: samples split, the rest are sent"
+eq "$(stat count)" "5" "--dedup=auto, split: one request of samples, then the other 117 units in 4"
+eq "$($J -n --dedup=never -e 'usage 50' "$tmp/use120.txt" | nums)" "50 " "never finds a value between the samples"
+eq "$($J -n --dedup=auto -e 'usage 50' "$tmp/use120.txt" | nums)" "" "--dedup=auto misses it: every sample said no"
+# Agreed samples keep their own answers; only the members not sampled share the first sample's (#176 review).
+awk 'BEGIN { for (i = 1; i <= 120; i++) print "cat " i " @0." 71 + i % 29 }' >"$tmp/own.txt"
+P=$($J -n -p --color=never --dedup=auto -e cat "$tmp/own.txt")
+eq "$(echo "$P" | grep -E '^(1|120):' | tr '\t' ' ' | tr '\n' '|')" "1:cat 1 @0.72 [0.72]|120:cat 120 @0.75 [0.75]|" "--dedup=auto -p: a sample prints its own probability"
+eq "$(echo "$P" | grep -c '\[0.71\]')" "116" "--dedup=auto -p: the first sample (line 29) and the 115 members not sampled print its 0.71"
 reset; $J --dedup=always -e cat "$tmp/rep.txt" >/dev/null; eq "$(stat count)" "2" "--dedup=always: folds regardless"
 reset; V=$($J --verbose --dedup=always -e cat "$tmp/rep.txt" 2>&1 >/dev/null)
 echo "$V" | grep -Eq ': on \(always\)$' || fail "--verbose --dedup=always: the decision line reads on (always) (#143 review): $V"
@@ -434,6 +448,9 @@ eq "$(stat count)" "2" "SYS1GREP_OPTS=--dedup=never, undone by --dedup on the co
 # --dry-run: the decision line only (nothing sent; dry answers every question no, same as --dedup's own real fold does)
 out=$($J --dry-run --dedup=auto -e cat "$tmp/rep.txt")
 echo "$out" | grep -Eq '^sys1grep: dedup: 120 units fold to at most 1 templates .*: on$' || fail "--dry-run --dedup=auto: the decision line: $out"
+echo "$out" | grep -q 'nothing sent (--dedup=auto samples assumed to agree; a split sends the rest)$' || fail "--dry-run --dedup=auto: no question assumed, the samples assumed to agree (#176 review): $out"
+out=$($J --dry-run --dedup=always -e cat "$tmp/rep.txt" 2>&1)
+echo "$out" | grep -q 'nothing sent (--dedup=always questions assumed no)$' || fail "--dry-run --dedup=always: its question assumed no: $out"
 
 section '--dedup: prints what never prints'
 # #152: folding changes what is sent, not what is printed. On the real-shaped logs in tests/dedup, with a meaning
@@ -2463,5 +2480,46 @@ for launch in -r -g opts settings unchecked; do
 done
 eq "$(head -1 "$tmp/serve6.err")" "sys1grep: --serve: could not check whether -r is in effect" "--serve: a check with no answer is reported, not fatal"
 eq "$($J --serve=99999 "$F" 2>&1 | head -1 | cut -c1-30)" "sys1grep: --serve=99999: not a" "--serve: a bad port is an error"
+
+section 'demo: browser bundle (#200)'
+# The demo page runs the real sys1grep.mjs in the browser, bundled with demo/shims/ in place of node:* (scripts/demo-build.mjs,
+# esbuild via npx, cached after the first run), built at deploy time by .github/workflows/pages.yml, never committed.
+# Built here twice: from this checkout, and from a copy of only its tracked files, which must give the same bytes.
+# Recorded on the fake (scripts/record-demo-cache.mjs) into $tmp, never under docs/, then each example pill replayed: the
+# bundle in a worker thread, as the page's worker runs it, against the CLI on the same files, arguments and recording
+# (tests/demo-core.mjs). Then the same replay on the committed recording (docs/demo/cache.json, real Jev's answers,
+# PR 2 of #200), which the deployed page serves: $tmp/demo2 keeps it and is built next to it.
+eq "$(node demo-shims.mjs)" "parseArgs = node:util on 21873 argvs
+sha256 = node:crypto on 9 texts" "demo: the parseArgs and sha256 stand-ins agree with Node's"
+mkdir -p "$tmp/demo" "$tmp/demo-src" "$tmp/demo2"
+cp ../docs/demo/cache.json "$tmp/demo/"
+cp ../docs/demo/cache.json "$tmp/demo2/"
+node ../scripts/demo-build.mjs "$tmp/demo" >"$tmp/demo-build.out" 2>&1 || fail "demo build: $(cat "$tmp/demo-build.out")"
+(cd .. && git ls-files -z | tar --null -T - -cf -) | tar -xf - -C "$tmp/demo-src"
+node "$tmp/demo-src/scripts/demo-build.mjs" "$tmp/demo2" >"$tmp/demo-build2.out" 2>&1 || fail "demo build from the tracked files alone: $(cat "$tmp/demo-build2.out")"
+eq "$(diff -r "$tmp/demo" "$tmp/demo2" | head -c 300)" "" "demo: the build needs only tracked files and gives the same bytes every run"
+rm -f "$tmp/demo/cache.json" && node ../scripts/demo-build.mjs "$tmp/demo" >/dev/null 2>&1
+eq "$(grep -c '<meta name="robots" content="noindex">' "$tmp/demo/index.html")" "1" "demo: the page asks not to be indexed"
+eq "$(grep -o 'id="demo-missing">[^<]*' "$tmp/demo/index.html")" 'id="demo-missing">The recording is not published yet, so this demo runs no search for now.' "demo: built with no recording, the page says it is not published yet"
+eq "$(grep -o 'id="gear"[^>]*' "$tmp/demo/index.html" | grep -c hidden)" "1" "demo: no settings panel"
+$E SYS1GREP_URL=$base/v1 node ../scripts/record-demo-cache.mjs --record --out "$tmp/demo/cache.json" >"$tmp/demo-record.out" 2>&1 || fail "demo: recording on the fake: $(tail -3 "$tmp/demo-record.out")"
+case $(tail -1 "$tmp/demo-record.out") in *"every pill replays from $tmp/demo/cache.json") ;; *) fail "demo: recording on the fake: $(tail -1 "$tmp/demo-record.out")" ;; esac
+node ../scripts/demo-build.mjs "$tmp/demo" >/dev/null 2>&1
+eq "$(grep -c 'id="demo-missing"' "$tmp/demo/index.html") $(grep -o 'data-recorded="."' "$tmp/demo/index.html")" '0 data-recorded="1"' "demo: built next to a recording, the page runs searches"
+demo_core_ok="pills, bundle = CLI, answered from the recording: 24 (en 14, ja 10)
+meaning pills with -t 0 -T 1 -p, bundle = CLI, lines and recorded probabilities printed: 20
+multi-step pills found something with no recording at all: 4 of 4
+free-typed regex searches, bundle = CLI, no recording: 4 of 4
+a meaning not recorded: exit 2, not cached
+estimate (--dry-run) of the first pill, bundle = CLI: true
+the first pill with --rank=jev (html, its template), bundle = CLI: true
+differences: 0"
+$E node demo-core.mjs "$tmp/demo" "$tmp/demo/cache.json" >"$tmp/demo-core.out" 2>"$tmp/demo-core.err" || fail "demo-core.mjs: $(cat "$tmp/demo-core.err")"
+eq "$(cat "$tmp/demo-core.out")" "$demo_core_ok" "demo: the bundled core prints what the CLI prints, with the same exit code$(head -c 2000 "$tmp/demo-core.err")"
+eq "$(node -e 'console.log(JSON.parse(require("fs").readFileSync("../docs/demo/cache.json","utf8")).url)')" "https://api.typesafe.ai/v1/systemone" "demo: the committed recording was made on the real endpoint"
+$E node demo-core.mjs "$tmp/demo2" "$tmp/demo2/cache.json" >"$tmp/demo-core2.out" 2>"$tmp/demo-core2.err" || fail "demo-core.mjs on the committed recording: $(cat "$tmp/demo-core2.err")"
+eq "$(cat "$tmp/demo-core2.out")" "$demo_core_ok" "demo: the committed recording answers all 24 pills, bundle = CLI, nothing sent$(head -c 2000 "$tmp/demo-core2.err")"
+# owner, 2026-10-18: the demo is reached at /demo/ but linked from nowhere until it is announced
+eq "$(grep -lE 'sys1grep\.js\.org/demo|href="/?demo/?"|\(/?demo/?\)' ../README.md ../README.ja.md ../docs/index.html ../sys1grep.mjs ../CHANGELOG.md)" "" "demo: no link to it from the README, the site, --help or the changelog"
 # offline-sections: end
 echo "OK: $n checks passed (and the grep-guarded ones)"
