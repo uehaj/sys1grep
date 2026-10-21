@@ -1130,9 +1130,17 @@ case $(cat "$tmp/sum.in") in *"$esc"*) fail "--summarize pipes colors" ;; esac
 printf 'cat\0dog\0cat two\0' >"$tmp/z"
 $SM --summarize -z -e cat "$tmp/z" >/dev/null
 eq "$(tr '\n' '|' <"$tmp/sum.in")" "cat||cat two||" "--summarize -z: records end in a blank line, not NUL"
-rm -f "$tmp/sum.in"; code 1 "--summarize, no match" -- $SM --summarize -e zebra "$F"
-[ ! -e "$tmp/sum.in" ] || fail "--summarize runs the summarizer with no match"
-eq "$($SM --summarize -e bird "$F" 2>&1 || true)" "" "--summarize, no match: no hint"
+for s in --summarize --summarize=ask; do
+  rm -f "$tmp/sum.in"
+  r=0; $SM $s -e bird "$F" </dev/null >"$tmp/sum.out" 2>"$tmp/sum.err" || r=$?
+  eq "$r" "1" "$s, no match"
+  eq "$(cat "$tmp/sum.out")" "" "$s, no match: no stdout"
+  eq "$(cat "$tmp/sum.err")" "sys1grep: no line reached 0.5 for \"bird\"; the highest was 0.40 ($F:5). --level loose takes 0.3, -p -t 0 shows every probability" "$s, no match: the ordinary hint"
+  eq "$($SM $s -e cat -a '/zebra/' "$F" 2>&1 || true)" "" "$s, no match: silent when the regex left nothing to send"
+  [ ! -e "$tmp/sum.in" ] || fail "$s runs the summarizer with no match"
+done
+code 1 "--summarize=ask -q, no match" -- $SM --summarize=ask -q -e bird "$F"
+eq "$($SM --summarize=ask -q -e bird "$F" 2>&1 || true)" "" "--summarize=ask -q, no match: no hint"
 code 2 "--summarize, summarizer fails" -- env SUM_EXIT=3 $SM --summarize -e cat "$F"
 code 2 "--summarize, an unreadable file" -- $SM --summarize -e cat "$F" "$tmp/none"
 # #227: SYS1GREP_SUMMARIZE=stdin, --serve's summary of the results on screen: stdin goes to the summarizer, no file is

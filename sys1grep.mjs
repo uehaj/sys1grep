@@ -416,7 +416,7 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
 
 Exit status: 0 matched / 1 no match / 2 error (bad arguments, unreadable file, API failure)
   On 1, when lines were sent, stderr names the highest probability and its line (not with -q,
-  --summarize but =ask, --step-to, --step-reverse-to, or when only a negation failed)
+  --step-to, --step-reverse-to, or when only a negation failed)
 
 Environment (read from the environment, else from ~/.config/sys1grep/settings.json, else from
 ~/.config/sys1grep/.env; ./.env is never read):
@@ -710,8 +710,8 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
   -V, --version  バージョンを表示して終了
 
 終了コード: 一致あり 0 / なし 1 / エラー 2 (引数・読めないファイル・API 障害)
-  行を送って 1 のときは、最も高かった確率とその行を stderr に出す (-q・--summarize (=ask を除く)・--step-to・
-  --step-reverse-to と、否定だけで落ちたときは出さない)
+  行を送って 1 のときは、最も高かった確率とその行を stderr に出す (-q・--step-to・--step-reverse-to と、
+  否定だけで落ちたときは出さない)
 
 環境変数 (環境、無ければ ~/.config/sys1grep/settings.json、それも無ければ ~/.config/sys1grep/.env から読む。
 ./.env は読まない):
@@ -2760,7 +2760,7 @@ if (dry) {
 // process.exit() can drop buffered stdout when piped, so set exitCode instead.
 process.exitCode = dry ? (hadError ? 2 : 0) : matched && opt.quiet ? 0 : hadError || (summaryFailed && !askSummary) ? 2 : matched ? 0 : 1; // -q: a match wins over an error
 // #139: exit 1 is a threshold decision, not a fact; name the closest line so the caller does not rerun to see it.
-if (process.exitCode === 1 && sent.length && !opt.quiet && (!summarizer || askSummary) && !multiStep) {
+if (process.exitCode === 1 && sent.length && !opt.quiet && !multiStep) {
   // A term is as close as its lowest meaning: an AND holds only when every meaning in it clears the threshold.
   let best = { p: -1 };
   // the tNeg after following the advice: --level loose also loosens tNeg, a lower -t (or -T as given) does not
