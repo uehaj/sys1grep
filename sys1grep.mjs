@@ -1653,6 +1653,8 @@ function store(body, answers) {
   }
 }
 // One request with retries: 429 / 529 / 5xx, connection errors and timeouts back off exponentially.
+// SYS1GREP_RETRY_MS and SYS1GREP_TIMEOUT_MS shorten the backoff's base and the timeout for tests/offline.sh.
+const retryMs = Number(process.env.SYS1GREP_RETRY_MS) || 500, timeoutMs = Number(process.env.SYS1GREP_TIMEOUT_MS) || 60_000;
 async function post(state, questions, label) {
   const body = JSON.stringify({ model, state, questions });
   const hit = cached(body, questions);
@@ -1669,16 +1671,17 @@ async function post(state, questions, label) {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...(credential && { authorization: `Bearer ${credential}` }) },
         body,
-        signal: AbortSignal.timeout(60_000),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (e) {
-      if (attempt < 6) { await sleep(500 * 2 ** attempt); continue; }
+      if (attempt < 6) { await sleep(retryMs * 2 ** attempt); continue; }
       throw new Error(`${apiHost}: ${e.cause?.message ?? e.message}`);
     }
-    if ((res.status === 429 || res.status === 529 || res.status >= 500) && attempt < 6) { await sleep(500 * 2 ** attempt); continue; }
+    if ((res.status === 429 || res.status === 529 || res.status >= 500) && attempt < 6) { await sleep(retryMs * 2 ** attempt); continue; }
     // The body comes from whatever server SYS1GREP_URL names: short, and without terminal control characters.
     if (!res.ok) throw new Error(`${apiHost} ${res.status}: ${(await res.text()).slice(0, 300).replace(/[\x00-\x1f\x7f-\x9f]/g, ' ')}`);
-    const { answers, usage = {} } = await res.json();
+    let answers, usage;
+    try { ({ answers, usage = {} } = await res.json()); } catch { throw new Error(`${apiHost}: the response is not JSON`); }
     // A missing or malformed answer would read as 0 and make every "not X" hold, so it is an error instead.
     for (const k of Object.keys(questions)) {
       if (!isP(answers?.[k]?.noul)) throw new Error(`${apiHost}: the response has no answer for ${k}`);
