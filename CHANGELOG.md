@@ -5,6 +5,13 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 
 ## [Unreleased]
 
+### Fixed
+- `--serve`'s launch refusal now reads the options as parsed, not the raw arguments: a cluster like `-nq` or `-Hn`
+  and a long name like `--with-filename`, `--l` or `--z` were let through and the page started. A negation such as
+  `--no-verbose` still starts it, as before. `-h` is refused at launch too (it was missed).
+
+## [0.5.0] - 2026-10-19
+
 ### Added
 - `--serve`: when searches go to the fake Jev of the offline tests (`tests/fake-jev.mjs`), the page says so in a
   banner under the title: its probabilities are dummies, not real answers. `--serve` asks only a loopback URL, with
@@ -251,7 +258,6 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   folded) and, when folding would save at least twice the cost of its own question, folds (by sampling, #152 under
   Changed); otherwise it sends every unit, asking nothing extra. `--verbose` / `--dry-run` print the decision and its numbers
   (units, templates, requests, tokens) for every `--dedup` value.
-
 - Exit 1 after lines were sent prints one stderr line naming the highest probability and its line, the option that
   would loosen the threshold, and `-p -t 0` to see every probability (#139). Not with `-q`, `--summarize` (except
   `=ask`), `--step-to` / `--step-reverse-to`, nor when only a negated meaning kept lines out.
@@ -263,6 +269,11 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   Estimate are disabled while one runs (#189).
 
 ### Fixed
+- `--level=constructor` / `toString` / `__proto__` (and the same names for `--summarize`) are refused with exit 2;
+  they used to pass the lookup through a property every object inherits and search with a garbage threshold, or
+  spawn a garbled command (#133).
+- `--unit=function`: a decorator written over several lines (`@retry(` … `)`) stays with its `def`; it used to
+  be cut off as a function of its own (#149).
 - `--serve` refuses a folder target without `-r` at launch, naming the command with `-r` added, instead of failing
   every search with "Is a directory" (#222). Whether `-r` is in effect is asked of sys1grep itself, so
   `SYS1GREP_OPTS` and settings.json opts count.
@@ -540,7 +551,8 @@ First release as `@uehaj/semgrep`.
 - Errors are one line plus exit code 2, no stack traces.
 - LLM-as-judge test (`tests/judge.mts`) with threshold sweep; self-check (`tests/check.sh`).
 
-[Unreleased]: https://github.com/uehaj/sys1grep/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/uehaj/sys1grep/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/uehaj/sys1grep/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/uehaj/sys1grep/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/uehaj/sys1grep/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/uehaj/sys1grep/compare/v0.2.2...v0.3.0
