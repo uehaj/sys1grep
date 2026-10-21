@@ -8,6 +8,7 @@ sh scripts/release.sh patch     # 0.2.1 -> 0.2.2  (バグ修正、README)
 sh scripts/release.sh minor     # 0.2.1 -> 0.3.0  (オプション追加など互換のある機能)
 sh scripts/release.sh major     # 0.2.1 -> 1.0.0  (オプションの意味変更など互換のない変更)
 sh scripts/release.sh 0.3.0     # 番号を直接指定
+                                # package.json がもうその番号なら（PR で上げた）コミットは作らずタグだけ打つ
 sh scripts/release.sh next            # プレリリース。npm の "next" dist-tag、GitHub Release は prerelease
 sh scripts/release.sh 0.5.0-next.0    # 最初の next は明示指定が要る（prerelease はパッチしか進めない）
 ```
