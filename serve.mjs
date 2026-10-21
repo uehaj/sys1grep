@@ -34,8 +34,11 @@ const settingsView = cli => {
 // to --r), which refuses a positional (a target, #196) and a meaning/expression on its own; DENY below refuses the
 // rest, by the canonical OPTIONS name parseOpts resolves a token to, however it was spelled (-r, --r, or inside a
 // cluster like -rC1 or -nr all resolve to "r").
-const REFUSED_LAUNCH = /^(-[eavQPlcqoziHV]|-[eavQP].+|--(question|step-to|step-reverse-to|format|color|verbose|dry-run|interactive|help|version|install-templates|quiet|null-data)(=.*)?)$/;
-// --unit=zero is -z by another name (options.mjs): REFUSED_LAUNCH's bare-token test cannot single it out from every
+// Checked on parseArgs' own tokens: a regex over the raw arguments missed a cluster like -nq and a long name like
+// --with-filename or --l. A negation (--no-verbose) only turns one off.
+const REFUSED_LAUNCH = new Set(['e', 'P', 'a', 'v', 'question', 'l', 'c', 'quiet', 'o', 'z', 'interactive', 'with-filename',
+  'help', 'version', 'step-to', 'step-reverse-to', 'format', 'color', 'verbose', 'dry-run', 'install-templates']);
+// --unit=zero is -z by another name (options.mjs): REFUSED_LAUNCH names options, so it cannot single it out from every
 // other --unit value, and --unit also takes its value split ("--unit zero"), so this follows parseArgs' own rule
 // (string option, no short form: the last --unit/--unit= wins) to find what --unit actually resolves to at launch.
 const unitAt = launch => {
@@ -335,8 +338,9 @@ export function serve(argv) {
   // the key stays in this process (never in the page or the command shown); the summary instruction is a control, not a launch option
   const [noKey, key] = lift(before, 'sys1-api-key'), [noPrompt, prompt] = lift(noKey, 'summarize-prompt'), [launch, suggested] = liftAll(noPrompt, 'suggest');
   if (launch.some(a => /^--(no-)?reverse(=|$)/.test(a))) throw new Error(REVERSE_REMOVED);
-  const bad = launch.find(a => REFUSED_LAUNCH.test(a));
-  if (bad) throw new Error(`--serve: ${bad.split('=')[0]} is not for --serve (the page sets the meaning and shows the results as html)`);
+  const { tokens } = parseArgs({ args: launch.map(a => fill(a, 'x')), options: OPTIONS, strict: false, allowPositionals: true, allowNegative: true, tokens: true });
+  const bad = tokens.find(k => k.kind === 'option' && REFUSED_LAUNCH.has(k.name) && !k.rawName.startsWith('--no-'));
+  if (bad) throw new Error(`--serve: ${launch[bad.index].split('=')[0]} is not for --serve (the page sets the meaning and shows the results as html)`);
   if (unitAt(launch) === 'zero') throw new Error("--serve: --unit=zero is not for --serve (it is -z's output shape, already refused there)");
   const init = { ...initOf(launch), 'summarize-prompt': prompt ?? '' };
   const secret = key === undefined ? [] : [`--sys1-api-key=${key}`];
