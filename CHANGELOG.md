@@ -5,12 +5,7 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 
 ## [Unreleased]
 
-### Fixed
-- `--serve`'s launch refusal now reads the options as parsed, not the raw arguments: a cluster like `-nq` or `-Hn`
-  and a long name like `--with-filename`, `--l` or `--z` were let through and the page started. A negation such as
-  `--no-verbose` still starts it, as before. `-h` is refused at launch too (it was missed).
-
-## [0.5.0] - 2026-10-19
+## [0.5.0] - 2026-10-26
 
 ### Added
 - `--serve`: when searches go to the fake Jev of the offline tests (`tests/fake-jev.mjs`), the page says so in a
@@ -269,6 +264,9 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   Estimate are disabled while one runs (#189).
 
 ### Fixed
+- `--serve`'s launch refusal now reads the options as parsed, not the raw arguments: a cluster like `-nq` or `-Hn`
+  and a long name like `--with-filename`, `--l` or `--z` were let through and the page started. A negation such as
+  `--no-verbose` still starts it, as before. `-h` is refused at launch too (it was missed). (#259)
 - `--level=constructor` / `toString` / `__proto__` (and the same names for `--summarize`) are refused with exit 2;
   they used to pass the lookup through a property every object inherits and search with a garbage threshold, or
   spawn a garbled command (#133).

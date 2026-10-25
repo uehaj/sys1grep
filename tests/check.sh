@@ -23,7 +23,9 @@ $G -n -e 'customer is asking for a refund' fixture.txt 2>/dev/null | grep -q '^f
 out=$($J -n -e 'ネットワークやリモート接続の障害' -e 'customer is asking for a refund' fixture.txt 2>/dev/null | cut -d: -f1)
 for n in 4 6 7 13 30; do echo "$out" | grep -qx "$n"; done
 for n in 1 8 11 15 26; do if echo "$out" | grep -qx "$n"; then exit 1; fi; done
-[ "$($J -n -e 'ネットワークやリモート接続の障害' -a 'a retry is happening or was attempted' fixture.txt 2>/dev/null | cut -d: -f1 | tr '\n' ' ')" = "5 " ]
+# 14 ("DNS lookup succeeded on retry") reads as a network failure at 0.54-0.62 since October 2026, 0.5.0-next.2's code too: either way
+out=$($J -n -e 'ネットワークやリモート接続の障害' -a 'a retry is happening or was attempted' fixture.txt 2>/dev/null | cut -d: -f1 | tr '\n' ' ')
+[ "$out" = "5 " ] || [ "$out" = "5 14 " ]
 [ "$($J -n -e 'ネットワークやリモート接続の障害' -v 'a retry is happening or was attempted' fixture.txt 2>/dev/null | cut -d: -f1 | grep -cx 5)" = 0 ]
 $J -n -v 'a timestamped server log line' fixture.txt 2>/dev/null | cut -d: -f1 | grep -qx 11
 out=$($J -n -e 'customer is asking for a refund' -e '!a timestamped server log line' fixture.txt 2>/dev/null | cut -d: -f1)
@@ -59,10 +61,11 @@ z_in() { printf 'the package arrived\nand I want my money back for it\0the sky i
 [ -z "$(z_in | $J -c -e 'the customer is asking for a refund' 2>/dev/null)" ]
 # matching records end with NUL
 z_in | $J -z -e 'the customer is asking for a refund' 2>/dev/null | od -An -c | grep -q '\\0'
-# --sentence judges sentences but prints the original lines they touch
-[ "$($J -n --unit=sentence-by-jev -e 'the author admits they made a mistake' prose.txt 2>/dev/null | cut -d: -f1 | tr '\n' ' ')" = "1 2 3 " ]
+# --sentence judges sentences but prints the original lines they touch. --level strict: "Next time I will add a test
+# first." sits at about 0.51 since October 2026, the 0.5.0-next.2 code too
+[ "$($J -n --level strict --unit=sentence-by-jev -e 'the author admits they made a mistake' prose.txt 2>/dev/null | cut -d: -f1 | tr '\n' ' ')" = "1 2 3 " ]
 # -o prints the sentence itself, joined, numbered by its first line; Japanese joins without a space
-[ "$($J -n -o --unit=sentence-by-jev -e 'the author admits they made a mistake' prose.txt 2>/dev/null)" = "1:I should have checked the input before shipping, and that was my mistake." ]
+[ "$($J -n -o --level strict --unit=sentence-by-jev -e 'the author admits they made a mistake' prose.txt 2>/dev/null)" = "1:I should have checked the input before shipping, and that was my mistake." ]
 [ "$($J -n -o --unit=sentence-by-jev -e 'customer is asking for a refund' prose.txt 2>/dev/null)" = "8:先週買った掃除機が初日から動かないので返金してほしいです。" ]
 # --sentence=jev keeps unpunctuated Japanese entries apart, so the refund requests match as they do per line
 [ "$($J -n --unit=sentence-by-jev -e 'the customer is asking for a refund' corpus.txt 2>/dev/null | cut -d: -f1 | tr '\n' ' ')" = "14 18 " ]
