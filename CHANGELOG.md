@@ -5,7 +5,7 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 
 ## [Unreleased]
 
-## [0.5.0] - 2026-10-25
+## [0.5.0] - 2026-10-26
 
 ### Added
 - `--serve`: when searches go to the fake Jev of the offline tests (`tests/fake-jev.mjs`), the page says so in a
