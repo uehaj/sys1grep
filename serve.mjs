@@ -398,6 +398,7 @@ export function serve(argv) {
     return answerOf(p, kind, init, await run(searchArgs(p, kind, init, tpl), signal, '', searchEnv, step ? init.g : p.g ?? init.g));
   };
 
+  const via = process.env.PORTLESS_URL ? new URL(process.env.PORTLESS_URL) : null;
   const server = createServer(async (req, res) => {
     const host = req.headers.host;
     const send = (code, type, body) => {
@@ -408,8 +409,10 @@ export function serve(argv) {
     // ERR_INVALID_URL): answered before any check below, not left to crash the process (an uncaughtException, #166).
     let url;
     try { url = new URL(req.url, 'http://x'); } catch { return send(400, 'text/plain', 'bad request'); }
-    // a page on another site (or a rebound name) must not be able to start a search
-    if (host !== `127.0.0.1:${server.address().port}` && host !== `localhost:${server.address().port}`) return send(403, 'text/plain', 'forbidden');
+    // a page on another site (or a rebound name) must not be able to start a search; behind portless (npm run
+    // serve:portless) the Host is the name it gave, PORTLESS_URL's
+    if (host !== `127.0.0.1:${server.address().port}` && host !== `localhost:${server.address().port}` && host !== via?.host) return send(403, 'text/plain', 'forbidden');
+    const origin = host === via?.host ? via.origin : `http://${host}`;
     // Every route, the page itself included, needs this launch's token: in the query (?k=, what the startup line and
     // any browser open carry) or in a header (what the page's own fetch() calls send instead). Without it this
     // server answers nothing, not even the page, so another local account or process cannot read the page (and the
@@ -423,7 +426,7 @@ export function serve(argv) {
       const answer = (code, x) => send(code, 'application/json', JSON.stringify(x));
       try {
         if (req.method === 'POST') {
-          if (req.headers.origin !== `http://${host}`) return send(403, 'text/plain', 'forbidden');
+          if (req.headers.origin !== origin) return send(403, 'text/plain', 'forbidden');
           if (!/^application\/json(;|$)/.test(req.headers['content-type'] ?? '')) return send(415, 'text/plain', 'JSON only');
           let patch;
           try { patch = JSON.parse(await body(req)); } catch { return req.tooLarge ? answer(413, { error: 'too large: settings are at most 64 KB' }) : answer(400, { error: 'not valid JSON' }); }
@@ -439,7 +442,7 @@ export function serve(argv) {
     if (url.pathname === '/summarize') {
       const answer = (code, x) => send(code, 'application/json', JSON.stringify(x));
       if (req.method !== 'POST') return send(405, 'text/plain', 'POST');
-      if (req.headers.origin !== `http://${host}` || ['cross-site', 'same-site'].includes(req.headers['sec-fetch-site'])) return send(403, 'text/plain', 'forbidden');
+      if (req.headers.origin !== origin || ['cross-site', 'same-site'].includes(req.headers['sec-fetch-site'])) return send(403, 'text/plain', 'forbidden');
       if (!/^text\/plain(;|$)/.test(req.headers['content-type'] ?? '')) return send(415, 'text/plain', 'text only');
       const p = fromQuery(url.searchParams, init);
       if (!p || p.x.some(f => f[0] === 'S')) return send(400, 'text/plain', 'bad value');
@@ -461,7 +464,7 @@ export function serve(argv) {
   });
   server.on('error', e => { console.error(`sys1grep: --serve: ${e.message}`); process.exit(2); });
   server.listen(Number(port) || 0, '127.0.0.1', () => {
-    console.log(`http://127.0.0.1:${server.address().port}/?k=${token}`);
+    console.log(`${via?.origin ?? `http://127.0.0.1:${server.address().port}`}/?k=${token}`);
   });
 }
 
@@ -497,18 +500,18 @@ body { margin: 0; background: var(--page); color: var(--fg); font: 14px/1.5 aria
 .title .accent { color: var(--accent); }
 .gear { margin-left: auto; border: none; background: none; color: var(--muted); padding: 6px; border-radius: 8px; display: inline-flex; flex: none; }
 .gear:hover, .gear:focus-visible { background: var(--input-bg); color: var(--fg); }
-.row { display: flex; gap: 8px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
-.row input[type=text] { flex: 1; min-width: 100px; padding: 10px 16px; font-size: 15px; border: 1px solid var(--border); border-radius: 14px; background: var(--input-bg); color: var(--fg); }
+.row { display: flex; gap: 6px; align-items: center; margin: 4px 0; flex-wrap: wrap; }
+.row input[type=text] { flex: 1; min-width: 100px; padding: 6px 12px; font-size: 15px; border: 1px solid var(--border); border-radius: 10px; background: var(--input-bg); color: var(--fg); }
 select, button, input { font: inherit; color: var(--fg); }
 button, select { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 6px 12px; cursor: pointer; }
 #go { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; font-size: 16px; padding: 10px 32px; border-radius: 12px; }
 [hidden] { display: none !important; }
 #fake-jev { margin: 0 0 10px; padding: 8px 12px; background: var(--warn-bg); color: var(--warn-fg); border: 1px solid var(--warn-border); border-radius: 10px; font-weight: 700; }
 #est, #stop, #copy, #save { background: var(--input-bg); }
-fieldset.group { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px 12px; margin: 10px 0; min-width: 0; }
-.group legend.glabel { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 6px; padding: 0 4px; }
-.sec { margin: 0; padding: 12px 0; } .sec + .sec { border-top: 1px solid var(--rule); }
-.sech { font-size: 13px; font-weight: 700; margin: 0 0 6px; }
+fieldset.group { border: 1px solid var(--border); border-radius: 10px; padding: 2px 10px 8px; margin: 4px 0; min-width: 0; }
+.group legend.glabel { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0; padding: 0 4px; }
+.sec { margin: 0; padding: 6px 0; } .sec + .sec { border-top: 1px solid var(--rule); }
+.sech { font-size: 13px; font-weight: 700; margin: 0 0 2px; }
 .exlang { display: inline-flex; gap: 2px; margin-left: 6px; vertical-align: middle; }
 #ex .exlang button { background: none; color: var(--muted); border: 1px solid var(--border); border-radius: 8px; padding: 0 8px; font-size: 12px; }
 #ex .exlang button[aria-pressed=true] { background: var(--input-bg); color: var(--fg); font-weight: 700; }
@@ -543,39 +546,39 @@ summary.dot::after { content: " \\25CF"; color: var(--link); }
 .grid .withhint { align-items: flex-start; } .grid .withhint > label { flex: 1; min-width: 0; }
 .grid label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); } .grid label.chk { flex-direction: row; align-items: center; gap: 6px; }
 .grid input:not([type=checkbox]), .grid select, .grid textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); width: 100%; font: inherit; }
-main { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin: 12px 0 4px; display: grid; gap: 16px; grid-template-columns: 1fr; } main.two { grid-template-columns: 3fr 2fr; }
+main { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 4px 12px; margin: 12px 0 4px; display: grid; gap: 12px; grid-template-columns: 1fr; } main.two { grid-template-columns: 3fr 2fr; }
 @media (max-width: 880px) { main.two { grid-template-columns: 1fr; } }
 iframe { width: 100%; border: 0; min-height: 80px; } pre.out { white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.5 ui-monospace, Menlo, monospace; }
 .c32 { color: #188038; } .c35 { color: #a142f4; } .c36 { color: #0c7a88; } .c31 { color: #d93025; } .c33 { color: #b06000; } .c01_31 { color: #d93025; font-weight: 700; } .c01_33 { color: #b06000; font-weight: 700; background: #fff3b055; }\n@media (prefers-color-scheme: dark) { .c32 { color: #81c995; } .c35 { color: #d7aefb; } .c36 { color: #78d9ec; } .c31, .c01_31 { color: #f28b82; } .c33, .c01_33 { color: #fdd663; } .err { color: #f28b82; } }\nbutton:disabled { opacity: .45; cursor: default; } #ex button { border-radius: 999px; background: var(--pill-bg); color: var(--pill-fg); border: none; } #ex .label, #ex .grp { flex-basis: 100%; font-weight: 700; color: var(--muted); margin-top: 4px; }
 #right { border-left: 1px solid var(--rule); padding-left: 16px; }
-body { background: var(--band) top / 100% 132px no-repeat, var(--page); }
+body { background: var(--band) top / 100% 64px no-repeat, var(--page); }
 .card { background: none; box-shadow: none; border-radius: 0; padding: 0 0 24px; margin: 0 auto; width: min(1160px, calc(100% - 32px)); }
-.title { height: 132px; margin: 0; color: #fff; gap: 16px; }
-.title .icon { width: 56px; height: 56px; border-radius: 14px; background: linear-gradient(140deg, #328bff, #0050df); box-shadow: 0 4px 22px rgba(0,114,255,.31); }
-.title .icon svg { width: 30px; height: 30px; }
-.title h1 { font-size: 34px; letter-spacing: -1px; } .title .accent { color: #6aa8ff; }
-.gear { color: #d5e5ff; border: 1px solid #7f9fca; padding: 8px; } .gear:hover, .gear:focus-visible { background: rgba(255,255,255,.12); color: #fff; }
-#fake-jev { margin: 16px 0 0; }
-#demo-note { margin: 16px 0 0; padding: 10px 14px; background: var(--bg); border: 1px solid var(--accent); border-left-width: 6px; border-radius: 10px; } #demo-note p { margin: 0; } #demo-note p + p { margin-top: 4px; } #demo-note code { font: 13px ui-monospace, Menlo, monospace; } #demo-missing { font-weight: 700; color: var(--warn-fg); }
-.kcard { background: var(--bg); border: 1px solid var(--rule); border-radius: 18px; padding: 20px 24px; box-shadow: var(--shadow); margin-top: 20px; }
-.search-layout { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 24px; }
-.actions { border-left: 1px solid var(--rule); padding-left: 22px; display: flex; flex-direction: column; justify-content: center; gap: 12px; }
-#go { width: 100%; min-height: 56px; border: 0; border-radius: 12px; background: var(--go); color: #fff; font-size: 18px; font-weight: 700; box-shadow: 0 7px 16px rgba(20,105,250,.15); }
-.actions .row { margin: 0; flex-wrap: nowrap; } .actions .row > button { flex: 1; padding: 10px 6px; }
-.columns { display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 20px; align-items: start; }
-.columns .kcard { padding: 20px; }
-#ex { gap: 9px; margin: 0; } #ex button { padding: 8px 14px; } #ex .exlang button { padding: 4px 14px; }
-#ex .label { display: flex; align-items: center; justify-content: space-between; font-size: 18px; color: var(--fg); margin: 0 0 4px; }
-#ex .grp { border-top: 1px solid var(--rule); padding-top: 12px; margin-top: 8px; color: var(--fg); }
+.title { height: 64px; margin: 0; color: #fff; gap: 10px; }
+.title .icon { width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(140deg, #328bff, #0050df); box-shadow: 0 4px 22px rgba(0,114,255,.31); }
+.title .icon svg { width: 20px; height: 20px; }
+.title h1 { font-size: 24px; letter-spacing: -.5px; } .title .accent { color: #6aa8ff; }
+.gear { color: #d5e5ff; border: 1px solid #7f9fca; padding: 5px; } .gear:hover, .gear:focus-visible { background: rgba(255,255,255,.12); color: #fff; }
+#fake-jev { margin: 12px 0 0; }
+#demo-note { margin: 12px 0 0; padding: 10px 14px; background: var(--bg); border: 1px solid var(--accent); border-left-width: 6px; border-radius: 10px; } #demo-note p { margin: 0; } #demo-note p + p { margin-top: 4px; } #demo-note code { font: 13px ui-monospace, Menlo, monospace; } #demo-missing { font-weight: 700; color: var(--warn-fg); }
+.kcard { background: var(--bg); border: 1px solid var(--rule); border-radius: 12px; padding: 12px 16px; box-shadow: var(--shadow); margin-top: 12px; }
+.search-layout { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 16px; }
+.actions { border-left: 1px solid var(--rule); padding-left: 16px; display: flex; flex-direction: column; justify-content: center; gap: 8px; }
+#go { width: 100%; min-height: 40px; border: 0; border-radius: 10px; background: var(--go); color: #fff; font-size: 16px; font-weight: 700; box-shadow: 0 7px 16px rgba(20,105,250,.15); }
+.actions .row { margin: 0; flex-wrap: nowrap; } .actions .row > button { flex: 1; padding: 6px; white-space: nowrap; }
+.columns { display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 12px; align-items: start; }
+.columns { margin-top: 12px; } .columns .kcard { padding: 12px 16px; margin-top: 0; }
+#ex { gap: 6px; margin: 0; } #ex button { padding: 3px 10px; } #ex .exlang button { padding: 2px 10px; }
+#ex .label { display: flex; align-items: center; justify-content: space-between; font-size: 15px; color: var(--fg); margin: 0; }
+#ex .grp { border-top: 1px solid var(--rule); padding-top: 6px; margin-top: 2px; color: var(--fg); }
 .exlang { border: 1px solid var(--border); border-radius: 9px; overflow: hidden; gap: 0; }
 #ex .exlang button { border: 0; border-radius: 0; background: var(--bg); } #ex .exlang button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); } #ex .exlang button:focus-visible { outline: 2px solid var(--fg); outline-offset: -3px; }
-#sec-opts .sech { font-size: 18px; }
-.command { background: var(--cmd-bg); color: #fff; border-radius: 16px; padding: 14px 20px; margin-top: 20px; }
+#sec-opts .sech { font-size: 15px; }
+.command { background: var(--cmd-bg); color: #fff; border-radius: 12px; padding: 10px 16px; margin-top: 12px; }
 .command .sech { color: #fff; } .command #cmd { background: #03162e; color: #dbe7ff; border: 1px solid #7799ca; }
 .command #copy { background: transparent; color: #fff; border-color: #7f9fca; } .command .note, .command .note code { color: #c9dbf7; }
-#d { margin-top: 20px; } main { margin-top: 20px; border-color: var(--rule); border-radius: 18px; box-shadow: var(--shadow); }
-@media (max-width: 850px) { .search-layout, .columns { grid-template-columns: 1fr; } .actions { border-left: 0; border-top: 1px solid var(--rule); padding: 16px 0 0; } #go { min-height: 48px; } }
-@media (max-width: 520px) { .title h1 { font-size: 26px; } .title .icon { width: 44px; height: 44px; } .kcard { padding: 16px; } }
+#d { margin-top: 12px; } main { margin-top: 12px; border-color: var(--rule); border-radius: 12px; box-shadow: var(--shadow); }
+@media (max-width: 850px) { .search-layout, .columns { grid-template-columns: 1fr; } .actions { border-left: 0; border-top: 1px solid var(--rule); padding: 10px 0 0; } }
+@media (max-width: 520px) { .title h1 { font-size: 20px; } .title .icon { width: 32px; height: 32px; } .kcard { padding: 10px 12px; } }
 </style></head><body>
 <div class="card" id="card">
 <div class="title" id="title"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#fff" stroke-width="2.2"/><line x1="15.3" y1="15.3" x2="20.5" y2="20.5" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg></span><h1>sys<span class="accent">1grep</span></h1><button type="button" class="gear" id="gear" title="Settings" aria-label="Settings"${demo ? ' hidden' : ''}><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>

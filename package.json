@@ -58,6 +58,8 @@
     "cause-eval": "node tests/cause-eval.mjs",
     "skill-eval": "bash tests/skill-eval/run.sh",
     "serve": "node sys1grep.mjs --serve",
+    "serve:portless": "portless run --name sys1grep npm run serve:port --",
+    "serve:port": "node sys1grep.mjs --serve=$PORT",
     "release": "sh scripts/release.sh",
     "smoke": "node --no-warnings tests/smoke.mts"
   }
