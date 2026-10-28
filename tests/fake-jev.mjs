@@ -7,6 +7,9 @@
 // A rank question ("Is result R000 relevant to: …?", #118) scores N when the result carries "@rN", else 0.5.
 // "@err" in any line fails the request with a 400 and a long body holding an escape sequence. Each request takes 30ms, so -j shows up;
 // "@slow" in any line makes it 400ms, so the spinner (drawn after 300ms) shows up.
+// "@fail:WHAT:N" in any line fails the first N requests carrying that marker (counted per marker; GET /reset forgets),
+// then answers as usual: WHAT is a status (429, 529, 503) answered with a plain-text body, "hang" (no answer at all,
+// so the client's timeout fires) or "json" (200 with a body that is not JSON). Every attempt counts in "count".
 // "@nousage" in any line answers without a usage field, like an endpoint that does not report one.
 // GET returns {"count", "asked", "qmax", "max", "auth", "model"}: judging requests and questions so far, the most questions in one request, most requests in flight at once, the last
 // authorization header and model; GET /reset also zeroes them. Prints the port it listens on.
@@ -18,11 +21,11 @@
 // upper-cased, so a test can tell the request was received right without hard-coding an answer.
 import { createServer } from 'node:http';
 
-let count = 0, asked = 0, qmax = 0, inFlight = 0, max = 0, auth = null, model = null, chat = null;
+let fails = {}, count = 0, asked = 0, qmax = 0, inFlight = 0, max = 0, auth = null, model = null, chat = null;
 const server = createServer(async (req, res) => {
   if (req.method === 'GET') {
     res.end(JSON.stringify({ count, asked, qmax, max, auth, model, chat }));
-    if (req.url === '/reset') count = asked = qmax = max = 0, auth = model = chat = null;
+    if (req.url === '/reset') count = asked = qmax = max = 0, fails = {}, auth = model = chat = null;
     return;
   }
   if (req.url.endsWith('/chat/completions')) {
@@ -43,6 +46,13 @@ const server = createServer(async (req, res) => {
   count++;
   asked += Object.keys(questions).length;
   qmax = Math.max(qmax, Object.keys(questions).length);
+  const fail = Object.values(state).map(l => String(l).match(/@fail:(\w+):(\d+)/)).find(Boolean);
+  if (fail && (fails[fail[0]] = (fails[fail[0]] ?? 0) + 1) <= Number(fail[2])) {
+    if (fail[1] === 'hang') return; // the client gives up and closes the connection
+    if (fail[1] === 'json') return res.end('<html>not json</html>');
+    res.statusCode = Number(fail[1]);
+    return res.end('overloaded');
+  }
   max = Math.max(max, ++inFlight);
   auth = req.headers.authorization ?? null, model = sentModel;
   await new Promise(r => setTimeout(r, Object.values(state).some(l => String(l).includes('@slow')) ? 400 : 30));
