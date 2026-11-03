@@ -24,7 +24,8 @@ pre=
 case "$bump" in
   next) npm version prerelease --preid next -m "v%s" >/dev/null; pre=1 ;;
   *-next.*) npm version "$bump" -m "v%s" >/dev/null; pre=1 ;;
-  *) npm version "$bump" -m "v%s" >/dev/null ;;
+  *) if [ "$bump" = "$(node -p "require('./package.json').version")" ]; then git tag -a "v$bump" -m "v$bump"   # package.json already bumped by a PR: tag only
+     else npm version "$bump" -m "v%s" >/dev/null; fi ;;
 esac
 ver=$(node -p "require('./package.json').version")
 git push --follow-tags

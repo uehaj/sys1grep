@@ -38,6 +38,38 @@ so a PR never rebuilds or commits it. `node scripts/demo-build.mjs` builds it in
 - `check.sh` asserts only clear positives and negatives: Jev's probabilities drift by about ±0.05 between runs.
   A failure there can be the model, not the code; if `test:offline` passes, rerun and look at `-p` first.
 
+## Architecture
+
+Plain Node ESM (`engines` >=20.16), no dependencies, no build or lint step for the CLI. Domain words (Unit, Target,
+Start/End/Edge/Hop, Index/Tree) are defined in `CONTEXT.md`; use them as defined there.
+
+- `sys1grep.mjs` is the whole CLI: one top-level script, not a library. It parses arguments, builds the expression
+  (`-e`/`-Q` OR'd terms, `-a`/`-v` AND / AND NOT onto the preceding term, `-P` regex terms judged locally), collects
+  Targets (files, `-r`, git paths), splits them into Units, filters by regex first, batches the rest into chunks
+  (`requestOf` → `post`: `POST /v1/systemone`, answers cached in `~/.config/sys1grep/cache` with `--cache`), then
+  prints. Because it runs once at import, anything that reuses it (the demo, `--serve`) runs it again in a fresh
+  realm or a child process instead of calling functions.
+- `options.mjs`: the `parseArgs` option table and `parseOpts`, shared with `serve.mjs` so the settings panel
+  validates opts with the same parser (#199). Add an option here, then its help text in both `HELP_EN` and `HELP_JA`
+  in `sys1grep.mjs`.
+- `settings.mjs`: `~/.config/sys1grep/settings.json` (one field per `SYS1GREP_*` variable). Precedence: command line,
+  environment, settings.json, `~/.config/sys1grep/.env`.
+- `git-sys1grep.mjs` only sets `globalThis.SYS1GREP_GIT` and imports `sys1grep.mjs`.
+- `serve.mjs` (`--serve`): an HTTP page on 127.0.0.1 that runs `sys1grep.mjs` as a child per search, launch
+  arguments plus what the page's controls changed; `REFUSED_LAUNCH` lists what the page owns. The page's HTML and
+  script are inline in `serve.mjs`; the demo build reuses them in demo mode. `npm run serve:portless -- <launch
+  args>` runs it behind portless (global install, `PORTLESS_HTTPS=0 PORTLESS_PORT=8080` from `~/.bashrc`) at
+  `http://sys1grep.localhost:8080`; `PORTLESS_URL`'s host is then accepted as Host/Origin. With `HOME=$(mktemp -d)`
+  also set `PORTLESS_STATE_DIR=$HOME_REAL/.portless`, or portless starts a second proxy. Stop it by the pid
+  `portless list` shows, not `$!`.
+- `templates/*.html`: `--template` / `--format=html` output; users can override them in `~/.config/sys1grep/templates`.
+- `demo/` + `scripts/demo-build.mjs`: the browser demo bundles the real `sys1grep.mjs` with esbuild, `node:*` swapped
+  for `demo/shims/` (an unshimmed import fails the build), run in a Web Worker (`demo/runner.mjs`) against the
+  recorded answers in `docs/demo/cache.json` (`scripts/record-demo-cache.mjs`). A new `node:` import in
+  `sys1grep.mjs` needs a shim.
+- `package.json` `files` is the exact publish list; CI's `pack` job fails if `npm pack` differs. A new runtime file
+  must be added there. Releases: `RELEASING.md` (`npm run release`, from an interactive terminal).
+
 ## Agent skills
 
 ### Issue tracker
