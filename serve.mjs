@@ -575,19 +575,18 @@ body { background: var(--band) top / 100% 64px no-repeat, var(--page); }
 .actions { border-left: 1px solid var(--rule); padding-left: 16px; display: flex; flex-direction: column; justify-content: center; gap: 8px; }
 #go { width: 100%; min-height: 40px; border: 0; border-radius: 10px; background: var(--go); color: #fff; font-size: 16px; font-weight: 700; box-shadow: 0 7px 16px rgba(20,105,250,.15); }
 .actions .row { margin: 0; flex-wrap: nowrap; } .actions .row > button { flex: 1; padding: 6px; white-space: nowrap; }
-.columns { display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 12px; align-items: start; }
 .columns { margin-top: 12px; } .columns .kcard { padding: 12px 16px; margin-top: 0; }
 #ex { gap: 6px; margin: 0; } #ex button { padding: 3px 10px; } #ex .exlang button { padding: 2px 10px; }
 #ex .label { display: flex; align-items: center; justify-content: space-between; font-size: 15px; color: var(--fg); margin: 0; }
 #ex .grp { border-top: 1px solid var(--rule); padding-top: 6px; margin-top: 2px; color: var(--fg); }
 .exlang { border: 1px solid var(--border); border-radius: 9px; overflow: hidden; gap: 0; }
 #ex .exlang button { border: 0; border-radius: 0; background: var(--bg); } #ex .exlang button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); } #ex .exlang button:focus-visible { outline: 2px solid var(--fg); outline-offset: -3px; }
-#sec-opts .sech { font-size: 15px; }
+#sec-opts { border-top: 1px solid var(--rule); padding-top: 8px; } #sec-opts .sech { font-size: 15px; } #sec-opts .row { flex-wrap: wrap; }
 .command { background: var(--cmd-bg); color: #fff; border-radius: 12px; padding: 10px 16px; margin-top: 12px; }
 .command .sech { color: #fff; } .command #cmd { background: #03162e; color: #dbe7ff; border: 1px solid #7799ca; }
 .command #copy { background: transparent; color: #fff; border-color: #7f9fca; } .command .note, .command .note code { color: #c9dbf7; }
 #d { margin-top: 12px; } main { margin-top: 12px; border-color: var(--rule); border-radius: 12px; box-shadow: var(--shadow); }
-@media (max-width: 850px) { .search-layout, .columns { grid-template-columns: 1fr; } .actions { border-left: 0; border-top: 1px solid var(--rule); padding: 10px 0 0; } }
+@media (max-width: 850px) { .search-layout { grid-template-columns: 1fr; } .actions { border-left: 0; border-top: 1px solid var(--rule); padding: 10px 0 0; } }
 @media (max-width: 520px) { .title h1 { font-size: 20px; } .title .icon { width: 32px; height: 32px; } .kcard { padding: 10px 12px; } }
 </style></head><body>
 <div class="card" id="card">
@@ -606,12 +605,8 @@ Default: from a function to the functions it calls. reverse (--step-reverse-to):
 <fieldset class="group" id="steps" hidden><legend class="glabel">end (--step-to)</legend><div id="ends"></div><button type="button" id="addend" title="add an end" aria-label="add an end">+ end</button>
 <div class="row edges hintgroup" id="hg-edges"><span class="note">edges</span><span class="hintctl"><button type="button" class="qbtn" id="q-edges" aria-expanded="false" aria-controls="hint-edges" aria-label="more about edges">?</button><small class="hint" id="hint-edges" role="tooltip">--hops limits how many hops away an end may be; reverse (--step-reverse-to) searches backwards along the graph</small></span><label title="how many hops the end may be from the start, e.g. 1..2">--hops <input type="text" name="hops" size="6" aria-describedby="hint-edges"></label><label><input type="checkbox" name="reverse" aria-describedby="hint-edges"> reverse</label></div></fieldset>
 </section></div>
-<div class="actions" id="actions"><button type="submit" id="go">Search</button><div class="row"><button type="button" id="est" title="run with --dry-run: shows the request size and estimated cost, no results">Estimate cost</button><button type="button" id="stop" title="stop the search that is running (its process is killed)" disabled>Stop</button></div></div>
-</div>
-<div class="columns">
-<section class="sec kcard" id="sec-ex" aria-label="examples"><div class="row" id="ex"><span class="note label">examples <span class="exlang" role="group" aria-label="language of the examples"><button type="button" id="ex-en" lang="en" aria-pressed="true">EN</button><button type="button" id="ex-ja" lang="ja" aria-pressed="false">日本語</button></span></span></div>
-</section>
-<section class="sec kcard" id="sec-opts" aria-labelledby="h-opts"><h2 class="sech" id="h-opts" title="オプション">Options</h2>
+<div class="actions" id="actions"><button type="submit" id="go">Search</button><div class="row"><button type="button" id="est" title="run with --dry-run: shows the request size and estimated cost, no results">Estimate cost</button><button type="button" id="stop" title="stop the search that is running (its process is killed)" disabled>Stop</button></div>
+<section class="sec" id="sec-opts" aria-labelledby="h-opts"><h2 class="sech" id="h-opts" title="オプション">Options</h2>
 <div class="row">
 <div class="withhint hintgroup" id="hg-rank"><label>rank <select name="rank" aria-describedby="hint-rank"><option value="">off</option><option value="jev">jev</option><option value="match">match</option></select></label><span class="hintctl"><button type="button" class="qbtn" id="q-rank" aria-expanded="false" aria-controls="hint-rank" aria-label="more about rank">?</button><small class="hint" id="hint-rank" role="tooltip">off keeps file order</small></span></div>
 <div class="withhint hintgroup" id="hg-summarize"><label><input type="checkbox" name="summarize" aria-describedby="hint-summarize"> summarize</label><span class="hintctl"><button type="button" class="qbtn" id="q-summarize" aria-expanded="false" aria-controls="hint-summarize" aria-label="more about summarize">?</button><small class="hint" id="hint-summarize" role="tooltip">answers in a sentence or two after the search</small></span></div>
@@ -619,6 +614,10 @@ Default: from a function to the functions it calls. reverse (--step-reverse-to):
 </div>
 <small class="note" id="sum-by">${esc(by)}</small>
 <div class="row ask" id="ask" role="group" aria-labelledby="askq" hidden><span id="askq"></span><button type="button" id="ask-ok">OK</button><button type="button" id="ask-no">Not now</button></div>
+</section></div>
+</div>
+<div class="columns">
+<section class="sec kcard" id="sec-ex" aria-label="examples"><div class="row" id="ex"><span class="note label">examples <span class="exlang" role="group" aria-label="language of the examples"><button type="button" id="ex-en" lang="en" aria-pressed="true">EN</button><button type="button" id="ex-ja" lang="ja" aria-pressed="false">日本語</button></span></span></div>
 </section>
 </div>
 <section class="command" id="sec-cmd" aria-labelledby="h-cmd"><h2 class="sech" id="h-cmd">Command</h2>
@@ -882,7 +881,7 @@ const exButton = ex => {
 drawEx();
 document.getElementById('copy').onclick = e => navigator.clipboard.writeText(cmd.textContent).then(() => { e.target.textContent = 'Copied'; setTimeout(() => { e.target.textContent = 'Copy'; }, 1200); });
 f.addEventListener('input', show); f.addEventListener('change', show);
-setControls(INIT);
+setControls({ summarize: !LAUNCH.includes('--no-summarize') }); // summarize starts on (owner, 2026-11-03)
 addField().children[1].focus(); addField('e', '', ends);
 // the settings panel: read when opened, saved on the button; a key field stays empty (a key never comes back from the server)
 const sf = document.getElementById('sf'), sd = document.getElementById('sd'), sst = document.getElementById('sst'), gear = document.getElementById('gear');

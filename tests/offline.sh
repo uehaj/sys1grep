@@ -2170,12 +2170,12 @@ the first start field is a question (-Q) by default: ok
 -o hidden by default (unit: line): true
 -o shown with a sentence unit: true
 -o hidden again once the unit is not a sentence: true
-steps hidden: -P '/def main/'
+steps hidden: -P '/def main/' --summarize
 x=P:/def main/ hops=0.. reverse=0 -> 1 lines
 target: files shown, git log hidden
 -g on, target: files hidden, git log shown
 -g off, target: files shown, git log hidden
-off, start+: steps hidden: -P '/def main/' -a /helper/
+off, start+: steps hidden: -P '/def main/' -a /helper/ --summarize
 x=P:/def main/|a:/helper/ hops=0.. reverse=0 -> 1 lines
 on, starts kept: steps shown: -P '/def main/' -a /helper/ --step-to
 on, 2 starts + 2 ends: steps shown: -P '/def main/' -a /helper/ --step-to -P '/raise /' -P '/sys\\.exit/'
@@ -2186,7 +2186,7 @@ steps shown: -P '/def main/' --step-to -P '/raise /' --hops=1..2
 x=P:/def main/|S:|P:/raise / hops=1..2 reverse=0 -> 2 lines
 addend + reverse: steps shown: -P '/def main/' --step-reverse-to -P '/raise /' -P '/sys\\.exit/' --hops=1..2
 x=P:/def main/|S:|P:/raise /|P:/sys\\.exit/ hops=1..2 reverse=1 -> 1 lines
-steps hidden: -P '/def main/'
+steps hidden: -P '/def main/' --summarize
 x=P:/def main/ hops=1..2 reverse=0 -> 1 lines
 steps shown: -P '/def main/' --step-to -P '/raise /' --hops=1..2
 on true, 2 ends, steps shown: -P '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --step-to -P '/throw |raise /' -P '/process\\.exit\\(|sys\\.exit\\(/' --include='*.mjs' --include='*.cjs' --include='*.js' --include='*.jsx' --include='*.ts' --include='*.tsx' --include='*.py'

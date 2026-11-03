@@ -64,7 +64,7 @@
   addEventListener('DOMContentLoaded', async () => {
     let state = 'unavailable';
     try { if ('Summarizer' in self) state = await Summarizer.availability({ type: 'tldr', format: 'plain-text', length: 'medium', outputLanguage: 'en' }); } catch {}
-    if (state === 'unavailable') demo.noSummary = NO_SUMMARY;
+    if (state === 'unavailable') { demo.noSummary = NO_SUMMARY; document.getElementById('f').elements.summarize.checked = false; } // the page starts it on
     document.getElementById('sum-by').textContent = demo.noSummary || SUMMARIZED_LOCALLY + (state === 'available' ? '' : FIRST_DOWNLOAD);
     document.getElementById('f').dispatchEvent(new Event('input'));
   });
