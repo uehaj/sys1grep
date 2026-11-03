@@ -67,6 +67,7 @@ export const OPTIONS = {
   'sys1-api-key': { type: 'string' }, // SYS1GREP_API_KEY / TYPESAFE_API_KEY
   help: { type: 'boolean', short: 'h', default: false },
   version: { type: 'boolean', short: 'V', default: false },
+  lang: { type: 'string' }, // en|ja: --help's language, and --serve's page default (SYS1GREP_LANG, settings.json lang)
 };
 // --no-rank / --no-summarize: parseArgs negates booleans only, so a bare one becomes a value no real argument can
 // hold (this NUL), cleared by the caller once parsed; the later of --no-rank/--rank=X (or --no-summarize/

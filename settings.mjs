@@ -7,7 +7,7 @@ import { dirname } from 'node:path';
 export const SETTINGS_FILE = `${homedir()}/.config/sys1grep/settings.json`;
 export const SETTINGS_SHOWN = '~/.config/sys1grep/settings.json';
 // field: the variable it stands for (SYS1GREP_ + this). opts is an array, one argument each, not a string to split.
-export const FIELDS = { url: 'URL', key: 'API_KEY', model: 'MODEL', opts: 'OPTS', summarizer: 'SUMMARIZER', summarizerModel: 'SUMMARIZER_MODEL', summarizerKey: 'SUMMARIZER_API_KEY' };
+export const FIELDS = { url: 'URL', key: 'API_KEY', model: 'MODEL', opts: 'OPTS', summarizer: 'SUMMARIZER', summarizerModel: 'SUMMARIZER_MODEL', summarizerKey: 'SUMMARIZER_API_KEY', lang: 'LANG' };
 
 // The checked settings, or null when there is no file. Throws an Error that names the field, never a value, for
 // invalid JSON or a known field of the wrong type. An unknown field only warns (stderr) and is dropped: an older

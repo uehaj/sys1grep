@@ -9,6 +9,21 @@ const U = process.argv[2], html = await (await fetch(U)).text();
 const TARGETS = [...(/id="tg-files"(.*?)id="tg-git"/.exec(html)?.[1] ?? '').matchAll(/<code>([^<]*)<\/code>/g)].map(m => m[1]);
 const HINTS = [...html.matchAll(/id="hg-([\w-]+)"/g)].map(m => m[1]); // every "?" hint of the page
 const text = el => (el.children.length ? el.children.map(text).join('') : String(el.text));
+// one simple selector: tag, #id, any number of .class / [attr] / [attr="value"], in that compound form only
+// (no descendant combinator here -- querySelectorAll handles that one space itself).
+const matchesSimple = (el, sel) => {
+  const m = /^([a-zA-Z][\w-]*)?((?:\.[\w-]+|\[[\w-]+(?:="[^"]*")?\]|#[\w-]+)*)$/.exec(sel.trim());
+  if (!m) return false;
+  if (m[1] && el.tagName !== m[1]) return false;
+  for (const p of m[2].matchAll(/\.([\w-]+)|\[([\w-]+)(?:="([^"]*)")?\]|#([\w-]+)/g)) {
+    if (p[1] && !el.className.split(/\s+/).includes(p[1])) return false;
+    if (p[2] && (!Object.hasOwn(el.attrMap, p[2]) || (p[3] !== undefined && el.attrMap[p[2]] !== p[3]))) return false;
+    if (p[4] && el.attrMap.id !== p[4]) return false;
+  }
+  return true;
+};
+const matchesSel = (el, sel) => sel.split(',').some(s => matchesSimple(el, s));
+const allDescendants = root => { const out = []; const walk = e => { for (const c of e.children) { out.push(c); walk(c); } }; walk(root); return out; };
 class El {
   constructor(tag, attrs = '') {
     // attrMap starts from the real HTML attributes (role, aria-*, autofocus, ...), not just what setAttribute()
@@ -24,7 +39,24 @@ class El {
   append(...xs) { for (const x of xs) { x.parent = this; this.children.push(x); } }
   remove() { this.parent.children.splice(this.parent.children.indexOf(this), 1); }
   get firstChild() { return this.children[0]; }
-  querySelector(tag) { for (const c of this.children) { const m = c.tagName === tag ? c : c.querySelector(tag); if (m) return m; } return null; } // a tag name only
+  // A small-enough selector engine for what the page's own script actually asks for (#270's applyI18n, and the
+  // pre-existing 'iframe'/'option[value="x"]'): a tag, #id, .class(es) and [attr] / [attr="value"] in any
+  // combination, OR'd with a comma, and querySelectorAll's one descendant combinator (a single space).
+  matches(sel) { return matchesSel(this, sel); }
+  querySelector(sel) { for (const d of allDescendants(this)) if (matchesSel(d, sel)) return d; return null; }
+  querySelectorAll(sel) {
+    const parts = sel.trim().split(/\s+/);
+    const all = allDescendants(this);
+    if (parts.length === 1) return all.filter(d => matchesSel(d, parts[0]));
+    const ancestorSel = parts.slice(0, -1).join(' ');
+    return all.filter(d => matchesSel(d, parts.at(-1)) && d.closest(ancestorSel));
+  }
+  closest(sel) { for (let e = this; e; e = e.parent) if (matchesSel(e, sel)) return e; return null; }
+  get dataset() {
+    const d = {};
+    for (const k of Object.keys(this.attrMap)) if (k.startsWith('data-')) d[k.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = this.attrMap[k];
+    return d;
+  }
   get parentElement() { return this.parent; }
   get lastChild() { return this.children.at(-1); }
   addEventListener(t, fn) { (this.ls[t] ??= []).push(fn); }
@@ -48,7 +80,18 @@ class El {
   getBoundingClientRect() { return typeof this.rect === 'function' ? this.rect(this.style) : this.rect ?? { left: 100, right: 100, top: 0, bottom: 0, width: 0, height: 0 }; }
   get textContent() { return text(this); } // a browser's: the text of every descendant
   set textContent(t) { this.children = []; this.text = t; }
-  set innerHTML(h) { this.children = []; for (const [, t, a] of h.matchAll(/<(select|input|button)(\s[^>]*)?>/g)) this.append(new El(t, a ?? '')); }
+  // #270's retag() reads a <select>'s own <option>s (option[value="x"].textContent =): nested under the select, not
+  // flattened in with it, input and button like the rest of a row (addField's innerHTML is always this flat shape).
+  set innerHTML(h) {
+    this.children = [];
+    let cur = this;
+    for (const m of h.matchAll(/<select(\s[^>]*)?>|<\/select>|<option value="([^"]*)">([^<]*)<\/option>|<(input|button)(\s[^>]*)?>/g)) {
+      if (m[0] === '</select>') { cur = this; continue; }
+      if (m[0].startsWith('<select')) { cur = new El('select', m[1] ?? ''); this.append(cur); continue; }
+      if (m[0].startsWith('<option')) { const o = new El('option', ` value="${m[2]}"`); o.text = m[3]; cur.append(o); continue; }
+      this.append(new El(m[4], m[5] ?? ''));
+    }
+  }
   // an <iframe>'s srcdoc loads asynchronously, as a real browser's does (the page awaits onload before reading its
   // text, #231): contentDocument stays unset until a later task fires onload (a macrotask, not a microtask, so a
   // caller that merely queues a .then() without awaiting show1's own promise still runs first and sees it empty),
@@ -69,8 +112,10 @@ class El {
 // tree stops there). void elements never push; a trailing "/>" (our inline svg's <circle/>, <line/>) never pushes.
 const VOID = new Set(['meta', 'link', 'input', 'br', 'hr', 'img', 'source', 'col', 'area', 'base']);
 const byId = {}, elements = {};
+let root; // the static tree's root, for document.querySelectorAll (#270's applyI18n)
 {
-  const root = new El('root'), stack = [root];
+  root = new El('root');
+  const stack = [root];
   const staticHtml = html.slice(0, html.indexOf('<script'));
   for (const m of staticHtml.matchAll(/<(\/?)([a-zA-Z][\w-]*)((?:\s[^<>]*)?)(\/?)>/g)) {
     const [, closing, tag, attrs, selfClose] = m;
@@ -153,7 +198,7 @@ byId.f.elements = byId.sf.elements = elements;
   ];
   const stripped = known.reduce((s, k) => s.split(k).join(''), style);
   console.log(`no stray rule overrides a hint's display beyond those three: ${/\.hint\b[^{}]*\{[^{}]*display\s*:/.test(stripped) ? 'FAIL' : 'ok'}`);
-  const hintStepText = /<small class="hint" id="hint-step" role="tooltip">([\s\S]*?)<\/small>/.exec(html)?.[1] ?? '';
+  const hintStepText = /<small class="hint" id="hint-step" role="tooltip"[^>]*>([\s\S]*?)<\/small>/.exec(html)?.[1] ?? '';
   console.log(`hint-step explains the walk: starts-with-Finds=${hintStepText.startsWith('Finds the start functions')} lines=${hintStepText.split('\n').length}`);
   // the "?" tooltip now says what the label's own title= used to (r2 review: avoid keeping the same explanation in
   // two places); --hops and the "edges" note have no "?" of their own and keep theirs.
@@ -166,9 +211,14 @@ const document = {
   getElementById: id => byId[id] ?? null, createElement: t => new El(t), activeElement: null, ls: {}, body: new El('body'), documentElement: { clientWidth: 1000, clientHeight: 800 },
   addEventListener(t, fn) { (this.ls[t] ??= []).push(fn); },
   _fire(t, e) { for (const fn of this.ls[t] ?? []) fn(e); },
+  querySelectorAll: sel => root.querySelectorAll(sel), // #270's applyI18n
 };
+// #270: a plain-object localStorage, backed by ls (read after a toggle, to check the choice was saved) -- shared
+// across a reload the same way a real browser's would be, if this file ever re-fetches and re-runs the page.
+const ls = {};
+const localStorage = { getItem: k => ls[k] ?? null, setItem: (k, v) => { ls[k] = String(v); }, removeItem: k => { delete ls[k]; } };
 const page = fetch, ctx = vm.createContext({
-  document, setTimeout, URLSearchParams, AbortController, console, navigator: {}, window: { ls: {}, addEventListener(t, fn) { (this.ls[t] ??= []).push(fn); } },
+  document, setTimeout, URLSearchParams, AbortController, console, localStorage, navigator: {}, window: { ls: {}, addEventListener(t, fn) { (this.ls[t] ??= []).push(fn); } },
   getComputedStyle: el => ({ position: el.position ?? 'absolute' }),
   // a browser adds Origin to a POST; Node's fetch does not
   fetch: (path, o) => { sent.push(new URL(path, U).searchParams); if (o?.method === 'POST') posts.push([new URL(path, U).pathname, o.body]); return page(new URL(path, U), o?.method === 'POST' ? { ...o, headers: { ...o.headers, origin: new URL(U).origin } } : o); },
@@ -297,17 +347,17 @@ for (const b of pills) {
 const exState = () => {
   const bs = byId.ex.children.filter(b => b.tagName === 'button');
   const grp = byId.ex.children.find(b => b.className === 'note grp');
-  return `${byId['ex-ja'].getAttribute('aria-pressed') === 'true' ? 'ja' : 'en'}: ${bs.length} buttons, "${bs[0].textContent}" (lang ${bs[0].lang ?? 'none'}) .. "${bs.at(-1).textContent}" (lang ${bs.at(-1).lang}), heading "${grp.textContent}" (lang ${grp.lang})`;
+  return `${byId['lang-ja'].getAttribute('aria-pressed') === 'true' ? 'ja' : 'en'}: ${bs.length} buttons, "${bs[0].textContent}" (lang ${bs[0].lang ?? 'none'}) .. "${bs.at(-1).textContent}" (lang ${bs.at(-1).lang}), heading "${grp.textContent}" (lang ${grp.lang})`;
 };
 const n1 = sent.length;
 console.log(`examples ${exState()}`);
-byId['ex-ja'].onclick();
+byId['lang-ja'].onclick();
 console.log(`examples ${exState()}`);
 for (const h of ['言葉ではなく意味で', '-v で除外', 'どこから呼ばれるか (--step-reverse-to)']) {
   byId.ex.children.find(b => b.textContent === h).onclick();
   console.log(`${h}: ${state()}`);
 }
-byId['ex-en'].onclick();
+byId['lang-en'].onclick();
 console.log(`examples ${exState()}; ${sent.length - n1} sent`);
 
 // x on the sole remaining start row clears it instead of removing it: the start group always keeps a row to fill
@@ -401,9 +451,9 @@ tick(false);
 tick(true);
 startOn('/helper/');
 console.log(`a field changed since: ${askState()}`);
-byId['ex-ja'].onclick();
+byId['lang-ja'].onclick();
 console.log(`日本語: ${askState()}`);
-byId['ex-en'].onclick();
+byId['lang-en'].onclick();
 startOn('/def main/');
 console.log(`the field back as it was: ${askState()}`);
 byId.step.checked = true;
@@ -438,3 +488,16 @@ const cardsText = byId.left.querySelector('iframe').contentDocument.body.innerTe
 console.log(`Search with summarize on, rank on: ${sent.length - s3} request(s), ${posts.length - p3} POST(s) ${posts.slice(p3).map(([p, b]) => `${p} with the cards' text ${b === cardsText ? 'as they are' : 'FAIL: ' + JSON.stringify(b)}`)}; summary pane ${byId.right.hidden ? 'hidden' : 'shown'}: ${JSON.stringify(text(byId.right))}`);
 elements.rank.value = '';
 fire();
+
+// #270: the page-wide language toggle (now in the title bar, driving every string via [data-i18n]) redraws a
+// heading and a button in place, a hint alongside them, and a page message, and saves the choice for the next load
+// (localStorage; a fresh load reads it before falling back to the launch/env/settings default or the browser's own
+// language -- not reproduced here, a one-process run with no second page load).
+console.log(`lang starts in English: heading "${byId['h-cond'].textContent}", button "${byId.go.textContent}"`);
+byId['lang-ja'].onclick();
+console.log(`toggled to ja: heading "${byId['h-cond'].textContent}", button "${byId.go.textContent}", hint "${byId['hint-level'].textContent}", saved ${JSON.stringify(ls.lang)}`);
+startOn('');
+byId.f.onsubmit({ preventDefault() {} });
+console.log(`a page message in ja: "${text(byId.left)}"`);
+byId['lang-en'].onclick();
+console.log(`toggled back to en: heading "${byId['h-cond'].textContent}", saved ${JSON.stringify(ls.lang)}`);

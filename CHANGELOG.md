@@ -5,6 +5,15 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 
 ## [Unreleased]
 
+### Added
+- `--lang=en|ja` (`SYS1GREP_LANG`, settings.json `lang`): `--help`'s language, before `LC_ALL` / `LC_MESSAGES` /
+  `LANG`; and `--serve`'s page default. The whole `--serve` page (and the browser demo, which reuses it) is now in
+  English or Japanese, not only the examples: the `EN` / `日本語` toggle moved from the examples card to the title
+  bar and drives every heading, label, button, hint, the settings dialog and its source notes, and the page's own
+  messages. Default: the saved choice (browser `localStorage`), else the launch/env/settings `lang`, else the
+  browser's own language, else English. What sys1grep itself prints, the `#cmd` command line and option names are
+  never translated (#270).
+
 ## [0.5.0] - 2026-10-26
 
 ### Added
