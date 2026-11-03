@@ -1757,7 +1757,7 @@ eq "$($J --rank=match --format=html -n -e cat -v dog -C1 "$tmp/mk.txt" | grep -c
 eq "$($J --rank=match --format=html --color=never -e cat "$tmp/mk.txt" | grep -c '<mark>')" "0" "html marks: --color=never"
 section 'serve: page'
 # --serve: a page on 127.0.0.1, each search a run of sys1grep against the fake
-$E SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= node ../sys1grep.mjs --serve "$F" >"$tmp/serve.url" 2>/dev/null &
+$E SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= SYS1GREP_SUMMARIZER= SYS1GREP_SUMMARIZER_MODEL= node ../sys1grep.mjs --serve "$F" >"$tmp/serve.url" 2>/dev/null &
 serve=$!
 i=0; while [ ! -s "$tmp/serve.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve did not start"; sleep 0.05; done
 U=$(cat "$tmp/serve.url")
@@ -1766,6 +1766,7 @@ BASE=${U%%\?*} K=${U#*k=} PORT=${U%%/\?*} PORT=${PORT##*:}
 [ -n "$K" ] || fail "--serve: the startup line carries a token"
 eq "$(curl -s "$U" | grep -c 'id="cmd"')" "1" "--serve: the page, fetched with its token"
 eq "$(curl -s "$U" | grep -c '<p id="fake-jev" role="note">FAKE Jev')" "1" "--serve: against the fake, the page says its answers are a fake Jev's"
+eq "$(curl -s "$U" | grep -o 'id="sum-by">[^<]*' | sed 's/.*>//')" "summarize uses claude, model haiku" "--serve: under summarize, the page names the summarizer and its model"
 eq "$(curl -s "$U" | node -pe "const h = require('fs').readFileSync(0, 'utf8'); [h.indexOf('id=\"go\"') > h.indexOf('id=\"startgrp\"'), h.indexOf('id=\"go\"') < h.indexOf('id=\"ex\"')].join()")" "true,true" "--serve: Search sits under the start fields, above the examples"
 eq "$(curl -s -o /dev/null -w '%{http_code}' "$BASE")" "404" "--serve: the page without the token is refused"
 # #216: the Target section shows the launch's targets; the page has no way to send one, and a query naming another
@@ -2116,7 +2117,7 @@ eq "$(HOME="$tmp" node serve-page.mjs "$(cat "$tmp/serve4.url")")" "card childre
 form children: #search .columns #sec-cmd #d
 sections: Target | Search conditions | Options | Command; Details stays the fold
 search conditions: #h-cond #startgrp .row #steps
-options: #h-opts .row #ask
+options: #h-opts .row #sum-by #ask
 start group: fieldset > .glabel #fields #add
 end group: fieldset > .glabel #ends #addend #hg-edges
 target: $tmp/m.py
