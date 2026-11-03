@@ -34,8 +34,9 @@ const settingsView = (cli, launch = []) => {
 const summarizerOf = (s, dotenv, launch) => {
   const pick = (v, f) => [`SYS1GREP_${v}`, `SEMGREP_${v}`].map(n => process.env[n]).find(x => x) ?? s[f] ?? dotenv[`SYS1GREP_${v}`];
   const tool = launch.findLast(a => /^--summarize=./.test(a) && a !== '--summarize=ask')?.slice(12) ?? pick('SUMMARIZER', 'summarizer') ?? 'claude';
-  const model = pick('SUMMARIZER_MODEL', 'summarizerModel') ?? (tool === 'claude' ? 'haiku' : `${tool}'s default`);
-  return `summarize uses ${/^https?:/.test(tool) ? maskUrl(tool) : tool}, model ${model}`;
+  const shown = /^https?:/.test(tool) ? maskUrl(tool) : tool, noDefault = /^https?:|^(ollama|lmstudio)$/.test(tool); // sys1grep.mjs dies without a model for these
+  const model = pick('SUMMARIZER_MODEL', 'summarizerModel') ?? (tool === 'claude' ? 'haiku' : noDefault ? 'not set (required)' : `${shown}'s default`);
+  return `summarize uses ${shown}, model ${model}`;
 };
 // --serve itself refuses REFUSED_LAUNCH (below) at launch: the page replaces these, or their meaning comes from the
 // page. The settings panel's opts run through sys1grep.mjs's own parseOpts (options.mjs, shared: #199 — three
@@ -746,7 +747,7 @@ const get = async (kind, p, into, post) => {
   running++;
   try {
     const j = await answer(kind, p, post, ctl.signal);
-    if (mine === gen) { await show1(j, into); intoView(); } // an html result's iframe loads async; wait for it, so the caller's text is ever the shown text (#231)
+    if (mine === gen) await show1(j, into); // an html result's iframe loads async; wait for it, so the caller's text is ever the shown text (#231)
     if (mine === gen && kind === 'results' && (j.text || j.html) && !p.x.some(x => x[0] === 'S')) onScreen = p;
     return j;
   } catch (e) {
@@ -794,6 +795,7 @@ const run = kind => {
   if (running) return;
   const s = p.x.indexOf('S:');
   if (s === 0 || !p.x.length) { left.textContent = 'Enter a meaning.'; return; }
+  if (!ready()) return; // Enter in a field must not run what the disabled Search would not
   if (s === p.x.length - 1) { left.textContent = 'Enter an end (--step-to).'; return; }
   gen++; ctl = new AbortController(); busy(true); onScreen = null; ask.hidden = true;
   left.textContent = 'searching...';
