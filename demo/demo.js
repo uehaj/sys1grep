@@ -10,7 +10,8 @@
   const MISS = "Not in the demo's recording, so nothing was searched: only the example buttons' questions were recorded. On your own files: npx @uehaj/sys1grep --serve";
   const NO_SUMMARY = 'summarize needs a browser with a built-in summarizer (Chrome 138 or later on a desktop that can hold its Gemini Nano model); this browser has none.';
   const demo = window.sys1demo = { noSummary: '', noRun: !recorded };
-  const BY = "summarized in this browser by Chrome's built-in AI (Gemini Nano); nothing is sent";
+  const SUMMARIZED_LOCALLY = "summarize uses Chrome's built-in AI (Gemini Nano), in this browser; nothing is sent";
+  const FIRST_DOWNLOAD = ' (the first summary downloads the model first)';
 
   let seed = null;
   const load = () => (seed ??= Promise.all([fetch('files.json'), fetch('cache.json')].map(r => r.then(x => x.json())))
@@ -64,9 +65,7 @@
     let state = 'unavailable';
     try { if ('Summarizer' in self) state = await Summarizer.availability({ type: 'tldr', format: 'plain-text', length: 'medium', outputLanguage: 'en' }); } catch {}
     if (state === 'unavailable') demo.noSummary = NO_SUMMARY;
-    const why = document.createElement('small');
-    why.className = 'note'; why.id = 'sum-why'; why.textContent = demo.noSummary || BY;
-    document.getElementById('hg-summarize').after(why);
+    document.getElementById('sum-by').textContent = demo.noSummary || SUMMARIZED_LOCALLY + (state === 'available' ? '' : FIRST_DOWNLOAD);
     document.getElementById('f').dispatchEvent(new Event('input'));
   });
 })();

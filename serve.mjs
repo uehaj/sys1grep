@@ -16,17 +16,26 @@ import { OPTIONS, REVERSE_REMOVED, fill, parseOpts } from './options.mjs';
 // env]. It follows sys1grep's own order (command line, environment, settings.json, .env), so the page can say when
 // something it saves would not take effect.
 const KEYS = new Set(['key', 'summarizerKey']);
-const settingsView = cli => {
+const settingsView = (cli, launch = []) => {
   const s = readSettings() ?? {};
   let dotenv = {};
   try { dotenv = parseEnv(readFileSync(`${homedir()}/.config/sys1grep/.env`, 'utf8')); } catch {}
-  return Object.fromEntries(Object.entries(FIELDS).map(([f, v]) => {
+  return { ...Object.fromEntries(Object.entries(FIELDS).map(([f, v]) => {
     const names = [`SYS1GREP_${v}`, `SEMGREP_${v}`, ...(f === 'key' ? ['TYPESAFE_API_KEY'] : [])];
     const env = names.find(n => process.env[n] !== undefined && (f === 'opts' || process.env[n] !== ''));
     const saved = KEYS.has(f) ? s[f] !== undefined : f === 'opts' ? (s.opts ? maskOpts(s.opts) : null) : f === 'url' ? (s.url ? maskUrl(s.url) : null) : s[f] ?? null;
     const src = cli[f] !== undefined ? ['cmd'] : env ? ['env', env] : s[f] !== undefined ? ['settings'] : names.some(n => dotenv[n] !== undefined) ? ['.env'] : ['default'];
     return [f, [saved, ...src]];
-  }));
+  })), by: summarizerOf(s, dotenv, launch) };
+};
+// The page's "summarize uses ..." note: the TOOL and model the summarize step runs, in sys1grep's order (a launch
+// --summarize=TOOL, the environment, settings.json, ~/.config/sys1grep/.env, then claude with haiku).
+// ponytail: a --summarize=TOOL inside SYS1GREP_OPTS / settings.json opts is not read; add it if someone sets one there.
+const summarizerOf = (s, dotenv, launch) => {
+  const pick = (v, f) => [`SYS1GREP_${v}`, `SEMGREP_${v}`].map(n => process.env[n]).find(x => x) ?? s[f] ?? dotenv[`SYS1GREP_${v}`];
+  const tool = launch.findLast(a => /^--summarize=./.test(a) && a !== '--summarize=ask')?.slice(12) ?? pick('SUMMARIZER', 'summarizer') ?? 'claude';
+  const model = pick('SUMMARIZER_MODEL', 'summarizerModel') ?? (tool === 'claude' ? 'haiku' : `${tool}'s default`);
+  return `summarize uses ${/^https?:/.test(tool) ? maskUrl(tool) : tool}, model ${model}`;
 };
 // --serve itself refuses REFUSED_LAUNCH (below) at launch: the page replaces these, or their meaning comes from the
 // page. The settings panel's opts run through sys1grep.mjs's own parseOpts (options.mjs, shared: #199 — three
@@ -418,7 +427,7 @@ export function serve(argv) {
     // server answers nothing, not even the page, so another local account or process cannot read the page (and the
     // token it carries, and anything a search of these targets would show) merely by knowing the port.
     if (url.searchParams.get('k') !== token && req.headers['x-sys1grep-token'] !== token) return send(404, 'text/plain', 'not found');
-    if (url.pathname === '/') return send(200, 'text/html', page({ init, launch, after, token, targets, suggest: suggestOf(suggested), fake: await fake }));
+    if (url.pathname === '/') return send(200, 'text/html', page({ init, launch, after, token, targets, suggest: suggestOf(suggested), fake: await fake, by: settingsView(cli, launch).by }));
     // The settings panel. It changes a file, so beyond the token above: for a write, POST with a JSON body and this
     // request's own Host as Origin (a page on another site cannot forge that, and GET never sends Origin at all, so
     // only POST is checked). A key goes in, never out.
@@ -433,7 +442,7 @@ export function serve(argv) {
           try { saveSettings(patch); } catch (e) { return answer(400, { error: e.message }); }
           fake = probeUrl().then(fakeAt);
         } else if (req.method !== 'GET') return send(405, 'text/plain', 'GET or POST');
-        return answer(200, { ...settingsView(cli), fake: await fake });
+        return answer(200, { ...settingsView(cli, launch), fake: await fake });
       } catch (e) { return answer(500, { error: `~/.config/sys1grep/settings.json: ${e.message}` }); }
     }
     // #227: summarize the results the page shows, as they are: the page posts their text and only the summarize step
@@ -485,7 +494,7 @@ const hg = (name, label, text) => `<div class="withhint hintgroup" id="hg-${name
 export const DEMO_LAUNCH = ['-r', 'examples'];
 const demoNote = ({ recorded }) => `<div id="demo-note" role="note" data-recorded="${recorded ? 1 : 0}"><p><strong>Demo.</strong> sys1grep runs here in your browser, on the bundled <code>examples/</code>. Jev's answers come from a recording made for the example buttons: a meaning you type yourself is answered only if it happens to be in it, while a regex (<code>-P</code>, and multi-step between regexes) always runs. On your own files: <code>npx @uehaj/sys1grep --serve</code></p>${recorded ? '' : '<p id="demo-missing">The recording is not published yet, so this demo runs no search for now.</p>'}</div>`;
 export const demoPage = ({ recorded }) => page({ init: initOf(DEMO_LAUNCH), launch: DEMO_LAUNCH, after: [], token: '', targets: { list: ['examples'], cwd: 'the demo folder, in this browser' }, suggest: [], fake: false, demo: { recorded } });
-const page = ({ init, launch, after, token, targets, suggest, fake, demo }) => `<!doctype html>
+const page = ({ init, launch, after, token, targets, suggest, fake, demo, by = '' }) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">${demo ? '<meta name="robots" content="noindex"><link rel="icon" href="data:,">' : ''}<title>sys1grep${demo ? ' demo' : ''}</title>
 <style>
@@ -607,6 +616,7 @@ Default: from a function to the functions it calls. reverse (--step-reverse-to):
 <div class="withhint hintgroup" id="hg-summarize"><label><input type="checkbox" name="summarize" aria-describedby="hint-summarize"> summarize</label><span class="hintctl"><button type="button" class="qbtn" id="q-summarize" aria-expanded="false" aria-controls="hint-summarize" aria-label="more about summarize">?</button><small class="hint" id="hint-summarize" role="tooltip">answers in a sentence or two after the search</small></span></div>
 <input type="text" name="summarize-prompt" placeholder="summary instruction" style="display:none;flex:1;min-width:160px">
 </div>
+<small class="note" id="sum-by">${esc(by)}</small>
 <div class="row ask" id="ask" role="group" aria-labelledby="askq" hidden><span id="askq"></span><button type="button" id="ask-ok">OK</button><button type="button" id="ask-no">Not now</button></div>
 </section>
 </div>
@@ -725,18 +735,18 @@ const ready = () => !window.sys1demo?.noRun && read().x.some(x => x[0] !== 'S');
 const busy = on => {
   for (const id of ['go', 'est']) document.getElementById(id).disabled = on || !ready();
   document.getElementById('stop').disabled = !on;
-  // after the caller's turn, once it has written "searching..." (an empty #m has no box to measure)
-  if (on) setTimeout(() => {
-    const m = document.getElementById('m');
-    if (m.getBoundingClientRect?.().top > window.innerHeight * 0.6) m.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
-  });
+  if (on) setTimeout(intoView); // after the caller's turn, once it has written "searching..." (an empty #m has no box to measure)
+};
+const intoView = () => {
+  const m = document.getElementById('m');
+  if (m.getBoundingClientRect?.().top > window.innerHeight * 0.6) m.scrollIntoView({ block: 'start', behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
 };
 const get = async (kind, p, into, post) => {
   const mine = gen;
   running++;
   try {
     const j = await answer(kind, p, post, ctl.signal);
-    if (mine === gen) await show1(j, into); // an html result's iframe loads async; wait for it, so the caller's text is ever the shown text (#231)
+    if (mine === gen) { await show1(j, into); intoView(); } // an html result's iframe loads async; wait for it, so the caller's text is ever the shown text (#231)
     if (mine === gen && kind === 'results' && (j.text || j.html) && !p.x.some(x => x[0] === 'S')) onScreen = p;
     return j;
   } catch (e) {
@@ -884,6 +894,7 @@ const fillSettings = view => {
     document.getElementById('src-' + k).textContent = SAID[src](name);
   }
   document.getElementById('fake-jev').hidden = !view.fake; // a saved url can switch to or from the fake
+  document.getElementById('sum-by').textContent = view.by; // and a saved summarizer changes what summarize runs
 };
 const settingsReq = async (method, body) => {
   const r = await fetch('/settings', { method, body, headers: { 'x-sys1grep-token': TOKEN, 'content-type': 'application/json' } });
