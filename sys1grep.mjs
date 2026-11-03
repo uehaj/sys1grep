@@ -127,11 +127,10 @@ for (const k of ['rank', 'summarize']) if (opt[k] === OFF) delete opt[k];
 const askSummary = opt.summarize === 'ask';
 if (askSummary) opt.summarize = SYS1GREP_SUMMARIZER || 'claude';
 // --lang=en|ja (#270): --help's language, and (via SYS1GREP_PROBE below) --serve's page default. langValue is the
-// resolved value before any locale fallback, undefined when nothing set it; lang always has a value, 'en' by default.
+// resolved value before any locale fallback, undefined when nothing set it.
 const langValue = opt.lang ?? envLANG.value;
 if (langValue !== undefined && !['en', 'ja'].includes(langValue))
   die(`${opt.lang !== undefined ? '--lang' : envLabel(envLANG)}: '${langValue}' is not en or ja`);
-const lang = langValue ?? 'en';
 // #222: --serve's launch check. With the options settled (command line, SYS1GREP_OPTS, settings.json opts) and before
 // any check of how they combine, say whether a folder target would be searched: -r in effect, or -g / git sys1grep,
 // which read no target files. Nothing is read or sent.

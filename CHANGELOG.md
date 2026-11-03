@@ -12,7 +12,7 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   bar and drives every heading, label, button, hint, the settings dialog and its source notes, and the page's own
   messages. Default: the saved choice (browser `localStorage`), else the launch/env/settings `lang`, else the
   browser's own language, else English. What sys1grep itself prints, the `#cmd` command line and option names are
-  never translated (#270).
+  never translated (#270). The old examples-only choice (`exlang`) is not carried over: pick the language once again.
 
 ## [0.5.0] - 2026-10-26
 

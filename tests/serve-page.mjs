@@ -500,4 +500,4 @@ startOn('');
 byId.f.onsubmit({ preventDefault() {} });
 console.log(`a page message in ja: "${text(byId.left)}"`);
 byId['lang-en'].onclick();
-console.log(`toggled back to en: heading "${byId['h-cond'].textContent}", saved ${JSON.stringify(ls.lang)}`);
+console.log(`toggled back to en: heading "${byId['h-cond'].textContent}", saved ${JSON.stringify(ls.lang)}, q-t "${byId['q-t'].getAttribute('aria-label')}"`);

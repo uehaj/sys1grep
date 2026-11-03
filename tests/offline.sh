@@ -1732,6 +1732,8 @@ reset; eq "$(ws '{"lang":"fr"}' $E node ../sys1grep.mjs -e cat "$F" 2>&1 | head 
 code 2 "--serve --lang=fr" -- $E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve --lang=fr "$F"
 eq "$($E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve --lang=fr "$F" 2>&1)" "sys1grep: --serve: --lang=fr is not en or ja
 Try 'sys1grep --help' for more information." "--serve --lang=fr is refused before listening"
+code 2 "SYS1GREP_LANG=fr --serve" -- $E SYS1GREP_LANG=fr SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$F"
+eq "$($E SYS1GREP_LANG=fr SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$F" 2>&1 | head -1)" "sys1grep: SYS1GREP_LANG: 'fr' is not en or ja" "SYS1GREP_LANG=fr --serve is refused at launch, not on every search"
 $E SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= node ../sys1grep.mjs --serve --lang=ja "$F" >"$tmp/serve-lang.url" 2>/dev/null &
 serve=$!
 i=0; while [ ! -s "$tmp/serve-lang.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve --lang=ja did not start"; sleep 0.05; done
@@ -2283,7 +2285,7 @@ Search with summarize on, rank on: 2 request(s), 1 POST(s) /summarize with the c
 lang starts in English: heading \"Search conditions\", button \"Search\"
 toggled to ja: heading \"検索条件\", button \"検索\", hint \"一致の厳しさ（--level）。loose は多く拾い、strict は少なく絞る\", saved \"ja\"
 a page message in ja: \"意味を入力してください。\"
-toggled back to en: heading \"Search conditions\", saved \"en\"" "--serve: the sections, the target, the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs; EN / 日本語), the settings dialog, the hint tooltips, and the page-wide language toggle (#270)"
+toggled back to en: heading \"Search conditions\", saved \"en\", q-t \"more about -t\"" "--serve: the sections, the target, the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs; EN / 日本語), the settings dialog, the hint tooltips, and the page-wide language toggle (#270)"
 eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '{"model":"m7","key":"k7","opts":["-n","--level","strict"]}' "--serve settings: what the panel saved"
 # #224: every example that needs no Jev (regexes only, the multi-step ones) walks at least one call, with the arguments the
 # page sends, on this repository and on a small Python program: a line at hop 1 or more (not only a start that is also

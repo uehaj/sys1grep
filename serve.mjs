@@ -457,8 +457,8 @@ export function serve(argv) {
   // settings.json opts and a later --no-r all count, as a real search would resolve them, not just this launch's own
   // argv. Used both to refuse a bare directory target without -r (below) and to decide the demo corpus (targetsOf).
   const probe = (() => {
-    const { stdout } = spawnSync(process.execPath, [script, ...launch], { input: '', encoding: 'utf8', timeout: 10_000, env: { ...process.env, SYS1GREP_PROBE: 'recursive' } });
-    try { return JSON.parse(stdout); } catch { return null; }
+    const { stdout, stderr } = spawnSync(process.execPath, [script, ...launch], { input: '', encoding: 'utf8', timeout: 10_000, env: { ...process.env, SYS1GREP_PROBE: 'recursive' } });
+    try { return JSON.parse(stdout); } catch { if (/is not en or ja/.test(stderr ?? '')) throw new Error(stderr.split('\n')[0].replace(/^sys1grep: /, '')); return null; } // SYS1GREP_LANG / settings lang=fr: refuse at launch, not on every search
   })();
   // The page says so when searches go to the fake Jev (tests/fake-jev.mjs): a GET to it answers its own counters,
   // which no real endpoint does. Only a loopback URL is asked, so a remote Jev never gets a request from this, and a
@@ -791,7 +791,7 @@ const applyI18n = () => {
   // itself is always the first [data-i18n] in its group, before the hint's own (also [data-i18n]) small -- never the
   // whole <label>, which for rank/level/dedup/unit would otherwise drag in its <select>'s option text too.
   for (const b of document.querySelectorAll('.hintctl .qbtn')) {
-    const label = b.closest('.withhint, .hintgroup')?.querySelector('[data-i18n]')?.textContent.trim();
+    const label = [...(b.closest('.withhint, .hintgroup')?.querySelectorAll('[data-i18n]') ?? [])].find(e => !e.id?.startsWith('hint-'))?.textContent.trim(); // a literal label (-t) has none: keep the server's
     if (label) b.setAttribute('aria-label', moreAbout(label));
   }
   // the start/end term-type selects (-e meaning, -P regex, ...): built client-side, so not [data-i18n] themselves.
@@ -999,7 +999,7 @@ const drawEx = () => {
     exRow.append(b);
   }
 };
-const setLang = k => { lang = k; try { localStorage.setItem('lang', k); } catch {} applyI18n(); drawEx(); if (!ask.hidden) drawAsk(); };
+const setLang = k => { lang = k; langFromStorage = true; try { localStorage.setItem('lang', k); } catch {} applyI18n(); drawEx(); if (!ask.hidden) drawAsk(); };
 for (const k in langBtns) langBtns[k].onclick = () => setLang(k);
 const exButton = ex => {
   const s = ex.x.indexOf('S:');
