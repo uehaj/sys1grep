@@ -264,6 +264,7 @@ export SYS1GREP_API_KEY=your-key                       # 環境変数
 | `summarizer` | `SYS1GREP_SUMMARIZER` |
 | `summarizerModel` | `SYS1GREP_SUMMARIZER_MODEL` |
 | `summarizerKey` | `SYS1GREP_SUMMARIZER_API_KEY` |
+| `lang` | `SYS1GREP_LANG`（`en` か `ja`: `--help` の言語、および `--serve` のページの既定言語） |
 
 どの項目も省略できます。型の違う値、JSON でないファイルはエラーです。知らない項目は警告（stderr に項目名を出す）
 だけで無視し、処理は続けます。新しいバージョンが項目を追加しても、古い sys1grep がそのまま動くようにするためです。
@@ -876,6 +877,11 @@ $ sys1grep --serve=8080 -y --level=strict -r src/     # ポートを固定。こ
 なければ（クエリにも、ページ自身のリクエストが使うヘッダにもなければ）サーバは何に対しても 404 を返します。
 ポート番号を知っているだけの別のローカルアカウントやプロセスは、ページもトークンも検索結果も読めません。
 
+タイトルバーの `EN` / `日本語` でページ全体の言語（見出し・ラベル・ボタン・ヒント・Settings ダイアログ・ページ自身の
+メッセージ）を切り替えられ、ブラウザに記憶されます。既定は、保存済みの選択、なければ `--lang` / `SYS1GREP_LANG` /
+settings.json の `lang`（後述）、それもなければブラウザの言語、最後に英語です。sys1grep 自身が出すもの（検索結果、
+`--dry-run` の見積もり、エラー）、コマンドライン、オプション名は翻訳されません。
+
 ページは 4 つのセクションに分かれています（#216）。**Target** はどの検索も読むものを示します: 起動時に渡した
 ファイルとフォルダ（`npm run serve -- src docs/a.md`）、渡さなければ sys1grep が代わりに読むもの、つまり `-r` なら `.`、
 `git sys1grep` なら git が追跡しているファイル全部、どちらでもなければ同梱のサンプル（`demo corpus (bundled): examples/`、#237）
@@ -887,8 +893,7 @@ $ sys1grep --serve=8080 -y --level=strict -r src/     # ポートを固定。こ
 `rank`、`summarize`、**multi-step** スイッチ（オンにすると終点の欄、つまり `--step-to` と 1 つ以上の意味、および辺の
 設定である `--hops` と、それを `--step-reverse-to` にする reverse スイッチが出ます。オフにするとそれらはコマンドと検索から
 外れ、値は保たれます）、例ボタン（この README と [docs/use-cases.md](docs/use-cases.md) の検索、続いて多段階の
-たどり。押すと欄と必要なコントロールが埋まり、それ以外は起動時の値に戻り、Search を待ちます。ラベルの横の `EN` /
-`日本語` でラベルと意味の言語を切り替えられ、ブラウザに記憶されます）、その他のオプションを畳んだ **Details**
+たどり。押すと欄と必要なコントロールが埋まり、それ以外は起動時の値に戻り、Search を待ちます）、その他のオプションを畳んだ **Details**
 （`--level`、`-t`/`-T`、`-C`、`-A`/`-B`、`--auto-scope`、`-n`、`-p`、`--dedup`、`--unit`、`-o`（文単位のときだけ表示）、
 `-j`、`--max-cost`、`--include`、`--exclude`、`--changed-within`、`-g`）、そして今のコントロールに対応する
 **コマンドライン**と Copy ボタンです。ターミナルに貼れば同じ検索が走ります。起動時の値のままのオプションは、
@@ -915,7 +920,7 @@ rank のカードも含めて要約器に POST します。2 回目の検索は�
 意味はページから来るので、`-e -P -a -v -Q --step-to --step-reverse-to` と `-l -c -q -o -z --unit=zero -H -i --format --color --dry-run --verbose` は起動時に拒否されます。
 
 **Settings** は `~/.config/sys1grep/settings.json`（[インストール](#インストール)を参照）を編集します: `url`、`model`、
-キー、`opts`（1 行に引数 1 つ）、要約器の 3 つです。Save でファイルに書き、次の検索から使われます。以後の `sys1grep`
+キー、`opts`（1 行に引数 1 つ）、要約器の 3 つ、`lang`（ページ自身の既定言語）です。Save でファイルに書き、次の検索から使われます。以後の `sys1grep`
 の実行でも同じです。各欄の横には、検索が使う値がどこから来るかが出ます。環境変数や起動時のオプションがファイルより
 優先されるときはそう告げます。その場合、保存しても検索は変わらないからです。キーは保存済み / 未保存としか返りません。
 置き換えるなら新しいキーを入力し、消すなら remove にチェックを入れます。`opts` の中の `--sys1-api-key` と `url` の
@@ -1201,7 +1206,9 @@ usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION|-P /RE/FLAGS [-a MEANING] [-v
                否定側の閾値未満を赤、あいだを黄で表示。NO_COLOR にも従う
   --sys1-model=ID, --sys1-url=URL, --sys1-api-key=KEY
                API の設定。SYS1GREP_MODEL / SYS1GREP_URL / SYS1GREP_API_KEY より優先
-  -h, --help   このヘルプ (LC_ALL / LC_MESSAGES / LANG のうち最初に設定されたものが ja 以外なら英語)
+  --lang=en|ja  このヘルプの言語、および --serve のページの既定言語。SYS1GREP_LANG より優先
+  -h, --help   このヘルプ (--lang / SYS1GREP_LANG が設定されていればそれ、無ければ LC_ALL / LC_MESSAGES /
+               LANG のうち最初に設定されたものが ja 以外なら英語)
   -V, --version  バージョンを表示して終了
 ```
 
