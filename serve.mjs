@@ -791,7 +791,7 @@ const applyI18n = () => {
   // itself is always the first [data-i18n] in its group, before the hint's own (also [data-i18n]) small -- never the
   // whole <label>, which for rank/level/dedup/unit would otherwise drag in its <select>'s option text too.
   for (const b of document.querySelectorAll('.hintctl .qbtn')) {
-    const label = [...(b.closest('.withhint, .hintgroup')?.querySelectorAll('[data-i18n]') ?? [])].find(e => !e.id?.startsWith('hint-'))?.textContent.trim(); // a literal label (-t) has none: keep the server's
+    const label = [...(b.closest('.withhint, .hintgroup')?.querySelectorAll('[data-i18n]') ?? [])].find(e => !e.getAttribute('id')?.startsWith('hint-'))?.textContent.trim(); // a literal label (-t) has none: keep the server's
     if (label) b.setAttribute('aria-label', moreAbout(label));
   }
   // the start/end term-type selects (-e meaning, -P regex, ...): built client-side, so not [data-i18n] themselves.
