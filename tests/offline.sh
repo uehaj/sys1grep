@@ -554,6 +554,20 @@ section 'settings.json'
 all="{\"url\":\"$base/v1\",\"key\":\"k5\",\"model\":\"m5\",\"opts\":[\"-n\"]}" # bash 3.2 misparses \" inside "$(...)"
 reset; eq "$(ws "$all" $ES node ../sys1grep.mjs -e cat "$F" | nums)" "1 4 " "settings.json: url and opts"
 eq "$(stat auth) $(stat model)" "Bearer k5 m5" "settings.json: key and model"
+# #198: an empty file, or a leading UTF-8 BOM, must not stop even --help / --version.
+bom=$(printf '\357\273\277')
+for flag in --help --version; do
+  code 0 "settings.json: empty file allows $flag" -- ws '' $E node ../sys1grep.mjs "$flag"
+  code 0 "settings.json: BOM-only file allows $flag" -- ws "$bom" $E node ../sys1grep.mjs "$flag"
+  code 0 "settings.json: BOM-prefixed object allows $flag" -- ws "$bom{}" $E node ../sys1grep.mjs "$flag"
+done
+eq "$(ws '' $J -n -e cat "$F" | nums)" "1 4 " "settings.json: empty file uses defaults"
+eq "$(ws "$bom" $J -n -e cat "$F" | nums)" "1 4 " "settings.json: BOM-only file uses defaults"
+reset; eq "$(ws "$bom$all" $ES node ../sys1grep.mjs -e cat "$F" | nums)" "1 4 " "settings.json: BOM preserves url and opts"
+eq "$(stat auth) $(stat model)" "Bearer k5 m5" "settings.json: BOM preserves key and model"
+eq "$(ws "$bom"'{"key":"sekrit9",}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: not valid JSON" "settings.json: BOM does not hide malformed JSON or expose its text"
+eq "$(ws "$bom[]" $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: not a JSON object" "settings.json: BOM does not bypass the object check"
+eq "$(ws "$bom"'{"key":5}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: key must be a string" "settings.json: BOM does not bypass field types"
 reset; ws '{"key":"k5","model":"m5"}' $E SYS1GREP_URL=$base/v1 SYS1GREP_API_KEY=k1 SYS1GREP_MODEL=m1 node ../sys1grep.mjs -e cat "$F" >/dev/null
 eq "$(stat auth) $(stat model)" "Bearer k1 m1" "the environment wins over settings.json"
 reset; ws '{"key":"k5"}' $J -e cat "$F" >/dev/null; eq "$(stat auth)" "Bearer k5" "settings.json's key goes to SYS1GREP_URL"
@@ -581,9 +595,9 @@ echo "$out" | grep -qF 'options: --level strict (settings.json opts) = ' || fail
 # a broken file stops the search, naming the file; nothing is sent
 reset; code 2 "settings.json: not JSON" -- ws '{"url":' $J -e cat "$F"; eq "$(stat count)" "0" "a broken settings.json sends nothing"
 eq "$(ws '{"key":"sekrit9",}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: not valid JSON" "a broken settings.json is named, its text not quoted"
-eq "$(ws '{"apikey":"sekrit9"}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: warning: ~/.config/sys1grep/settings.json: unknown field apikey (known: url, key, model, opts, summarizer, summarizerModel, summarizerKey); ignored" "settings.json: an unknown field warns and is ignored, the rest still runs"
+eq "$(ws '{"apikey":"sekrit9"}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: warning: ~/.config/sys1grep/settings.json: unknown field apikey (known: url, key, model, opts, summarizer, summarizerModel, summarizerKey, lang); ignored" "settings.json: an unknown field warns and is ignored, the rest still runs"
 eq "$(ws '{"apikey":"sekrit9"}' $J -n -e cat "$F" | nums)" "1 4 " "settings.json: an unknown field does not stop the search"
-eq "$(ws '{"apikey":"x"}' $E LANG=C node ../sys1grep.mjs --help 2>&1 >/dev/null | head -1)" "sys1grep: warning: ~/.config/sys1grep/settings.json: unknown field apikey (known: url, key, model, opts, summarizer, summarizerModel, summarizerKey); ignored" "settings.json: an unknown field still lets --help run"
+eq "$(ws '{"apikey":"x"}' $E LANG=C node ../sys1grep.mjs --help 2>&1 >/dev/null | head -1)" "sys1grep: warning: ~/.config/sys1grep/settings.json: unknown field apikey (known: url, key, model, opts, summarizer, summarizerModel, summarizerKey, lang); ignored" "settings.json: an unknown field still lets --help run"
 ws '{"apikey":"x"}' $E LANG=C node ../sys1grep.mjs --help >/dev/null 2>/dev/null; eq "$?" "0" "--help still exits 0 with an unknown field in settings.json"
 eq "$(ws '{"opts":["--reverse"]}' $ES SYS1GREP_URL=$base/v1 node ../sys1grep.mjs -e cat "$F" 2>&1 | head -1)" "sys1grep: settings.json opts: --reverse was replaced by --step-reverse-to" "settings.json opts: --reverse says what replaced it"
 eq "$(ws '{"opts":"-n"}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: opts must be an array of strings" "settings.json: opts as a string"
@@ -1150,9 +1164,17 @@ case $(cat "$tmp/sum.in") in *"$esc"*) fail "--summarize pipes colors" ;; esac
 printf 'cat\0dog\0cat two\0' >"$tmp/z"
 $SM --summarize -z -e cat "$tmp/z" >/dev/null
 eq "$(tr '\n' '|' <"$tmp/sum.in")" "cat||cat two||" "--summarize -z: records end in a blank line, not NUL"
-rm -f "$tmp/sum.in"; code 1 "--summarize, no match" -- $SM --summarize -e zebra "$F"
-[ ! -e "$tmp/sum.in" ] || fail "--summarize runs the summarizer with no match"
-eq "$($SM --summarize -e bird "$F" 2>&1 || true)" "" "--summarize, no match: no hint"
+for s in --summarize --summarize=ask; do
+  rm -f "$tmp/sum.in"
+  r=0; $SM $s -e bird "$F" </dev/null >"$tmp/sum.out" 2>"$tmp/sum.err" || r=$?
+  eq "$r" "1" "$s, no match"
+  eq "$(cat "$tmp/sum.out")" "" "$s, no match: no stdout"
+  eq "$(cat "$tmp/sum.err")" "sys1grep: no line reached 0.5 for \"bird\"; the highest was 0.40 ($F:5). --level loose takes 0.3, -p -t 0 shows every probability" "$s, no match: the ordinary hint"
+  eq "$($SM $s -e cat -a '/zebra/' "$F" 2>&1 || true)" "" "$s, no match: silent when the regex left nothing to send"
+  [ ! -e "$tmp/sum.in" ] || fail "$s runs the summarizer with no match"
+done
+code 1 "--summarize=ask -q, no match" -- $SM --summarize=ask -q -e bird "$F"
+eq "$($SM --summarize=ask -q -e bird "$F" 2>&1 || true)" "" "--summarize=ask -q, no match: no hint"
 code 2 "--summarize, summarizer fails" -- env SUM_EXIT=3 $SM --summarize -e cat "$F"
 code 2 "--summarize, an unreadable file" -- $SM --summarize -e cat "$F" "$tmp/none"
 # #227: SYS1GREP_SUMMARIZE=stdin, --serve's summary of the results on screen: stdin goes to the summarizer, no file is
@@ -1723,7 +1745,7 @@ case $out in *'summarizingwithclaude'*'033[KSUMMARY'*) ;; *) fail "spinner while
 # --help: exit 0, Japanese by locale, lists the options
 code 0 "--help" -- $E LANG=C node ../sys1grep.mjs --help
 eq "$($E LANG=C node ../sys1grep.mjs -h | head -1 | cut -c1-15)" "usage: sys1grep" "-h"
-for o in '-Q, --question' '-P /RE/FLAGS' '-q, --quiet' '--level=LEVEL' '--chunk=LINES' '-j N' '--color' '--sys1-api-key' '--dry-run' '--verbose' '-H, --with-filename' '--no-filename' '--summarize' '--summarize-prompt' '--format' '-M' '--max-filesize' '--max-cost' '-y, --yes' '--rank' '--no-rank' '--no-summarize' '--step-to' '--edges=FILE' '--step-reverse-to' '--hops=' '--template=NAME' '--install-templates' '--serve'; do
+for o in '-Q, --question' '-P /RE/FLAGS' '-q, --quiet' '--level=LEVEL' '--chunk=LINES' '-j N' '--color' '--sys1-api-key' '--dry-run' '--verbose' '-H, --with-filename' '--no-filename' '--summarize' '--summarize-prompt' '--format' '-M' '--max-filesize' '--max-cost' '-y, --yes' '--rank' '--no-rank' '--no-summarize' '--step-to' '--edges=FILE' '--step-reverse-to' '--hops=' '--template=NAME' '--install-templates' '--serve' '--lang=en|ja'; do
   $E LANG=C node ../sys1grep.mjs --help | grep -q -- "$o" || fail "--help lacks $o"
 done
 $E LANG=C node ../sys1grep.mjs --help | grep -q 'grep by meaning' || fail "--help in English"
@@ -1733,6 +1755,36 @@ section '--help / --version'
 v=$(node -p "require('../package.json').version")
 eq "$($E node ../sys1grep.mjs --version)" "sys1grep $v" "--version"
 eq "$($E node ../sys1grep.mjs -V)" "sys1grep $v" "-V"
+
+section '--lang'
+# --lang=en|ja (#270): --help's language and --serve's page default, before LC_ALL/LC_MESSAGES/LANG; precedence
+# command line, then environment, then settings.json, then ~/.config/sys1grep/.env, as for every other setting.
+$E LANG=ja_JP.UTF-8 node ../sys1grep.mjs --lang=en --help | grep -q 'grep by meaning' || fail "--lang=en overrides a Japanese locale"
+$E LANG=C node ../sys1grep.mjs --lang=ja --help | grep -q '何も表示せず' || fail "--lang=ja overrides an English locale"
+$E SYS1GREP_LANG=ja LANG=C node ../sys1grep.mjs --help | grep -q '何も表示せず' || fail "SYS1GREP_LANG=ja"
+reset; eq "$(ws '{"lang":"ja"}' $E LANG=C node ../sys1grep.mjs --help | sed -n 3p)" "jev (TypeSafe System One) で意味的にマッチする行を探す grep。FILE 省略時は stdin。" "settings.json lang=ja"
+eq "$(ws '{"lang":"ja"}' $E SYS1GREP_LANG=en LANG=C node ../sys1grep.mjs --help | grep -q 'grep by meaning'; echo $?)" "0" "the environment wins over settings.json lang"
+code 2 "--lang=fr" -- $E node ../sys1grep.mjs --lang=fr -e cat "$F"
+eq "$($E node ../sys1grep.mjs --lang=fr -e cat "$F" 2>&1 | head -1)" "sys1grep: --lang: 'fr' is not en or ja" "--lang: a bad value is refused"
+code 2 "SYS1GREP_LANG=fr" -- $E SYS1GREP_LANG=fr node ../sys1grep.mjs -e cat "$F"
+eq "$($E SYS1GREP_LANG=fr node ../sys1grep.mjs -e cat "$F" 2>&1 | head -1)" "sys1grep: SYS1GREP_LANG: 'fr' is not en or ja" "SYS1GREP_LANG: a bad value is refused"
+reset; eq "$(ws '{"lang":"fr"}' $E node ../sys1grep.mjs -e cat "$F" 2>&1 | head -1)" "sys1grep: lang, ~/.config/sys1grep/settings.json: 'fr' is not en or ja" "settings.json: lang must be en or ja"
+# --serve's page default follows --lang / SYS1GREP_LANG too (#270), SSR so even curl sees it; the toggle moved to
+# the title bar still drives it client-side, not reproduced here.
+code 2 "--serve --lang=fr" -- $E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve --lang=fr "$F"
+eq "$($E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve --lang=fr "$F" 2>&1)" "sys1grep: --serve: --lang=fr is not en or ja
+Try 'sys1grep --help' for more information." "--serve --lang=fr is refused before listening"
+code 2 "SYS1GREP_LANG=fr --serve" -- $E SYS1GREP_LANG=fr SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$F"
+eq "$($E SYS1GREP_LANG=fr SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$F" 2>&1 | head -1)" "sys1grep: SYS1GREP_LANG: 'fr' is not en or ja" "SYS1GREP_LANG=fr --serve is refused at launch, not on every search"
+$E SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= node ../sys1grep.mjs --serve --lang=ja "$F" >"$tmp/serve-lang.url" 2>/dev/null &
+serve=$!
+i=0; while [ ! -s "$tmp/serve-lang.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve --lang=ja did not start"; sleep 0.05; done
+U=$(cat "$tmp/serve-lang.url")
+eq "$(curl -s "$U" | grep -o '<html lang="[^"]*"')" '<html lang="ja"' "--serve --lang=ja: the page's own <html lang> follows it"
+eq "$(curl -s "$U" | grep -c '<h2 class="sech" id="h-cond"[^>]*>検索条件<')" "1" "--serve --lang=ja: a heading is rendered in Japanese"
+eq "$(curl -s "$U" | grep -c '<button type="submit" id="go"[^>]*>検索<')" "1" "--serve --lang=ja: a button is rendered in Japanese"
+kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
+
 section 'large send warning'
 # #138: -r and git sys1grep warn before sending many lines through a term no regex narrows; 10,001 lines here
 B="$tmp/big"; mkdir -p "$B"
@@ -1777,7 +1829,7 @@ eq "$($J --rank=match --format=html -n -e cat -v dog -C1 "$tmp/mk.txt" | grep -c
 eq "$($J --rank=match --format=html --color=never -e cat "$tmp/mk.txt" | grep -c '<mark>')" "0" "html marks: --color=never"
 section 'serve: page'
 # --serve: a page on 127.0.0.1, each search a run of sys1grep against the fake
-$E SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= node ../sys1grep.mjs --serve "$F" >"$tmp/serve.url" 2>/dev/null &
+$E SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= SYS1GREP_SUMMARIZER= SYS1GREP_SUMMARIZER_MODEL= node ../sys1grep.mjs --serve "$F" >"$tmp/serve.url" 2>/dev/null &
 serve=$!
 i=0; while [ ! -s "$tmp/serve.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve did not start"; sleep 0.05; done
 U=$(cat "$tmp/serve.url")
@@ -1785,7 +1837,8 @@ case $U in http://127.0.0.1:*/\?k=*) ;; *) fail "--serve prints its URL, with it
 BASE=${U%%\?*} K=${U#*k=} PORT=${U%%/\?*} PORT=${PORT##*:}
 [ -n "$K" ] || fail "--serve: the startup line carries a token"
 eq "$(curl -s "$U" | grep -c 'id="cmd"')" "1" "--serve: the page, fetched with its token"
-eq "$(curl -s "$U" | grep -c '<p id="fake-jev" role="note">FAKE Jev')" "1" "--serve: against the fake, the page says its answers are a fake Jev's"
+eq "$(curl -s "$U" | grep -c '<p id="fake-jev" role="note" data-i18n="fakeJev">FAKE Jev')" "1" "--serve: against the fake, the page says its answers are a fake Jev's"
+eq "$(curl -s "$U" | grep -o 'id="sum-by">[^<]*' | sed 's/.*>//')" "summarize uses claude, model haiku" "--serve: under summarize, the page names the summarizer and its model"
 eq "$(curl -s "$U" | node -pe "const h = require('fs').readFileSync(0, 'utf8'); [h.indexOf('id=\"go\"') > h.indexOf('id=\"startgrp\"'), h.indexOf('id=\"go\"') < h.indexOf('id=\"ex\"')].join()")" "true,true" "--serve: Search sits under the start fields, above the examples"
 eq "$(curl -s -o /dev/null -w '%{http_code}' "$BASE")" "404" "--serve: the page without the token is refused"
 # #216: the Target section shows the launch's targets; the page has no way to send one, and a query naming another
@@ -2088,7 +2141,7 @@ eq "$(pgrep -f "$F.*color=always" | wc -l | tr -d ' ')" "1" "--serve: a search i
 kill $curl 2>/dev/null; wait $curl 2>/dev/null || true
 sleep 0.7
 eq "$(pgrep -f "$F.*color=always" | wc -l | tr -d ' ')" "0" "--serve: an abandoned search ends its child"
-eq "$(curl -s "$U" | grep -c '<p id="fake-jev" role="note">')" "0" "--serve: a local endpoint that is not the fake gets no fake-Jev notice"
+eq "$(curl -s "$U" | grep -c '<p id="fake-jev" role="note" data-i18n="fakeJev">')" "0" "--serve: a local endpoint that is not the fake gets no fake-Jev notice"
 kill $serve $hang 2>/dev/null; wait $serve $hang 2>/dev/null || true
 section 'serve: fake notice follows the settings url'
 # #255 review: the fake-Jev notice is asked again after a settings save, both ways (the fake to another endpoint, and
@@ -2110,7 +2163,7 @@ i=0; while [ ! -s "$tmp/serve10.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail 
 U=$(cat "$tmp/serve10.url"); BASE=${U%%\?*} K=${U#*k=}
 SK="x-sys1grep-token: $K" SO="Origin: ${BASE%/}" SJ="content-type: application/json"
 seturl() { curl -s -X POST -H "$SK" -H "$SO" -H "$SJ" --data "{\"url\":\"$1\"}" "${BASE}settings" | field 'j.fake'; }
-shown() { curl -s "$U" | grep -c '<p id="fake-jev" role="note">'; }
+shown() { curl -s "$U" | grep -c '<p id="fake-jev" role="note" data-i18n="fakeJev">'; }
 eq "$(shown)" "0" "--serve: a loopback url that redirects to a fake-like server gets no notice"
 eq "$(cat "$tmp/like.log")" "" "--serve: the probe does not follow the redirect"
 eq "$(seturl "$base/v1")" "true" "--serve settings: saving the fake's url answers fake: true"
@@ -2136,7 +2189,7 @@ eq "$(HOME="$tmp" node serve-page.mjs "$(cat "$tmp/serve4.url")")" "card childre
 form children: #search .columns #sec-cmd #d
 sections: Target | Search conditions | Options | Command; Details stays the fold
 search conditions: #h-cond #startgrp .row #steps
-options: #h-opts .row #ask
+options: #h-opts .row #sum-by #ask
 start group: fieldset > .glabel #fields #add
 end group: fieldset > .glabel #ends #addend #hg-edges
 target: $tmp/m.py
@@ -2146,7 +2199,7 @@ no logo in the toolbar: ok
 Details/Settings checkboxes keep their native size: ok
 dark .err override comes after its base rule: ok
 main.two's one-column breakpoint tracks the card width (880px): ok
-title row: .icon h1 #gear
+title row: .icon h1 .langsw #gear
 Settings is a <dialog> holding the settings form, not a bottom collapsible: ok
 the dialog has an accessible name (aria-labelledby its heading): ok
 the url field is the dialog's initial focus, not the close button: ok
@@ -2189,33 +2242,33 @@ the first start field is a question (-Q) by default: ok
 -o hidden by default (unit: line): true
 -o shown with a sentence unit: true
 -o hidden again once the unit is not a sentence: true
-steps hidden: -P '/def main/'
-x=P:/def main/ hops=0.. reverse=0 -> 1 lines
+steps hidden: -P '/def main/' --summarize
+x=P:/def main/ hops=0.. reverse=0 -> 1 lines; busy/aria-busy=true then idle/aria-busy=false
 target: files shown, git log hidden
 -g on, target: files hidden, git log shown
 -g off, target: files shown, git log hidden
-off, start+: steps hidden: -P '/def main/' -a /helper/
-x=P:/def main/|a:/helper/ hops=0.. reverse=0 -> 1 lines
+off, start+: steps hidden: -P '/def main/' -a /helper/ --summarize
+x=P:/def main/|a:/helper/ hops=0.. reverse=0 -> 1 lines; busy/aria-busy=true then idle/aria-busy=false
 on, starts kept: steps shown: -P '/def main/' -a /helper/ --step-to
 on, 2 starts + 2 ends: steps shown: -P '/def main/' -a /helper/ --step-to -P '/raise /' -P '/sys\\.exit/'
-x=P:/def main/|a:/helper/|S:|P:/raise /|P:/sys\\.exit/ hops=0.. reverse=0 -> 2 lines
+x=P:/def main/|a:/helper/|S:|P:/raise /|P:/sys\\.exit/ hops=0.. reverse=0 -> 2 lines; busy/aria-busy=true then idle/aria-busy=false
 delete names: remove start condition 1 | remove start condition 2 | remove end condition 1 | remove end condition 2 | remove end condition 3
 steps shown: -P '/def main/' --step-to
 steps shown: -P '/def main/' --step-to -P '/raise /' --hops=1..2
-x=P:/def main/|S:|P:/raise / hops=1..2 reverse=0 -> 2 lines
+x=P:/def main/|S:|P:/raise / hops=1..2 reverse=0 -> 2 lines; busy/aria-busy=true then idle/aria-busy=false
 addend + reverse: steps shown: -P '/def main/' --step-reverse-to -P '/raise /' -P '/sys\\.exit/' --hops=1..2
-x=P:/def main/|S:|P:/raise /|P:/sys\\.exit/ hops=1..2 reverse=1 -> 1 lines
-steps hidden: -P '/def main/'
-x=P:/def main/ hops=1..2 reverse=0 -> 1 lines
+x=P:/def main/|S:|P:/raise /|P:/sys\\.exit/ hops=1..2 reverse=1 -> 1 lines; busy/aria-busy=true then idle/aria-busy=false
+steps hidden: -P '/def main/' --summarize
+x=P:/def main/ hops=1..2 reverse=0 -> 1 lines; busy/aria-busy=true then idle/aria-busy=false
 steps shown: -P '/def main/' --step-to -P '/raise /' --hops=1..2
 on true, 2 ends, steps shown: -P '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --step-to -P '/throw |raise /' -P '/process\\.exit\\(|sys\\.exit\\(/' --include='*.mjs' --include='*.cjs' --include='*.js' --include='*.jsx' --include='*.ts' --include='*.tsx' --include='*.py'
 on true, 1 ends, steps shown: -P '/throw (e|err|error)\\b|^ *raise\$/m' --step-reverse-to -P '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --include='*.mjs' --include='*.cjs' --include='*.js' --include='*.jsx' --include='*.ts' --include='*.tsx' --include='*.py'
-x=P:/throw (e|err|error)\\b|^ *raise\$/m|S:|P:/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/ hops=0.. reverse=1 -> 1 lines
+x=P:/throw (e|err|error)\\b|^ *raise\$/m|S:|P:/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/ hops=0.. reverse=1 -> 1 lines; busy/aria-busy=true then idle/aria-busy=false
 empty end: Enter an end (--step-to)., 0 sent
 groups: [] b b b b b b b b b b b [multi-step] b b b b
 pressing every example sends 0
 on false, steps hidden: -e 'network or remote connection failure' -v 'a retry is happening or was attempted' -n
-x=e:network or remote connection failure|v:a retry is happening or was attempted hops=0.. reverse=0 -> 1 lines
+x=e:network or remote connection failure|v:a retry is happening or was attempted hops=0.. reverse=0 -> 1 lines; busy/aria-busy=true then idle/aria-busy=false
 disk full: steps hidden: -e 'disk full' -> ok
 meaning, not words: steps hidden: -e 'customer is angry or frustrated' -n -> ok
 a question (-Q): steps hidden: -Q 'whether the server is down' -n -> ok
@@ -2267,10 +2320,14 @@ a field changed since: \"The results on screen are from before the fields or opt
 the field back as it was: \"Summarize the results on screen as they are?\" [OK / Not now] (lang en)
 multi-step on: no question
 OK: no question; sent /summarize with the results on screen as they are, 1 request(s) in all; summary pane shown: \"SUMMARY\\n\"
-x=P:/def main/ hops=0.. reverse=1 -> 1 lines
+x=P:/def main/ hops=0.. reverse=1 -> 1 lines; busy/aria-busy=true then idle/aria-busy=false
 Search with summarize on: 2 request(s), 1 POST(s) /summarize with the results on screen as they are; summary pane shown: \"SUMMARY\\n\"
-x=e:helper hops=0.. reverse=1 -> 0 lines
-Search with summarize on, rank on: 2 request(s), 1 POST(s) /summarize with the cards' text as they are; summary pane shown: \"SUMMARY\\n\"" "--serve: the sections, the target, the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs; EN / 日本語), the settings dialog, and the hint tooltips"
+x=e:helper hops=0.. reverse=1 -> 0 lines; busy/aria-busy=true then idle/aria-busy=false
+Search with summarize on, rank on: 2 request(s), 1 POST(s) /summarize with the cards' text as they are; summary pane shown: \"SUMMARY\\n\"
+lang starts in English: heading \"Search conditions\", button \"Search\"
+toggled to ja: heading \"検索条件\", button \"検索\", hint \"一致の厳しさ（--level）。loose は多く拾い、strict は少なく絞る\", saved \"ja\"
+a page message in ja: \"意味を入力してください。\"
+toggled back to en: heading \"Search conditions\", saved \"en\", q-t \"more about -t\"" "--serve: the sections, the target, the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs; EN / 日本語), the settings dialog, the hint tooltips, and the page-wide language toggle (#270)"
 eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '{"model":"m7","key":"k7","opts":["-n","--level","strict"]}' "--serve settings: what the panel saved"
 # #224: every example that needs no Jev (regexes only, the multi-step ones) walks at least one call, with the arguments the
 # page sends, on this repository and on a small Python program: a line at hop 1 or more (not only a start that is also
@@ -2520,7 +2577,7 @@ node "$tmp/demo-src/scripts/demo-build.mjs" "$tmp/demo2" >"$tmp/demo-build2.out"
 eq "$(diff -r "$tmp/demo" "$tmp/demo2" | head -c 300)" "" "demo: the build needs only tracked files and gives the same bytes every run"
 rm -f "$tmp/demo/cache.json" && node ../scripts/demo-build.mjs "$tmp/demo" >/dev/null 2>&1
 eq "$(grep -c '<meta name="robots" content="noindex">' "$tmp/demo/index.html")" "1" "demo: the page asks not to be indexed"
-eq "$(grep -o 'id="demo-missing">[^<]*' "$tmp/demo/index.html")" 'id="demo-missing">The recording is not published yet, so this demo runs no search for now.' "demo: built with no recording, the page says it is not published yet"
+eq "$(grep -o 'id="demo-missing" data-i18n="demoMissing">[^<]*' "$tmp/demo/index.html")" 'id="demo-missing" data-i18n="demoMissing">The recording is not published yet, so this demo runs no search for now.' "demo: built with no recording, the page says it is not published yet"
 eq "$(grep -o 'id="gear"[^>]*' "$tmp/demo/index.html" | grep -c hidden)" "1" "demo: no settings panel"
 $E SYS1GREP_URL=$base/v1 node ../scripts/record-demo-cache.mjs --record --out "$tmp/demo/cache.json" >"$tmp/demo-record.out" 2>&1 || fail "demo: recording on the fake: $(tail -3 "$tmp/demo-record.out")"
 case $(tail -1 "$tmp/demo-record.out") in *"every pill replays from $tmp/demo/cache.json") ;; *) fail "demo: recording on the fake: $(tail -1 "$tmp/demo-record.out")" ;; esac
@@ -2539,7 +2596,8 @@ eq "$(cat "$tmp/demo-core.out")" "$demo_core_ok" "demo: the bundled core prints 
 eq "$(node -e 'console.log(JSON.parse(require("fs").readFileSync("../docs/demo/cache.json","utf8")).url)')" "https://api.typesafe.ai/v1/systemone" "demo: the committed recording was made on the real endpoint"
 $E node demo-core.mjs "$tmp/demo2" "$tmp/demo2/cache.json" >"$tmp/demo-core2.out" 2>"$tmp/demo-core2.err" || fail "demo-core.mjs on the committed recording: $(cat "$tmp/demo-core2.err")"
 eq "$(cat "$tmp/demo-core2.out")" "$demo_core_ok" "demo: the committed recording answers all 24 pills, bundle = CLI, nothing sent$(head -c 2000 "$tmp/demo-core2.err")"
-# owner, 2026-10-18: the demo is reached at /demo/ but linked from nowhere until it is announced
-eq "$(grep -lE 'sys1grep\.js\.org/demo|href="/?demo/?"|\(/?demo/?\)' ../README.md ../README.ja.md ../docs/index.html ../sys1grep.mjs ../CHANGELOG.md)" "" "demo: no link to it from the README, the site, --help or the changelog"
+# owner, 2026-10-18: the demo is reached at /demo/ but linked from nowhere until it is announced; 2026-11-04: the site embeds it
+eq "$(grep -lE 'sys1grep\.js\.org/demo|href="/?demo/?"|\(/?demo/?\)' ../README.md ../README.ja.md ../sys1grep.mjs ../CHANGELOG.md)" "" "demo: no link to it from the README, --help or the changelog"
+eq "$(grep -c '<iframe class="try" src="demo/"' ../docs/index.html)" "1" "demo: the site embeds it"
 # offline-sections: end
 echo "OK: $n checks passed (and the grep-guarded ones)"
