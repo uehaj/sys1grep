@@ -502,9 +502,9 @@ fire();
 // language -- not reproduced here, a one-process run with no second page load).
 console.log(`lang starts in English: heading "${byId['h-cond'].textContent}", button "${byId.go.textContent}"`);
 byId['lang-ja'].onclick();
-console.log(`toggled to ja: heading "${byId['h-cond'].textContent}", button "${byId.go.textContent}", hint "${byId['hint-level'].textContent}", saved ${JSON.stringify(ls.lang)}`);
+console.log(`toggled to ja: heading "${byId['h-cond'].textContent}", button "${byId.go.textContent}", hint "${byId['hint-level'].textContent}", saved ${JSON.stringify(ls.lang)}, summary field "${elements['summarize-prompt'].value}"`);
 startOn('');
 byId.f.onsubmit({ preventDefault() {} });
 console.log(`a page message in ja: "${text(byId.left)}"`);
 byId['lang-en'].onclick();
-console.log(`toggled back to en: heading "${byId['h-cond'].textContent}", saved ${JSON.stringify(ls.lang)}, q-t "${byId['q-t'].getAttribute('aria-label')}"`);
+console.log(`toggled back to en: heading "${byId['h-cond'].textContent}", saved ${JSON.stringify(ls.lang)}, q-t "${byId['q-t'].getAttribute('aria-label')}", summary field "${elements['summarize-prompt'].value}"`);
