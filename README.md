@@ -890,6 +890,8 @@ http://127.0.0.1:51234/?k=3f9e...
 $ sys1grep --serve=8080 -y --level=strict -r src/     # a fixed port; the options given here are the page's first values
 ```
 
+![The --serve page: a meaning, the examples, the command line to copy, and the matches](docs/serve.png)
+
 From a clone, `npm run serve -- -r src/` does the same (`--` keeps npm from reading the options). With no target it
 searches the sample files that ship in the package (`examples/`, #237), so every example button finds something; a
 folder named without `-r` is refused at launch, with the command that adds it (#222). To try the page with no key and
