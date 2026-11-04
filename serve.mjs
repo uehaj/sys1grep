@@ -1009,7 +1009,10 @@ const drawEx = () => {
     exRow.append(b);
   }
 };
-const setLang = k => { lang = k; langFromStorage = true; try { localStorage.setItem('lang', k); } catch {} applyI18n(); drawEx(); if (!ask.hidden) drawAsk(); };
+// a Japanese page asks the summary in Japanese: an empty summary field gets "in Japanese", and loses it again in English
+const JA_PROMPT = 'in Japanese';
+const langPrompt = () => { const el = f.elements['summarize-prompt']; if (lang === 'ja' && !el.value) el.value = JA_PROMPT; else if (lang !== 'ja' && el.value === JA_PROMPT) el.value = ''; show(); };
+const setLang = k => { lang = k; langFromStorage = true; try { localStorage.setItem('lang', k); } catch {} applyI18n(); drawEx(); if (!ask.hidden) drawAsk(); langPrompt(); };
 for (const k in langBtns) langBtns[k].onclick = () => setLang(k);
 const exButton = ex => {
   const s = ex.x.indexOf('S:');
@@ -1019,7 +1022,7 @@ const exButton = ex => {
     step.checked = s >= 0; fields.textContent = ''; ends.textContent = '';
     ex.x.forEach((t, i) => i !== s && addField(t[0], t.slice(2), s >= 0 && i > s ? ends : fields));
     if (s < 0) addField('e', '', ends);
-    setControls({ summarize: f.elements.summarize.checked, ...ex }); show(); // an example keeps the summarize choice unless it sets one
+    setControls({ summarize: f.elements.summarize.checked, 'summarize-prompt': f.elements['summarize-prompt'].value, ...ex }); show(); // an example keeps the summarize choice unless it sets one
   };
   return b;
 };
@@ -1028,6 +1031,7 @@ drawEx();
 document.getElementById('copy').onclick = e => navigator.clipboard.writeText(cmd.textContent).then(() => { e.target.textContent = t('copied'); setTimeout(() => { e.target.textContent = t('copy'); }, 1200); });
 f.addEventListener('input', show); f.addEventListener('change', show);
 setControls({ summarize: !LAUNCH.includes('--no-summarize') }); // summarize starts on (owner, 2026-11-03)
+langPrompt();
 addField().children[1].focus(); addField('e', '', ends);
 // the settings panel: read when opened, saved on the button; a key field stays empty (a key never comes back from the server)
 const sf = document.getElementById('sf'), sd = document.getElementById('sd'), sst = document.getElementById('sst'), gear = document.getElementById('gear');
@@ -1045,7 +1049,7 @@ const fillSettings = view => {
   document.getElementById('fake-jev').hidden = !view.fake; // a saved url can switch to or from the fake
   document.getElementById('sum-by').textContent = view.by; // and a saved summarizer changes what summarize runs
   // the page's own language default just changed (a save, #270): follow it, unless this browser already chose one.
-  if (!langFromStorage && view.pageLang && view.pageLang !== lang) { lang = view.pageLang; applyI18n(); drawEx(); }
+  if (!langFromStorage && view.pageLang && view.pageLang !== lang) { lang = view.pageLang; applyI18n(); drawEx(); langPrompt(); }
 };
 const settingsReq = async (method, body) => {
   const r = await fetch('/settings', { method, body, headers: { 'x-sys1grep-token': TOKEN, 'content-type': 'application/json' } });
