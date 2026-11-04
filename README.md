@@ -18,7 +18,7 @@ sys1grep -n -e "customer is angry or frustrated" tickets.txt
 
 [![sys1grep demo: a Japanese meaning finds refund requests in six languages; "asking for a refund" vs "about a refund"; -Q finds the answer](docs/demo.svg)](https://sys1grep.js.org/)
 
-<sub>▶ Click the demo, or open <a href="https://sys1grep.js.org/">sys1grep.js.org</a>, for the full demo on the landing page.</sub>
+<sub>▶ Click the demo, or open <a href="https://sys1grep.js.org/">sys1grep.js.org</a>, for the full demo on the landing page; <a href="https://sys1grep.js.org/#try">try it in your browser</a>, no key needed.</sub>
 
 - Zero dependencies. Node.js 20.16+ and `fetch`, nothing else.
 - Fast. 30 lines go into one request, requests run 8 at a time (1 for a local URL). A 210-line file finishes in under a second.
@@ -882,8 +882,7 @@ which is Jev's). `OLLAMA_HOST` moves ollama's host, as it does for the `ollama` 
 
 ### A search page (`--serve`)
 
-`--rank --format=html` answers one question per run. `--serve` opens such a page (the `search` template, unless `--template` is given) with a search box, so you can rephrase
-and narrow without rerunning the command:
+`--serve` opens a page on your machine where you can rephrase and narrow a search without retyping the command:
 
 ```
 $ sys1grep --serve -r src/
@@ -891,60 +890,47 @@ http://127.0.0.1:51234/?k=3f9e...
 $ sys1grep --serve=8080 -y --level=strict -r src/     # a fixed port; the options given here are the page's first values
 ```
 
-From a clone, `npm run serve -- -r src/` is the same (`--` keeps npm from reading the options; `npm run serve -- --serve=8080 -r src/` fixes the port). With no target, `--serve` searches its own bundled sample corpus (`examples/`, #237) instead of reading an empty stdin, so every example button has something to find; name a target to search that instead. A folder named without `-r` is refused at launch, with the command that adds it (`--serve: src is a directory: add -r to search it (sys1grep --serve -r src)`, #222).
+From a clone, `npm run serve -- -r src/` does the same (`--` keeps npm from reading the options). With no target it
+searches the sample files that ship in the package (`examples/`, #237), so every example button finds something; a
+folder named without `-r` is refused at launch, with the command that adds it (#222). To try the page with no key and
+no install, the [browser demo](https://sys1grep.js.org/#try) runs sys1grep in your browser on the same samples,
+showing only answers cached in advance for its examples; `npm run demo` serves it from a clone.
 
-The printed URL carries a token made fresh at launch (`?k=...`). Every route needs it, the page itself included: without
-it (in the query, or in a header for the page's own requests) the server answers 404 to everything, so another local
-account or process cannot read the page, its token, or a search's results merely by knowing the port.
+On the page:
 
-`EN` / `日本語` in the title bar switches the whole page's language (headings, labels, buttons, hints, the settings
-dialog, the page's own messages), remembered in the browser; its default is the saved choice, else `--lang` /
-`SYS1GREP_LANG` / settings.json's `lang` (below), else the browser's own language, else English. What sys1grep itself
-prints (the results, the `--dry-run` estimate, an error), the command line and option names are never translated.
+- **Search conditions**: the meaning fields (`+` adds one; each is `-e`, `-P`, `-a`, `-v` or `-Q`, a question by
+  default) and a **multi-step** switch for `--step-to` / `--step-reverse-to`. Search, Estimate cost (`--dry-run`) and
+  Stop sit right under them, then **Options**: `rank` (ranked cards instead of file order) and `summarize`.
+- `summarize` starts checked (`--no-summarize` at launch starts it off). Search runs once, then the results on screen
+  go to the summarizer (up to 200 KB); nothing more is sent to Jev. The field beside it is `--summarize-prompt`; a
+  Japanese page fills an empty one with `in Japanese`.
+- **Examples** fill the page with a search from this README and [docs/use-cases.md](docs/use-cases.md) and wait for
+  Search; they keep the summarize box and its field. `--suggest=Q:TEXT` / `--suggest=e:TEXT` (repeatable) puts your
+  own first.
+- **Details** holds the other options, each with a "?" hint. **Target** shows what every search reads; the page
+  cannot change it.
+- The **command line** for the page as it is now, with Copy: pasted in a terminal, it runs the same search.
+- `EN` / `日本語` in the title bar switches the page's language, remembered in the browser. The default is `--lang` /
+  `SYS1GREP_LANG` / settings.json's `lang`, else the browser's language. sys1grep's own output and the command line
+  are never translated.
+- **Settings** (the gear) edits `~/.config/sys1grep/settings.json` (see [Install](#install)); each field says where the
+  value a search uses comes from, and a key comes back only as saved / not saved.
 
-The page is a set of cards under a blue header band: Target and Search conditions in one card with a large Search
-button (Estimate cost and Stop under it) at its right, the examples and Options side by side below it (one column on
-a phone), then the command line and Details. **Target** shows what every search reads: the files and folders given at launch
-(`npm run serve -- src docs/a.md`), or with none what sys1grep falls back to: `.` with `-r`, every file git tracks
-with `git sys1grep`, or, with neither, the bundled sample corpus (`demo corpus (bundled): examples/`, #237); while
-`-g` (in Details) is on, it says git log's commits instead. It is shown only: the page cannot
-change it, and a target in a request is ignored. **Search conditions**
-holds the meaning fields and multi-step, **Options** `rank` and `summarize`,
-and **Details** the other options; the results come below them. What they hold: the meaning fields (`+` adds one; each takes `-e`, `-P`, `-a`, `-v` or `-Q`), `rank`, `summarize`, a **multi-step**
-switch (on, it shows the end fields, `--step-to` and one or more meanings, and the edges, `--hops` and a reverse switch that makes it `--step-reverse-to`; off, they
-leave the command and the search and keep their values), example buttons (searches from this README and
-[docs/use-cases.md](docs/use-cases.md), then multi-step walks; one fills the fields and the controls it needs, puts the rest back to their launch values, and waits for Search), a
-**Details** fold with the other options (`--level`, `-t`/`-T`, `-C`, `-A`/`-B`, `--auto-scope`, `-n`, `-p`, `--dedup`,
-`--unit`, `-o` (shown only with a sentence unit), `-j`, `--max-cost`, `--include`, `--exclude`, `--changed-within`,
-`-g`), and the
-**command line** for the controls as they are now, with a Copy button; pasted in a terminal it runs the
-same search. An option at its launch value is left out of what the controls add. `rank` off shows the matches in file order
-as text, on shows the ranked cards; `summarize` adds a right column: Search runs once, and once its results are on
-screen the page summarizes those results (POSTs the text shown, rank's cards included, to the summarizer; no second
-search, nothing extra sent to Jev, up to 200 KB as `--summarize` takes). Checking `summarize` while results are
-already on screen asks, in the page, whether to summarize those results as they are (#227): OK sends their text back
-the same way; Not now leaves the box checked for the next Search. If a field or option changed since
-those results came, the question says so. No results on screen, or multi-step on: no question. Estimate cost is `--dry-run`. The first field is a question (`-Q`) by default. `--suggest=Q:TEXT` / `--suggest=e:TEXT` (or `--suggest TEXT`, repeatable; a bare TEXT is a question) puts suggested-question buttons first in the examples row; pressing one fills the page, then Search runs it. The options in Details each have a "?" hint saying what they do. While a search runs, Search and Estimate are disabled and **Stop** ends it (the child process is killed). The matches are colored as `--color=always` colors them (file names, line numbers, regex matches), the cards mark them with `<mark>`.
+What the page can and cannot do:
 
-Each search runs sys1grep itself (the options given at launch, then the controls'), so everything the command line does
-the page does, and only that. The server listens on `127.0.0.1` only, answers only to that host name, and the page never
-sees the API key. The targets, `--chunk`, `-M`, `--max-filesize`, `-y`, `--edges`, `--template`, the
-API settings and `--summarize`'s TOOL are fixed at launch: the page can narrow what was given but not widen it (`--chunk`,
-`-M` and `--max-filesize` still reach the Settings dialog's default options). A search over `--max-cost` is refused at
-once (`--serve` has no `/dev/tty` to ask `-y`'s question on, or launch with `-y` to let it through unasked); the error
-carries the same estimate `--dry-run` would show, and a button next to it reruns that one search, once, with
-`--max-cost` just above the estimate (not a change to the Details field).
-The meanings come from the page, so `-e -P -a -v -Q --step-to --step-reverse-to` and `-l -c -q -o -z --unit=zero -H -i --format --color --dry-run --verbose` are refused at launch.
-
-**Settings** edits `~/.config/sys1grep/settings.json` (see [Install](#install)): `url`, `model`, the key, `opts` (one argument
-per line), the summarizer's three and `lang` (the page's own default language). Save writes the file, and the next search uses it, as does every later `sys1grep`
-run. Next to each field the page says where the value a search uses comes from, and says so when an environment variable or a
-launch option wins over the file, since then saving does not change the search. A key comes back only as saved / not
-saved; type a new one to replace it, or tick remove. A `--sys1-api-key` inside `opts`, and a `url`'s userinfo, come back
-masked as `***`, the same way `--verbose` masks them; `opts` refuses a target, a flag the page itself refuses at launch,
-or `--sys1-url` / `--sys1-api-key` (their own fields), and `url` and a URL summarizer must be `http(s)`. The save is a
-`POST` with the page's token and this request's own Host as its required `Origin`, and the file is written whole (0600,
-its directory 0700 when created) and renamed into place, so a reader never sees half of it.
+- The server listens on `127.0.0.1` only and answers only to that host name. The printed URL carries a token made at
+  launch (`?k=...`); without it every route, the page included, answers 404, so another local account or process that
+  knows the port cannot read the page or a search's results. The page never sees the API key.
+- Each search runs sys1grep itself, so the page does what the command line does and nothing more. The targets,
+  `--chunk`, `-M`, `--max-filesize`, `-y`, `--edges`, `--template`, the API settings and `--summarize`'s TOOL are
+  fixed at launch: the page can narrow what was given, not widen it. What the page sets itself
+  (`-e -P -a -v -Q --step-to --step-reverse-to -l -c -q -o -z --unit=zero -H -i --format --color --dry-run --verbose`)
+  is refused at launch.
+- A search over `--max-cost` is refused (there is no terminal for `-y`'s question; launch with `-y` to let it through
+  unasked). The error carries the `--dry-run` estimate and a button that reruns that one search with `--max-cost` just
+  above it.
+- A Settings save is a `POST` that needs the page's token and a matching `Origin`; the file is written whole (0600,
+  its directory 0700 when created) and renamed into place.
 
 ### Best first (`--rank`)
 
