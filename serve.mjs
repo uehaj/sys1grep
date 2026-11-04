@@ -290,8 +290,8 @@ export const STRINGS = {
   tipVph: ['and not this meaning', 'かつこの意味ではない'], tipVhint: ['AND NOT onto the term before it: this must not hold (as the first field, a bare negation)', '直前の条件に AND NOT で付く: これが成り立ってはいけない（先頭の欄では単なる否定）'],
   fakeJev: ["FAKE Jev: searches go to tests/fake-jev.mjs. Its probabilities are dummies, not real answers.", '偽の Jev: 検索は tests/fake-jev.mjs へ行く。確率はダミーで本物の答えではない'],
   demoBody: [
-    "<strong>Demo.</strong> sys1grep runs here in your browser, on the bundled <code>examples/</code>. Jev's answers come from a recording made for the example buttons: a meaning you type yourself is answered only if it happens to be in it, while a regex (<code>-P</code>, and multi-step between regexes) always runs. On your own files: <code>npx @uehaj/sys1grep --serve</code>",
-    '<strong>デモ。</strong> ここでは sys1grep がブラウザの中で、同梱の <code>examples/</code> に対して動く。Jev の答えは例ボタン用の録音から来る: 自分で打った意味はたまたま録音にあるときだけ答えが返り、正規表現（<code>-P</code>、正規表現どうしの多段階も）は常に実行される。自分のファイルで試すには: <code>npx @uehaj/sys1grep --serve</code>',
+    "<strong>This is a demo.</strong> It runs entirely in your browser and sends nothing anywhere. It searches a few bundled sample files (<code>examples/</code>).<br>The example buttons above work as they are. A meaning you write yourself will usually find nothing: the demo does not call Jev (the model that judges meanings), it only replays answers saved in advance for the example buttons. A regular expression (<code>-P</code>) always works, even one you write.<br>To search your own files: <code>npx @uehaj/sys1grep --serve</code> (needs a Jev API key).",
+    '<strong>これはお試し版です。</strong> 検索はこのブラウザの中だけで動き、外へは何も送りません。検索するのは、付属のサンプルファイル（<code>examples/</code>）です。<br>上の例ボタンは、押せばそのまま検索できます。自分で書いた意味で検索すると、たいてい何も見つかりません。このデモは意味を判定するモデル（Jev）を呼ばず、例ボタン用に保存しておいた答えを使っているだけだからです。正規表現（<code>-P</code>）なら、自分で書いたものでもいつも動きます。<br>自分のファイルを検索するには: <code>npx @uehaj/sys1grep --serve</code>（Jev の API キーが必要です）',
   ],
   demoMissing: ['The recording is not published yet, so this demo runs no search for now.', '録音がまだ公開されていないため、このデモは今のところ検索を実行しません。'],
 };
