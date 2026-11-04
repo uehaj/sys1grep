@@ -3,7 +3,7 @@
 All notable changes to `@uehaj/sys1grep` (`@uehaj/semgrep` through 0.4.0). The format follows [Keep a Changelog](https://keepachangelog.com/),
 versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option changes bump minor).
 
-## [Unreleased]
+## [0.5.0] - 2026-11-05
 
 ### Added
 - `--lang=en|ja` (`SYS1GREP_LANG`, settings.json `lang`): `--help`'s language, before `LC_ALL` / `LC_MESSAGES` /
@@ -13,10 +13,13 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   messages. Default: the saved choice (browser `localStorage`), else the launch/env/settings `lang`, else the
   browser's own language, else English. What sys1grep itself prints, the `#cmd` command line and option names are
   never translated (#270). The old examples-only choice (`exlang`) is not carried over: pick the language once again.
-
-## [0.5.0] - 2026-10-26
-
-### Added
+- The browser demo (#200): the real sys1grep bundled for the browser, on the site under `/demo/` and embedded in
+  the landing page (#273). It searches the bundled `examples/` and shows only answers cached in advance for its
+  example buttons, so it sends nothing and needs no key; a regex-only search always runs. Its summary uses the
+  browser's built-in summarizer (Chrome 138+, Gemini Nano), in the language the summary field asks for, else the
+  page's (#282, #283). `npm run demo [-- PORT]` builds it and serves it on 127.0.0.1 (#275).
+- `--serve`: a Japanese page fills an empty summary field with `in Japanese` (#281); a centered spinner while a
+  search runs (#264); results scroll into view when a search starts below the fold (#267).
 - `--serve`: when searches go to the fake Jev of the offline tests (`tests/fake-jev.mjs`), the page says so in a
   banner under the title: its probabilities are dummies, not real answers. `--serve` asks only a loopback URL, with
   a GET that never follows a redirect (never judged or billed), at launch and again after every settings save, so a
@@ -273,6 +276,10 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   Estimate are disabled while one runs (#189).
 
 ### Fixed
+- The no-match hints print with `--summarize` too (#265).
+- An empty or BOM-prefixed `~/.config/sys1grep/settings.json` is read instead of refused (#266).
+- `--serve`: an example button keeps the summarize box and the summary field (#274, #281); the demo's note no longer
+  squeezes the command box (#272); Search waits for a field to search for (#267).
 - `--serve`'s launch refusal now reads the options as parsed, not the raw arguments: a cluster like `-nq` or `-Hn`
   and a long name like `--with-filename`, `--l` or `--z` were let through and the page started. A negation such as
   `--no-verbose` still starts it, as before. `-h` is refused at launch too (it was missed). (#259)
@@ -292,6 +299,8 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   string option (#233 review on #198).
 
 ### Changed
+- `--serve`: Options sit right under Search / Estimate cost / Stop, and summarize starts checked (`--no-summarize` at
+  launch keeps it off) (#269).
 - `--dedup=auto` no longer asks Jev which kinds of value a meaning reads (#152). Each template, every kind folded,
   sends up to 5 members whose values differ (for each varying value, the lowest, the highest and the middle); when
   their verdicts agree the members not sampled share the first sample's answers and the samples keep their own, and
