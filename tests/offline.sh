@@ -534,6 +534,20 @@ section 'settings.json'
 all="{\"url\":\"$base/v1\",\"key\":\"k5\",\"model\":\"m5\",\"opts\":[\"-n\"]}" # bash 3.2 misparses \" inside "$(...)"
 reset; eq "$(ws "$all" $ES node ../sys1grep.mjs -e cat "$F" | nums)" "1 4 " "settings.json: url and opts"
 eq "$(stat auth) $(stat model)" "Bearer k5 m5" "settings.json: key and model"
+# #198: an empty file, or a leading UTF-8 BOM, must not stop even --help / --version.
+bom=$(printf '\357\273\277')
+for flag in --help --version; do
+  code 0 "settings.json: empty file allows $flag" -- ws '' $E node ../sys1grep.mjs "$flag"
+  code 0 "settings.json: BOM-only file allows $flag" -- ws "$bom" $E node ../sys1grep.mjs "$flag"
+  code 0 "settings.json: BOM-prefixed object allows $flag" -- ws "$bom{}" $E node ../sys1grep.mjs "$flag"
+done
+eq "$(ws '' $J -n -e cat "$F" | nums)" "1 4 " "settings.json: empty file uses defaults"
+eq "$(ws "$bom" $J -n -e cat "$F" | nums)" "1 4 " "settings.json: BOM-only file uses defaults"
+reset; eq "$(ws "$bom$all" $ES node ../sys1grep.mjs -e cat "$F" | nums)" "1 4 " "settings.json: BOM preserves url and opts"
+eq "$(stat auth) $(stat model)" "Bearer k5 m5" "settings.json: BOM preserves key and model"
+eq "$(ws "$bom"'{"key":"sekrit9",}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: not valid JSON" "settings.json: BOM does not hide malformed JSON or expose its text"
+eq "$(ws "$bom[]" $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: not a JSON object" "settings.json: BOM does not bypass the object check"
+eq "$(ws "$bom"'{"key":5}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: key must be a string" "settings.json: BOM does not bypass field types"
 reset; ws '{"key":"k5","model":"m5"}' $E SYS1GREP_URL=$base/v1 SYS1GREP_API_KEY=k1 SYS1GREP_MODEL=m1 node ../sys1grep.mjs -e cat "$F" >/dev/null
 eq "$(stat auth) $(stat model)" "Bearer k1 m1" "the environment wins over settings.json"
 reset; ws '{"key":"k5"}' $J -e cat "$F" >/dev/null; eq "$(stat auth)" "Bearer k5" "settings.json's key goes to SYS1GREP_URL"
