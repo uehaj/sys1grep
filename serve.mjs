@@ -16,17 +16,27 @@ import { OPTIONS, REVERSE_REMOVED, fill, parseOpts } from './options.mjs';
 // env]. It follows sys1grep's own order (command line, environment, settings.json, .env), so the page can say when
 // something it saves would not take effect.
 const KEYS = new Set(['key', 'summarizerKey']);
-const settingsView = cli => {
+const settingsView = (cli, launch = []) => {
   const s = readSettings() ?? {};
   let dotenv = {};
   try { dotenv = parseEnv(readFileSync(`${homedir()}/.config/sys1grep/.env`, 'utf8')); } catch {}
-  return Object.fromEntries(Object.entries(FIELDS).map(([f, v]) => {
+  return { ...Object.fromEntries(Object.entries(FIELDS).map(([f, v]) => {
     const names = [`SYS1GREP_${v}`, `SEMGREP_${v}`, ...(f === 'key' ? ['TYPESAFE_API_KEY'] : [])];
     const env = names.find(n => process.env[n] !== undefined && (f === 'opts' || process.env[n] !== ''));
     const saved = KEYS.has(f) ? s[f] !== undefined : f === 'opts' ? (s.opts ? maskOpts(s.opts) : null) : f === 'url' ? (s.url ? maskUrl(s.url) : null) : s[f] ?? null;
     const src = cli[f] !== undefined ? ['cmd'] : env ? ['env', env] : s[f] !== undefined ? ['settings'] : names.some(n => dotenv[n] !== undefined) ? ['.env'] : ['default'];
     return [f, [saved, ...src]];
-  }));
+  })), by: summarizerOf(s, dotenv, launch) };
+};
+// The page's "summarize uses ..." note: the TOOL and model the summarize step runs, in sys1grep's order (a launch
+// --summarize=TOOL, the environment, settings.json, ~/.config/sys1grep/.env, then claude with haiku).
+// ponytail: a --summarize=TOOL inside SYS1GREP_OPTS / settings.json opts is not read; add it if someone sets one there.
+const summarizerOf = (s, dotenv, launch) => {
+  const pick = (v, f) => [`SYS1GREP_${v}`, `SEMGREP_${v}`].map(n => process.env[n]).find(x => x) ?? s[f] ?? dotenv[`SYS1GREP_${v}`];
+  const tool = launch.findLast(a => /^--summarize=./.test(a) && a !== '--summarize=ask')?.slice(12) ?? pick('SUMMARIZER', 'summarizer') ?? 'claude';
+  const shown = /^https?:/.test(tool) ? maskUrl(tool) : tool, noDefault = /^https?:|^(ollama|lmstudio)$/.test(tool); // sys1grep.mjs dies without a model for these
+  const model = pick('SUMMARIZER_MODEL', 'summarizerModel') ?? (tool === 'claude' ? 'haiku' : noDefault ? 'not set (required)' : `${shown}'s default`);
+  return `summarize uses ${shown}, model ${model}`;
 };
 // --serve itself refuses REFUSED_LAUNCH (below) at launch: the page replaces these, or their meaning comes from the
 // page. The settings panel's opts run through sys1grep.mjs's own parseOpts (options.mjs, shared: #199 — three
@@ -41,14 +51,18 @@ const REFUSED_LAUNCH = new Set(['e', 'P', 'a', 'v', 'question', 'l', 'c', 'quiet
 // --unit=zero is -z by another name (options.mjs): REFUSED_LAUNCH names options, so it cannot single it out from every
 // other --unit value, and --unit also takes its value split ("--unit zero"), so this follows parseArgs' own rule
 // (string option, no short form: the last --unit/--unit= wins) to find what --unit actually resolves to at launch.
-const unitAt = launch => {
+const valueAt = (launch, name) => {
   let v;
   for (let i = 0; i < launch.length; i++) {
-    if (launch[i] === '--unit') v = launch[++i];
-    else if (launch[i].startsWith('--unit=')) v = launch[i].slice(7);
+    if (launch[i] === `--${name}`) v = launch[++i];
+    else if (launch[i].startsWith(`--${name}=`)) v = launch[i].slice(name.length + 3);
   }
   return v;
 };
+const unitAt = launch => valueAt(launch, 'unit');
+// --lang=en|ja (#270): the launch's own default for the page (and for every search it runs, harmlessly: it only
+// changes --help's language). Read, never lift()ed out: #cmd keeps showing it as typed.
+const langAt = launch => valueAt(launch, 'lang');
 // l/c/quiet/o/z/interactive/with-filename/version/format/color/verbose/dry-run/help: the page's own replacements
 // for a search's output shape and tracing (REFUSED_LAUNCH's set, minus what parseOpts already refuses on its own:
 // e/P/a/v/question/step-to/install-templates). r: unlike at launch, there is no target field here to keep a bare -r
@@ -106,6 +120,7 @@ const saveSettings = patch => {
       }
     }
     if (k === 'summarizer' && typeof v === 'string' && /^https?:\/\//.test(v) && !isHttpUrl(v)) throw new Error('summarizer must be http(s) when it is a URL');
+    if (k === 'lang' && typeof v === 'string' && v && !['en', 'ja'].includes(v)) throw new Error("lang must be en or ja");
     if (value === null || value === '' || (Array.isArray(value) && !value.length)) delete next[k];
     else next[k] = value;
   }
@@ -191,6 +206,96 @@ export const EXAMPLES = [
   { h: 'what reaches it (--step-reverse-to)', hj: 'どこから呼ばれるか (--step-reverse-to)', x: ['P:' + RETHROW, 'S:', 'P:' + ENTRY], reverse: true, include: SRC },
   { h: 'throw or exit (two ends)', hj: 'throw または exit（終点が2つ）', x: ['P:' + ENTRY, 'S:', 'P:/throw |raise /', 'P:/process\\.exit\\(|sys\\.exit\\(/'], include: SRC },
 ];
+
+// The whole page's strings (#270), one table like ASK already was for its four: en, with a ja translation; a key
+// with no ja falls back to en (t(), below). Not here: what sys1grep itself prints, the #cmd command line, option
+// names (-n, --step-to, ...) and the literal values a <select> sends (jev/match, loose/normal/strict, ...).
+export const STRINGS = {
+  settings: ['Settings', '設定'], close: ['Close', '閉じる'],
+  target: ['Target', 'ターゲット'],
+  targetHint: ["what every search reads, set when --serve starts; the page cannot change it", '起動時に --serve が決めた検索対象。ページからは変更できない'],
+  cond: ['Search conditions', '検索条件'],
+  startLegend: ['start', '開始'], startLegendHint: ['what to search for; with multi-step on, the start of the walk', '何を探すか。多段階がオンのときは、たどる経路の開始点'],
+  addStart: ['+ start', '+ 開始'], addStartTitle: ['add a start', '開始条件を追加'],
+  multiStep: ['multi-step', '多段階'],
+  multiStepHint: [
+    "Finds the start functions, then walks calls from them to the functions that match the end.\nA call is found by name: `name(` in a function's body (comments and strings left out) links to every function called `name`. Same-named functions all link; calls not written as `name(` (a function passed as a value, a call through a variable) are missed.\nDefault: from a function to the functions it calls. reverse (--step-reverse-to): to the functions that call it.\n--hops limits how many calls away an end may be. For exact relations, start --serve with --edges=FILE.",
+    '開始の関数を見つけ、そこから呼び出しをたどって終了に一致する関数を探す。\n呼び出しは名前で見つける: 関数の本体（コメントと文字列を除く）にある `name(` が、`name` という名前のすべての関数にリンクする。同名の関数はすべてリンクし、`name(` の形でない呼び出し（値として渡された関数、変数経由の呼び出し）は見逃す。\n既定: ある関数からそれが呼び出す関数へ。reverse (--step-reverse-to): その関数を呼んでいる関数へ。\n--hops で終了点までの段数を制限できる。正確な関係を使うには --edges=FILE を付けて --serve を起動する。',
+  ],
+  endLegend: ['end (--step-to)', '終了 (--step-to)'], addEnd: ['+ end', '+ 終了'], addEndTitle: ['add an end', '終了条件を追加'],
+  edgesLabel: ['edges', 'エッジ'],
+  edgesHint: ["--hops limits how many hops away an end may be; reverse (--step-reverse-to) searches backwards along the graph", '--hops で終了点までの段数を制限できる。reverse (--step-reverse-to) はグラフを逆方向にたどる'],
+  hopsTitle: ['how many hops the end may be from the start, e.g. 1..2', '開始点から終了点までの段数、例: 1..2'],
+  reverseLabel: ['reverse', '逆方向'],
+  go: ['Search', '検索'],
+  est: ['Estimate cost', '費用を見積もる'],
+  estTitle: ['run with --dry-run: shows the request size and estimated cost, no results', '--dry-run で実行し、リクエストサイズと概算費用を表示する（結果は出さない）'],
+  stop: ['Stop', '中止'], stopTitle: ["stop the search that is running (its process is killed)", '実行中の検索を中止する（プロセスを終了する）'],
+  opts: ['Options', 'オプション'],
+  rank: ['rank', 'ランク'], rankOff: ['off', 'オフ'], rankHint: ['off keeps file order', 'オフならファイル内の順序のまま'],
+  summarize: ['summarize', '要約'], summarizeHint: ['answers in a sentence or two after the search', '検索後に1〜2文で答える'],
+  summarizePrompt: ['summary instruction', '要約の指示'],
+  examples: ['examples', '例'],
+  command: ['Command', 'コマンド'],
+  cmdTitle: ["the command line for the fields and controls as they are now; pasted in a terminal it runs the same search. The API key is never in it", '今の欄と設定からのコマンドライン。端末に貼り付けると同じ検索が走る。API キーは含まれない'],
+  copy: ['Copy', 'コピー'], copyTitle: ['copy the command line to the clipboard', 'コマンドラインをクリップボードにコピーする'], copied: ['Copied', 'コピーしました'],
+  cmdDemoNote: [
+    'here it searches the bundled <code>examples/</code>; pasted elsewhere it reads stdin instead &mdash; add a file or -r DIR',
+    'ここでは同梱の <code>examples/</code> を検索するが、よそへ貼り付けると代わりに標準入力を読む &mdash; ファイルか -r DIR を加えること',
+  ],
+  details: ['Details', '詳細'], detailsTitle: ["the other options; a dot means one differs from its launch value", 'その他のオプション。点が付いているものは起動時の値と異なる'],
+  level: ['level', 'レベル'], levelHint: ['how strict a match must be (--level): loose takes more lines, strict fewer', '一致の厳しさ（--level）。loose は多く拾い、strict は少なく絞る'],
+  tHint: ['-t: a line matches when its probability is at least this (0 to 1)', '-t: 行の確率がこの値以上ならマッチ（0〜1）'],
+  THint: ['-T: a negated meaning holds when the probability is below this (0 to 1)', '-T: 否定した意味は確率がこの値未満のとき成立（0〜1）'],
+  cLabel: ['context lines (-C)', '前後の行数 (-C)'], cHint: ['-C: lines of context before and after each match', '-C: 各マッチの前後の行数'],
+  aHint: ['-A: lines of context after each match (trailing only)', '-A: 各マッチの後ろだけの行数'],
+  bHint: ['-B: lines of context before each match (leading only)', '-B: 各マッチの前だけの行数'],
+  autoscope: ['auto-scope', '自動スコープ'],
+  autoscopeHint: ["--auto-scope: narrow the files by what Jev says the meaning restricts to (a language, a kind of file); off is --no-auto-scope", '--auto-scope: 意味が絞り込む対象（言語やファイルの種類）を Jev に判定させてファイルを絞る。オフは --no-auto-scope'],
+  nLabel: ['-n line numbers', '-n 行番号'], nHint: ['-n: show line numbers', '-n: 行番号を表示する'],
+  pLabel: ['-p scores', '-p スコア'], pHint: ["-p: show the probability of each meaning on the matching lines", '-p: マッチした行に各意味の確率を表示する'],
+  dedup: ['dedup', '重複排除'],
+  dedupHint: ["--dedup: judge one line per template (lines that differ only in ids, numbers, dates) and reuse the answer; auto does it when it pays", '--dedup: id や数値、日付だけが違う行はテンプレートごとに1行だけ判定し、その答えを使い回す。auto は割に合うときだけ行う'],
+  unit: ['unit', '単位'],
+  unitHint: [
+    "--unit: what one question judges: a line, a sentence (found by Jev or by a rule), or a function (git grep -W's boundaries). A multi-step walk is by function regardless of this. zero (-z, same as --unit=zero) is refused here, like -z itself",
+    '--unit: 1つの質問が何を判定するか: 行、文（Jev またはルールで見つける）、または関数（git grep -W の範囲）。多段階の探索はこれによらず関数単位。zero（-z と同じ --unit=zero）は -z 自身と同様にここでは拒否される',
+  ],
+  oLabel: ['-o matching sentences only', '-o マッチした文のみ'], oHint: ['-o: with a sentence unit, print only the matching sentences, not the whole line', '-o: 文単位のとき、行全体ではなくマッチした文だけを表示する'],
+  jHint: ['-j: concurrent requests to the API', '-j: API への同時リクエスト数'],
+  maxcostHint: ['--max-cost: ask before sending when the estimated price is over this many USD', '--max-cost: 見積もり額がこの USD を超えるとき送信前に確認する'],
+  includeHint: ["--include: only file names matching these globs, space separated. Applies to -r and git sys1grep; it narrows the launch targets, never widens them", '--include: これらの glob（空白区切り）に一致するファイル名だけを対象にする。-r と git sys1grep に適用され、起動時の対象を狭めるだけで広げない'],
+  excludeHint: ["--exclude: not file names matching these globs, space separated. Applies to -r and git sys1grep", '--exclude: これらの glob（空白区切り）に一致するファイル名は対象から外す。-r と git sys1grep に適用される'],
+  changedHint: ['--changed-within: only files modified within 30m, 2h, 7d, 2w, or since a date. Applies to -r and git sys1grep', '--changed-within: 30m・2h・7d・2w以内、または指定日以降に更新されたファイルだけを対象にする。-r と git sys1grep に適用される'],
+  gLabel: ['-g git log', '-g git log'], gHint: ["-g: search git log's commits, one record each", '-g: git log のコミットを1件ずつ検索する'],
+  enterMeaning: ['Enter a meaning.', '意味を入力してください。'], enterEnd: ['Enter an end (--step-to).', '終了条件 (--step-to) を入力してください。'],
+  searching: ['searching...', '検索中...'], summarizing: ['summarizing...', '要約中...'], stopped: ['stopped', '中止しました'],
+  noMatches: ['no matches', '一致なし'],
+  searchAnyway: ['Search anyway', '検索を続ける'],
+  save: ['Save to ~/.config/sys1grep/settings.json', '~/.config/sys1grep/settings.json に保存'],
+  saved: ['saved; the next search uses it', '保存しました。次の検索から反映されます'],
+  notSaved: ['not saved: ', '保存できませんでした: '],
+  saidCmd: ['the command line wins over this', 'コマンドラインが優先される'],
+  saidSettings: ['in effect', '有効'], saidDotEnv: ['in effect: ~/.config/sys1grep/.env', '有効: ~/.config/sys1grep/.env'], saidDefault: ['not set: the default', '未設定（既定値）'],
+  saidEnvSuffix: [' in the environment wins over this', '（環境変数）が優先される'],
+  fieldModel: ['model', 'モデル'], fieldKey: ['key', 'キー'], fieldOpts: ['opts, one argument per line', 'opts（1行に1引数）'],
+  fieldSummarizer: ['summarizer', '要約ツール'], fieldSummarizerModel: ['summarizerModel', '要約のモデル'], fieldSummarizerKey: ['summarizerKey', '要約の API キー'],
+  fieldLang: ['language', '言語'], remove: ['remove', '削除'],
+  termStart: ['start', '開始'], termEnd: ['end', '終了'],
+  termE: ['-e meaning', '-e 意味'], termP: ['-P regex', '-P 正規表現'], termA: ['-a and', '-a かつ'], termV: ['-v and not', '-v かつ否定'], termQ: ['-Q question', '-Q 質問'],
+  tipQph: ['a question', '質問'], tipQhint: ['the lines that answer this question, not the lines asking it, e.g. why did it fail. A question is never a regex: use -P for /regex/', 'この質問に答えている行（質問している行ではない）、例: なぜ失敗したか。質問は正規表現にはならない: /regex/ には -P を使う'],
+  tipEph: ['a meaning', '意味'], tipEhint: ['lines that mean this, in any language; several -e are OR. e.g. an API key is read. Always a meaning: use -P for /regex/', 'どの言語でもこの意味を持つ行。複数の -e は OR。例: API キーを読んでいる。常に意味として扱う: /regex/ には -P を使う'],
+  tipPhint: ['a regex term, matched locally, no request; several -P are OR, like -e. e.g. /catch/', 'ローカルで判定する正規表現（リクエストなし）。複数の -P は -e と同様 OR。例: /catch/'],
+  tipAph: ['and this meaning', 'かつこの意味'], tipAhint: ['AND onto the term before it: both must hold on the line', '直前の条件に AND で付く: 行は両方を満たす必要がある'],
+  tipVph: ['and not this meaning', 'かつこの意味ではない'], tipVhint: ['AND NOT onto the term before it: this must not hold (as the first field, a bare negation)', '直前の条件に AND NOT で付く: これが成り立ってはいけない（先頭の欄では単なる否定）'],
+  fakeJev: ["FAKE Jev: searches go to tests/fake-jev.mjs. Its probabilities are dummies, not real answers.", '偽の Jev: 検索は tests/fake-jev.mjs へ行く。確率はダミーで本物の答えではない'],
+  demoBody: [
+    "<strong>Demo.</strong> sys1grep runs here in your browser, on the bundled <code>examples/</code>. Jev's answers come from a recording made for the example buttons: a meaning you type yourself is answered only if it happens to be in it, while a regex (<code>-P</code>, and multi-step between regexes) always runs. On your own files: <code>npx @uehaj/sys1grep --serve</code>",
+    '<strong>デモ。</strong> ここでは sys1grep がブラウザの中で、同梱の <code>examples/</code> に対して動く。Jev の答えは例ボタン用の録音から来る: 自分で打った意味はたまたま録音にあるときだけ答えが返り、正規表現（<code>-P</code>、正規表現どうしの多段階も）は常に実行される。自分のファイルで試すには: <code>npx @uehaj/sys1grep --serve</code>',
+  ],
+  demoMissing: ['The recording is not published yet, so this demo runs no search for now.', '録音がまだ公開されていないため、このデモは今のところ検索を実行しません。'],
+};
+const t = (lang, key) => STRINGS[key]?.[lang === 'ja' ? 1 : 0] ?? STRINGS[key]?.[0] ?? key;
 
 // p: the page's values (x: the fields, then one value per control and summarize / summarize-prompt); init: the launch's.
 export const toArgv = (p, init) => {
@@ -342,17 +447,18 @@ export function serve(argv) {
   const bad = tokens.find(k => k.kind === 'option' && REFUSED_LAUNCH.has(k.name) && !k.rawName.startsWith('--no-'));
   if (bad) throw new Error(`--serve: ${launch[bad.index].split('=')[0]} is not for --serve (the page sets the meaning and shows the results as html)`);
   if (unitAt(launch) === 'zero') throw new Error("--serve: --unit=zero is not for --serve (it is -z's output shape, already refused there)");
+  if (langAt(launch) !== undefined && !['en', 'ja'].includes(langAt(launch))) throw new Error(`--serve: --lang=${langAt(launch)} is not en or ja`);
   const init = { ...initOf(launch), 'summarize-prompt': prompt ?? '' };
   const secret = key === undefined ? [] : [`--sys1-api-key=${key}`];
-  const cli = { url: lift(launch, 'sys1-url')[1], model: lift(launch, 'sys1-model')[1], key };
+  const cli = { url: lift(launch, 'sys1-url')[1], model: lift(launch, 'sys1-model')[1], key, lang: langAt(launch) };
   const token = randomBytes(16).toString('hex');
   const script = process.argv[1];
   // #222/#237: whether -r / -g / git sys1grep are in effect, asked of sys1grep itself (SYS1GREP_PROBE) so SYS1GREP_OPTS,
   // settings.json opts and a later --no-r all count, as a real search would resolve them, not just this launch's own
   // argv. Used both to refuse a bare directory target without -r (below) and to decide the demo corpus (targetsOf).
   const probe = (() => {
-    const { stdout } = spawnSync(process.execPath, [script, ...launch], { input: '', encoding: 'utf8', timeout: 10_000, env: { ...process.env, SYS1GREP_PROBE: 'recursive' } });
-    try { return JSON.parse(stdout); } catch { return null; }
+    const { stdout, stderr } = spawnSync(process.execPath, [script, ...launch], { input: '', encoding: 'utf8', timeout: 10_000, env: { ...process.env, SYS1GREP_PROBE: 'recursive' } });
+    try { return JSON.parse(stdout); } catch { if (/is not en or ja/.test(stderr ?? '')) throw new Error(stderr.split('\n')[0].replace(/^sys1grep: /, '')); return null; } // SYS1GREP_LANG / settings lang=fr: refuse at launch, not on every search
   })();
   // The page says so when searches go to the fake Jev (tests/fake-jev.mjs): a GET to it answers its own counters,
   // which no real endpoint does. Only a loopback URL is asked, so a remote Jev never gets a request from this, and a
@@ -365,11 +471,16 @@ export function serve(argv) {
       return ['count', 'asked', 'qmax'].every(k => k in j);
     } catch { return false; }
   };
-  const probeUrl = () => new Promise(resolve => {
+  // reprobe(): the same probe as above, rerun after a settings save (the url, and now the lang default, may have
+  // changed); fake and lang below both lazily follow it.
+  const reprobe = () => new Promise(resolve => {
     execFile(process.execPath, [script, ...launch], { timeout: 10_000, env: { ...process.env, SYS1GREP_PROBE: 'recursive' } },
-      (e, out) => { try { resolve(JSON.parse(out).url); } catch { resolve(null); } }).stdin.end();
+      (e, out) => { try { resolve(JSON.parse(out)); } catch { resolve(null); } }).stdin.end();
   });
   let fake = fakeAt(probe?.url);
+  // #270: the page's default language, from the launch, environment or settings.json (never this process' locale);
+  // null when none of them set one, so the page falls back to the browser's own navigator.language.
+  let pageLang = probe?.lang ?? null;
   const targets = targetsOf(launch, after, probe);
   // #222: a folder searched without -r fails every search ("Is a directory (use -r)"), so refuse it before listening.
   const dir = targets.list.find(t => statSync(t, { throwIfNoEntry: false })?.isDirectory());
@@ -398,6 +509,7 @@ export function serve(argv) {
     return answerOf(p, kind, init, await run(searchArgs(p, kind, init, tpl), signal, '', searchEnv, step ? init.g : p.g ?? init.g));
   };
 
+  const via = process.env.PORTLESS_URL ? new URL(process.env.PORTLESS_URL) : null;
   const server = createServer(async (req, res) => {
     const host = req.headers.host;
     const send = (code, type, body) => {
@@ -408,14 +520,16 @@ export function serve(argv) {
     // ERR_INVALID_URL): answered before any check below, not left to crash the process (an uncaughtException, #166).
     let url;
     try { url = new URL(req.url, 'http://x'); } catch { return send(400, 'text/plain', 'bad request'); }
-    // a page on another site (or a rebound name) must not be able to start a search
-    if (host !== `127.0.0.1:${server.address().port}` && host !== `localhost:${server.address().port}`) return send(403, 'text/plain', 'forbidden');
+    // a page on another site (or a rebound name) must not be able to start a search; behind portless (npm run
+    // serve:portless) the Host is the name it gave, PORTLESS_URL's
+    if (host !== `127.0.0.1:${server.address().port}` && host !== `localhost:${server.address().port}` && host !== via?.host) return send(403, 'text/plain', 'forbidden');
+    const origin = host === via?.host ? via.origin : `http://${host}`;
     // Every route, the page itself included, needs this launch's token: in the query (?k=, what the startup line and
     // any browser open carry) or in a header (what the page's own fetch() calls send instead). Without it this
     // server answers nothing, not even the page, so another local account or process cannot read the page (and the
     // token it carries, and anything a search of these targets would show) merely by knowing the port.
     if (url.searchParams.get('k') !== token && req.headers['x-sys1grep-token'] !== token) return send(404, 'text/plain', 'not found');
-    if (url.pathname === '/') return send(200, 'text/html', page({ init, launch, after, token, targets, suggest: suggestOf(suggested), fake: await fake }));
+    if (url.pathname === '/') return send(200, 'text/html', page({ init, launch, after, token, targets, suggest: suggestOf(suggested), fake: await fake, lang: pageLang, by: settingsView(cli, launch).by }));
     // The settings panel. It changes a file, so beyond the token above: for a write, POST with a JSON body and this
     // request's own Host as Origin (a page on another site cannot forge that, and GET never sends Origin at all, so
     // only POST is checked). A key goes in, never out.
@@ -423,14 +537,16 @@ export function serve(argv) {
       const answer = (code, x) => send(code, 'application/json', JSON.stringify(x));
       try {
         if (req.method === 'POST') {
-          if (req.headers.origin !== `http://${host}`) return send(403, 'text/plain', 'forbidden');
+          if (req.headers.origin !== origin) return send(403, 'text/plain', 'forbidden');
           if (!/^application\/json(;|$)/.test(req.headers['content-type'] ?? '')) return send(415, 'text/plain', 'JSON only');
           let patch;
           try { patch = JSON.parse(await body(req)); } catch { return req.tooLarge ? answer(413, { error: 'too large: settings are at most 64 KB' }) : answer(400, { error: 'not valid JSON' }); }
           try { saveSettings(patch); } catch (e) { return answer(400, { error: e.message }); }
-          fake = probeUrl().then(fakeAt);
+          const rp = reprobe();
+          fake = rp.then(j => fakeAt(j?.url));
+          pageLang = (await rp)?.lang ?? null;
         } else if (req.method !== 'GET') return send(405, 'text/plain', 'GET or POST');
-        return answer(200, { ...settingsView(cli), fake: await fake });
+        return answer(200, { ...settingsView(cli, launch), fake: await fake, pageLang });
       } catch (e) { return answer(500, { error: `~/.config/sys1grep/settings.json: ${e.message}` }); }
     }
     // #227: summarize the results the page shows, as they are: the page posts their text and only the summarize step
@@ -439,7 +555,7 @@ export function serve(argv) {
     if (url.pathname === '/summarize') {
       const answer = (code, x) => send(code, 'application/json', JSON.stringify(x));
       if (req.method !== 'POST') return send(405, 'text/plain', 'POST');
-      if (req.headers.origin !== `http://${host}` || ['cross-site', 'same-site'].includes(req.headers['sec-fetch-site'])) return send(403, 'text/plain', 'forbidden');
+      if (req.headers.origin !== origin || ['cross-site', 'same-site'].includes(req.headers['sec-fetch-site'])) return send(403, 'text/plain', 'forbidden');
       if (!/^text\/plain(;|$)/.test(req.headers['content-type'] ?? '')) return send(415, 'text/plain', 'text only');
       const p = fromQuery(url.searchParams, init);
       if (!p || p.x.some(f => f[0] === 'S')) return send(400, 'text/plain', 'bad value');
@@ -461,7 +577,7 @@ export function serve(argv) {
   });
   server.on('error', e => { console.error(`sys1grep: --serve: ${e.message}`); process.exit(2); });
   server.listen(Number(port) || 0, '127.0.0.1', () => {
-    console.log(`http://127.0.0.1:${server.address().port}/?k=${token}`);
+    console.log(`${via?.origin ?? `http://127.0.0.1:${server.address().port}`}/?k=${token}`);
   });
 }
 
@@ -475,15 +591,20 @@ const targetList = ({ list, cwd, none }, g) => `<div id="targets" title="${esc(`
   : codes(list.slice(0, SHOWN)) + (list.length > SHOWN ? `<li><details class="more"><summary>+${list.length - SHOWN} more</summary><ul class="targets">${codes(list.slice(SHOWN))}</ul></details></li>` : '')}</ul>`
   + `<p class="note" id="tg-git"${g ? '' : ' hidden'}>git log's commits (-g)</p></div>`;
 // a labelled control with its "?" hint (the same markup as rank's): the label, then the icon and its tooltip
-const hg = (name, label, text) => `<div class="withhint hintgroup" id="hg-${name}">${label.replace(/<(select|input)/, `<$1 aria-describedby="hint-${name}"`)}<span class="hintctl"><button type="button" class="qbtn" id="q-${name}" aria-expanded="false" aria-controls="hint-${name}" aria-label="more about ${label.replace(/<select.*?<\/select>/, '').replace(/<[^>]+>/g, '').trim()}">?</button><small class="hint" id="hint-${name}" role="tooltip">${text}</small></span></div>`;
+// "more about X": the "?" button's accessible name, built from the label's own (already translated) text, so a
+// translated label never needs a second, hand-kept key just for its hint button (client script has the same function).
+const moreAbout = (lang, label) => (lang === 'ja' ? `${label}について` : `more about ${label}`);
+const hg = (lang, name, label, hintKey) => `<div class="withhint hintgroup" id="hg-${name}">${label.replace(/<(select|input)/, `<$1 aria-describedby="hint-${name}"`)}<span class="hintctl"><button type="button" class="qbtn" id="q-${name}" aria-expanded="false" aria-controls="hint-${name}" aria-label="${esc(moreAbout(lang, label.replace(/<select.*?<\/select>/, '').replace(/<[^>]+>/g, '').trim()))}">?</button><small class="hint" id="hint-${name}" role="tooltip" data-i18n="${hintKey}">${t(lang, hintKey)}</small></span></div>`;
 // The browser demo (#200, scripts/demo-build.mjs): this page with sys1grep itself running in the visitor's browser, on the
 // bundled examples/ (-r examples, as the copied command says), Jev's answers read from a recording (--cache=only) and
 // no settings. recorded: whether the build found the recording (cache.json); without it the page runs no search.
 export const DEMO_LAUNCH = ['-r', 'examples'];
-const demoNote = ({ recorded }) => `<div id="demo-note" role="note" data-recorded="${recorded ? 1 : 0}"><p><strong>Demo.</strong> sys1grep runs here in your browser, on the bundled <code>examples/</code>. Jev's answers come from a recording made for the example buttons: a meaning you type yourself is answered only if it happens to be in it, while a regex (<code>-P</code>, and multi-step between regexes) always runs. On your own files: <code>npx @uehaj/sys1grep --serve</code></p>${recorded ? '' : '<p id="demo-missing">The recording is not published yet, so this demo runs no search for now.</p>'}</div>`;
-export const demoPage = ({ recorded }) => page({ init: initOf(DEMO_LAUNCH), launch: DEMO_LAUNCH, after: [], token: '', targets: { list: ['examples'], cwd: 'the demo folder, in this browser' }, suggest: [], fake: false, demo: { recorded } });
-const page = ({ init, launch, after, token, targets, suggest, fake, demo }) => `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+const demoNote = ({ recorded }, lang) => `<div id="demo-note" role="note" data-recorded="${recorded ? 1 : 0}"><p data-i18n-html="demoBody">${t(lang, 'demoBody')}</p>${recorded ? '' : `<p id="demo-missing" data-i18n="demoMissing">${esc(t(lang, 'demoMissing'))}</p>`}</div>`;
+export const demoPage = ({ recorded }) => page({ init: initOf(DEMO_LAUNCH), launch: DEMO_LAUNCH, after: [], token: '', targets: { list: ['examples'], cwd: 'the demo folder, in this browser' }, suggest: [], fake: false, lang: null, demo: { recorded } });
+const page = ({ init, launch, after, token, targets, suggest, fake, lang, demo, by = '' }) => {
+  const L = lang ?? 'en', tr = k => esc(t(L, k)), trh = (name, label, hintKey) => hg(L, name, label, hintKey);
+  return `<!doctype html>
+<html lang="${L}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">${demo ? '<meta name="robots" content="noindex"><link rel="icon" href="data:,">' : ''}<title>sys1grep${demo ? ' demo' : ''}</title>
 <style>
 :root { --page: #f0f6ff; --bg: #fff; --fg: #102447; --muted: #5a6e8c; --rule: #e4edf8; --border: #7589ab; --accent: #075cf5; --accent-ink: #fff; --link: #0754d4; --input-bg: #f5f9ff; --pill-bg: #eaf3ff; --pill-fg: #0754d4; --code: #03162e; --code-fg: #dbe7ff; --band: linear-gradient(130deg, #03152e 5%, #083475 65%, #0751bc); --go: linear-gradient(130deg, #1a66e0, #0047cc); --cmd-bg: linear-gradient(115deg, #071c3d, #103c7a); --warn-bg: #fff4d6; --warn-fg: #6b4400; --warn-border: #d99a00; --shadow: 0 8px 28px rgba(24,62,116,.07); }
@@ -497,21 +618,22 @@ body { margin: 0; background: var(--page); color: var(--fg); font: 14px/1.5 aria
 .title .accent { color: var(--accent); }
 .gear { margin-left: auto; border: none; background: none; color: var(--muted); padding: 6px; border-radius: 8px; display: inline-flex; flex: none; }
 .gear:hover, .gear:focus-visible { background: var(--input-bg); color: var(--fg); }
-.row { display: flex; gap: 8px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
-.row input[type=text] { flex: 1; min-width: 100px; padding: 10px 16px; font-size: 15px; border: 1px solid var(--border); border-radius: 14px; background: var(--input-bg); color: var(--fg); }
+.row { display: flex; gap: 6px; align-items: center; margin: 4px 0; flex-wrap: wrap; }
+.row input[type=text] { flex: 1; min-width: 100px; padding: 6px 12px; font-size: 15px; border: 1px solid var(--border); border-radius: 10px; background: var(--input-bg); color: var(--fg); }
 select, button, input { font: inherit; color: var(--fg); }
 button, select { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 6px 12px; cursor: pointer; }
 #go { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; font-size: 16px; padding: 10px 32px; border-radius: 12px; }
 [hidden] { display: none !important; }
 #fake-jev { margin: 0 0 10px; padding: 8px 12px; background: var(--warn-bg); color: var(--warn-fg); border: 1px solid var(--warn-border); border-radius: 10px; font-weight: 700; }
 #est, #stop, #copy, #save { background: var(--input-bg); }
-fieldset.group { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px 12px; margin: 10px 0; min-width: 0; }
-.group legend.glabel { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 6px; padding: 0 4px; }
-.sec { margin: 0; padding: 12px 0; } .sec + .sec { border-top: 1px solid var(--rule); }
-.sech { font-size: 13px; font-weight: 700; margin: 0 0 6px; }
-.exlang { display: inline-flex; gap: 2px; margin-left: 6px; vertical-align: middle; }
-#ex .exlang button { background: none; color: var(--muted); border: 1px solid var(--border); border-radius: 8px; padding: 0 8px; font-size: 12px; }
-#ex .exlang button[aria-pressed=true] { background: var(--input-bg); color: var(--fg); font-weight: 700; }
+fieldset.group { border: 1px solid var(--border); border-radius: 10px; padding: 2px 10px 8px; margin: 4px 0; min-width: 0; }
+.group legend.glabel { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0; padding: 0 4px; }
+.sec { margin: 0; padding: 6px 0; } .sec + .sec { border-top: 1px solid var(--rule); }
+.sech { font-size: 13px; font-weight: 700; margin: 0 0 2px; }
+.langsw { display: inline-flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; margin-left: 8px; }
+.langsw button { border: 0; border-radius: 0; background: none; color: var(--muted); padding: 2px 10px; font-size: 12px; }
+.langsw button[aria-pressed=true] { background: var(--input-bg); color: var(--fg); font-weight: 700; }
+.langsw button:focus-visible { outline: 2px solid var(--fg); outline-offset: -3px; }
 .targets { list-style: none; margin: 0; padding: 0; } #tg-git { margin: 0; }
 details.more { margin: 0; background: none; } details.more > summary { padding: 0; color: var(--muted); }
 main:has(#left:empty):not(.two) { display: none; } .targets code { font: 13px/1.6 ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }
@@ -543,97 +665,106 @@ summary.dot::after { content: " \\25CF"; color: var(--link); }
 .grid .withhint { align-items: flex-start; } .grid .withhint > label { flex: 1; min-width: 0; }
 .grid label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); } .grid label.chk { flex-direction: row; align-items: center; gap: 6px; }
 .grid input:not([type=checkbox]), .grid select, .grid textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); width: 100%; font: inherit; }
-main { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin: 12px 0 4px; display: grid; gap: 16px; grid-template-columns: 1fr; } main.two { grid-template-columns: 3fr 2fr; }
+main { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 4px 12px; margin: 12px 0 4px; display: grid; gap: 12px; grid-template-columns: 1fr; } main.two { grid-template-columns: 3fr 2fr; }
+/* while a search runs (busy()): the page veiled, a ring in the middle of the screen. Both fade in after 250ms, so a search
+   answered at once (the demo's recording answers in under 100ms) never flashes them; the buttons and aria-busy change at once.
+   Nothing blocks the pointer: Stop stays clickable and the next search can be typed meanwhile */
+main.busy::before, main.busy::after { content: ""; position: fixed; inset: 0; z-index: 5; pointer-events: none; animation: fade .15s .25s both; }
+main.busy::before { background: var(--page); opacity: .6; }
+main.busy::after { margin: auto; width: 52px; height: 52px; border-radius: 50%; background: var(--bg); box-shadow: var(--shadow); border: 5px solid var(--border); border-top-color: var(--accent); animation: fade .15s .25s both, spin .8s linear infinite; }
+#stop:enabled { position: relative; z-index: 6; } /* above the veil: the one live control while a search runs */
+@keyframes fade { from { opacity: 0; } } @keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { main.busy::after { animation-duration: .15s, 3s; } }
 @media (max-width: 880px) { main.two { grid-template-columns: 1fr; } }
 iframe { width: 100%; border: 0; min-height: 80px; } pre.out { white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.5 ui-monospace, Menlo, monospace; }
 .c32 { color: #188038; } .c35 { color: #a142f4; } .c36 { color: #0c7a88; } .c31 { color: #d93025; } .c33 { color: #b06000; } .c01_31 { color: #d93025; font-weight: 700; } .c01_33 { color: #b06000; font-weight: 700; background: #fff3b055; }\n@media (prefers-color-scheme: dark) { .c32 { color: #81c995; } .c35 { color: #d7aefb; } .c36 { color: #78d9ec; } .c31, .c01_31 { color: #f28b82; } .c33, .c01_33 { color: #fdd663; } .err { color: #f28b82; } }\nbutton:disabled { opacity: .45; cursor: default; } #ex button { border-radius: 999px; background: var(--pill-bg); color: var(--pill-fg); border: none; } #ex .label, #ex .grp { flex-basis: 100%; font-weight: 700; color: var(--muted); margin-top: 4px; }
 #right { border-left: 1px solid var(--rule); padding-left: 16px; }
-body { background: var(--band) top / 100% 132px no-repeat, var(--page); }
+body { background: var(--band) top / 100% 64px no-repeat, var(--page); }
 .card { background: none; box-shadow: none; border-radius: 0; padding: 0 0 24px; margin: 0 auto; width: min(1160px, calc(100% - 32px)); }
-.title { height: 132px; margin: 0; color: #fff; gap: 16px; }
-.title .icon { width: 56px; height: 56px; border-radius: 14px; background: linear-gradient(140deg, #328bff, #0050df); box-shadow: 0 4px 22px rgba(0,114,255,.31); }
-.title .icon svg { width: 30px; height: 30px; }
-.title h1 { font-size: 34px; letter-spacing: -1px; } .title .accent { color: #6aa8ff; }
-.gear { color: #d5e5ff; border: 1px solid #7f9fca; padding: 8px; } .gear:hover, .gear:focus-visible { background: rgba(255,255,255,.12); color: #fff; }
-#fake-jev { margin: 16px 0 0; }
-#demo-note { margin: 16px 0 0; padding: 10px 14px; background: var(--bg); border: 1px solid var(--accent); border-left-width: 6px; border-radius: 10px; } #demo-note p { margin: 0; } #demo-note p + p { margin-top: 4px; } #demo-note code { font: 13px ui-monospace, Menlo, monospace; } #demo-missing { font-weight: 700; color: var(--warn-fg); }
-.kcard { background: var(--bg); border: 1px solid var(--rule); border-radius: 18px; padding: 20px 24px; box-shadow: var(--shadow); margin-top: 20px; }
-.search-layout { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 24px; }
-.actions { border-left: 1px solid var(--rule); padding-left: 22px; display: flex; flex-direction: column; justify-content: center; gap: 12px; }
-#go { width: 100%; min-height: 56px; border: 0; border-radius: 12px; background: var(--go); color: #fff; font-size: 18px; font-weight: 700; box-shadow: 0 7px 16px rgba(20,105,250,.15); }
-.actions .row { margin: 0; flex-wrap: nowrap; } .actions .row > button { flex: 1; padding: 10px 6px; }
-.columns { display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 20px; align-items: start; }
-.columns .kcard { padding: 20px; }
-#ex { gap: 9px; margin: 0; } #ex button { padding: 8px 14px; } #ex .exlang button { padding: 4px 14px; }
-#ex .label { display: flex; align-items: center; justify-content: space-between; font-size: 18px; color: var(--fg); margin: 0 0 4px; }
-#ex .grp { border-top: 1px solid var(--rule); padding-top: 12px; margin-top: 8px; color: var(--fg); }
-.exlang { border: 1px solid var(--border); border-radius: 9px; overflow: hidden; gap: 0; }
-#ex .exlang button { border: 0; border-radius: 0; background: var(--bg); } #ex .exlang button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); } #ex .exlang button:focus-visible { outline: 2px solid var(--fg); outline-offset: -3px; }
-#sec-opts .sech { font-size: 18px; }
-.command { background: var(--cmd-bg); color: #fff; border-radius: 16px; padding: 14px 20px; margin-top: 20px; }
-.command .sech { color: #fff; } .command #cmd { background: #03162e; color: #dbe7ff; border: 1px solid #7799ca; }
+.title { height: 64px; margin: 0; color: #fff; gap: 10px; }
+.title .icon { width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(140deg, #328bff, #0050df); box-shadow: 0 4px 22px rgba(0,114,255,.31); }
+.title .icon svg { width: 20px; height: 20px; }
+.title h1 { font-size: 24px; letter-spacing: -.5px; } .title .accent { color: #6aa8ff; }
+.gear { color: #d5e5ff; border: 1px solid #7f9fca; padding: 5px; } .gear:hover, .gear:focus-visible { background: rgba(255,255,255,.12); color: #fff; }
+#fake-jev { margin: 12px 0 0; }
+#demo-note { margin: 12px 0 0; padding: 10px 14px; background: var(--bg); border: 1px solid var(--accent); border-left-width: 6px; border-radius: 10px; } #demo-note p { margin: 0; } #demo-note p + p { margin-top: 4px; } #demo-note code { font: 13px ui-monospace, Menlo, monospace; } #demo-missing { font-weight: 700; color: var(--warn-fg); }
+.kcard { background: var(--bg); border: 1px solid var(--rule); border-radius: 12px; padding: 12px 16px; box-shadow: var(--shadow); margin-top: 12px; }
+.search-layout { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 16px; }
+.actions { border-left: 1px solid var(--rule); padding-left: 16px; display: flex; flex-direction: column; justify-content: center; gap: 8px; }
+#go { width: 100%; min-height: 40px; border: 0; border-radius: 10px; background: var(--go); color: #fff; font-size: 16px; font-weight: 700; box-shadow: 0 7px 16px rgba(20,105,250,.15); }
+.actions .row { margin: 0; flex-wrap: nowrap; } .actions .row > button { flex: 1; padding: 6px; white-space: nowrap; }
+.columns { margin-top: 12px; } .columns .kcard { padding: 12px 16px; margin-top: 0; }
+#ex { gap: 6px; margin: 0; } #ex button { padding: 3px 10px; }
+#ex .label { font-size: 15px; color: var(--fg); margin: 0; }
+#ex .grp { border-top: 1px solid var(--rule); padding-top: 6px; margin-top: 2px; color: var(--fg); }
+.title .langsw { border-color: #7f9fca; }
+.title .langsw button { color: #d5e5ff; }
+.title .langsw button[aria-pressed=true] { background: rgba(255,255,255,.18); color: #fff; }
+.title .langsw button:focus-visible { outline-color: #fff; }
+#sec-opts { border-top: 1px solid var(--rule); padding-top: 8px; } #sec-opts .sech { font-size: 15px; } #sec-opts .row { flex-wrap: wrap; }
+.command { background: var(--cmd-bg); color: #fff; border-radius: 12px; padding: 10px 16px; margin-top: 12px; }
+.command .sech { color: #fff; } .command #cmd { background: #03162e; color: #dbe7ff; border: 1px solid #7799ca; } #cmd-demo-note { flex-basis: 100%; } /* its own line under the box, never squeezing #cmd */
 .command #copy { background: transparent; color: #fff; border-color: #7f9fca; } .command .note, .command .note code { color: #c9dbf7; }
-#d { margin-top: 20px; } main { margin-top: 20px; border-color: var(--rule); border-radius: 18px; box-shadow: var(--shadow); }
-@media (max-width: 850px) { .search-layout, .columns { grid-template-columns: 1fr; } .actions { border-left: 0; border-top: 1px solid var(--rule); padding: 16px 0 0; } #go { min-height: 48px; } }
-@media (max-width: 520px) { .title h1 { font-size: 26px; } .title .icon { width: 44px; height: 44px; } .kcard { padding: 16px; } }
+#d { margin-top: 12px; } main { margin-top: 12px; border-color: var(--rule); border-radius: 12px; box-shadow: var(--shadow); }
+@media (max-width: 850px) { .search-layout { grid-template-columns: 1fr; } .actions { border-left: 0; border-top: 1px solid var(--rule); padding: 10px 0 0; } }
+@media (max-width: 520px) { .title h1 { font-size: 20px; } .title .icon { width: 32px; height: 32px; } .kcard { padding: 10px 12px; } }
 </style></head><body>
 <div class="card" id="card">
-<div class="title" id="title"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#fff" stroke-width="2.2"/><line x1="15.3" y1="15.3" x2="20.5" y2="20.5" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg></span><h1>sys<span class="accent">1grep</span></h1><button type="button" class="gear" id="gear" title="Settings" aria-label="Settings"${demo ? ' hidden' : ''}><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
-<p id="fake-jev" role="note"${fake ? '' : ' hidden'}>FAKE Jev: searches go to tests/fake-jev.mjs. Its probabilities are dummies, not real answers.</p>${demo ? demoNote(demo) : ''}
+<div class="title" id="title"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#fff" stroke-width="2.2"/><line x1="15.3" y1="15.3" x2="20.5" y2="20.5" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg></span><h1>sys<span class="accent">1grep</span></h1><span class="langsw" role="group" aria-label="page language"><button type="button" id="lang-en" lang="en" aria-pressed="${L === 'en' ? 'true' : 'false'}">EN</button><button type="button" id="lang-ja" lang="ja" aria-pressed="${L === 'ja' ? 'true' : 'false'}">日本語</button></span><button type="button" class="gear" id="gear" title="${tr('settings')}" aria-label="${tr('settings')}" data-i18n-title="settings" data-i18n-aria-label="settings"${demo ? ' hidden' : ''}><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
+<p id="fake-jev" role="note" data-i18n="fakeJev"${fake ? '' : ' hidden'}>${tr('fakeJev')}</p>${demo ? demoNote(demo, L) : ''}
 <form id="f" autocomplete="off" onsubmit="return false">
 <div class="kcard search-layout" id="search"><div class="fields">
-<section class="sec" id="sec-target" aria-labelledby="h-target"><h2 class="sech" id="h-target" title="ターゲット / 検索対象: what every search reads, set when --serve starts; the page cannot change it">Target</h2>
+<section class="sec" id="sec-target" aria-labelledby="h-target"><h2 class="sech" id="h-target" title="${tr('targetHint')}" data-i18n="target" data-i18n-title="targetHint">${tr('target')}</h2>
 ${targetList(targets, init.g)}</section>
-<section class="sec" id="sec-cond" aria-labelledby="h-cond"><h2 class="sech" id="h-cond" title="検索条件">Search conditions</h2>
-<fieldset class="group" id="startgrp"><legend class="glabel" title="what to search for; with multi-step on, the start of the walk">start</legend><div id="fields"></div><button type="button" id="add" title="add a start" aria-label="add a start">+ start</button></fieldset>
-<div class="row"><div class="withhint hintgroup" id="hg-step"><label><input type="checkbox" id="step" aria-describedby="hint-step"> multi-step</label><span class="hintctl"><button type="button" class="qbtn" id="q-step" aria-expanded="false" aria-controls="hint-step" aria-label="more about multi-step">?</button><small class="hint" id="hint-step" role="tooltip">Finds the start functions, then walks calls from them to the functions that match the end.
-A call is found by name: \`name(\` in a function's body (comments and strings left out) links to every function called \`name\`. Same-named functions all link; calls not written as \`name(\` (a function passed as a value, a call through a variable) are missed.
-Default: from a function to the functions it calls. reverse (--step-reverse-to): to the functions that call it.
---hops limits how many calls away an end may be. For exact relations, start --serve with --edges=FILE.</small></span></div></div>
-<fieldset class="group" id="steps" hidden><legend class="glabel">end (--step-to)</legend><div id="ends"></div><button type="button" id="addend" title="add an end" aria-label="add an end">+ end</button>
-<div class="row edges hintgroup" id="hg-edges"><span class="note">edges</span><span class="hintctl"><button type="button" class="qbtn" id="q-edges" aria-expanded="false" aria-controls="hint-edges" aria-label="more about edges">?</button><small class="hint" id="hint-edges" role="tooltip">--hops limits how many hops away an end may be; reverse (--step-reverse-to) searches backwards along the graph</small></span><label title="how many hops the end may be from the start, e.g. 1..2">--hops <input type="text" name="hops" size="6" aria-describedby="hint-edges"></label><label><input type="checkbox" name="reverse" aria-describedby="hint-edges"> reverse</label></div></fieldset>
+<section class="sec" id="sec-cond" aria-labelledby="h-cond"><h2 class="sech" id="h-cond" data-i18n="cond">${tr('cond')}</h2>
+<fieldset class="group" id="startgrp"><legend class="glabel" title="${tr('startLegendHint')}" data-i18n="startLegend" data-i18n-title="startLegendHint">${tr('startLegend')}</legend><div id="fields"></div><button type="button" id="add" title="${tr('addStartTitle')}" aria-label="${tr('addStartTitle')}" data-i18n="addStart" data-i18n-title="addStartTitle" data-i18n-aria-label="addStartTitle">${tr('addStart')}</button></fieldset>
+<div class="row"><div class="withhint hintgroup" id="hg-step"><label><input type="checkbox" id="step" aria-describedby="hint-step"> <span data-i18n="multiStep">${tr('multiStep')}</span></label><span class="hintctl"><button type="button" class="qbtn" id="q-step" aria-expanded="false" aria-controls="hint-step" aria-label="${esc(moreAbout(L, t(L, 'multiStep')))}">?</button><small class="hint" id="hint-step" role="tooltip" data-i18n="multiStepHint">${tr('multiStepHint')}</small></span></div></div>
+<fieldset class="group" id="steps" hidden><legend class="glabel" data-i18n="endLegend">${tr('endLegend')}</legend><div id="ends"></div><button type="button" id="addend" title="${tr('addEndTitle')}" aria-label="${tr('addEndTitle')}" data-i18n="addEnd" data-i18n-title="addEndTitle" data-i18n-aria-label="addEndTitle">${tr('addEnd')}</button>
+<div class="row edges hintgroup" id="hg-edges"><span class="note" data-i18n="edgesLabel">${tr('edgesLabel')}</span><span class="hintctl"><button type="button" class="qbtn" id="q-edges" aria-expanded="false" aria-controls="hint-edges" aria-label="${esc(moreAbout(L, t(L, 'edgesLabel')))}">?</button><small class="hint" id="hint-edges" role="tooltip" data-i18n="edgesHint">${tr('edgesHint')}</small></span><label title="${tr('hopsTitle')}" data-i18n-title="hopsTitle">--hops <input type="text" name="hops" size="6" aria-describedby="hint-edges"></label><label><input type="checkbox" name="reverse" aria-describedby="hint-edges"> <span data-i18n="reverseLabel">${tr('reverseLabel')}</span></label></div></fieldset>
 </section></div>
-<div class="actions" id="actions"><button type="submit" id="go">Search</button><div class="row"><button type="button" id="est" title="run with --dry-run: shows the request size and estimated cost, no results">Estimate cost</button><button type="button" id="stop" title="stop the search that is running (its process is killed)" disabled>Stop</button></div></div>
+<div class="actions" id="actions"><button type="submit" id="go" data-i18n="go">${tr('go')}</button><div class="row"><button type="button" id="est" title="${tr('estTitle')}" data-i18n="est" data-i18n-title="estTitle">${tr('est')}</button><button type="button" id="stop" title="${tr('stopTitle')}" data-i18n="stop" data-i18n-title="stopTitle" disabled>${tr('stop')}</button></div>
+<section class="sec" id="sec-opts" aria-labelledby="h-opts"><h2 class="sech" id="h-opts" data-i18n="opts">${tr('opts')}</h2>
+<div class="row">
+<div class="withhint hintgroup" id="hg-rank"><label><span data-i18n="rank">${tr('rank')}</span> <select name="rank" aria-describedby="hint-rank"><option value="" data-i18n="rankOff">${tr('rankOff')}</option><option value="jev">jev</option><option value="match">match</option></select></label><span class="hintctl"><button type="button" class="qbtn" id="q-rank" aria-expanded="false" aria-controls="hint-rank" aria-label="${esc(moreAbout(L, t(L, 'rank')))}">?</button><small class="hint" id="hint-rank" role="tooltip" data-i18n="rankHint">${tr('rankHint')}</small></span></div>
+<div class="withhint hintgroup" id="hg-summarize"><label><input type="checkbox" name="summarize" aria-describedby="hint-summarize"> <span data-i18n="summarize">${tr('summarize')}</span></label><span class="hintctl"><button type="button" class="qbtn" id="q-summarize" aria-expanded="false" aria-controls="hint-summarize" aria-label="${esc(moreAbout(L, t(L, 'summarize')))}">?</button><small class="hint" id="hint-summarize" role="tooltip" data-i18n="summarizeHint">${tr('summarizeHint')}</small></span></div>
+<input type="text" name="summarize-prompt" placeholder="${tr('summarizePrompt')}" data-i18n-placeholder="summarizePrompt" style="display:none;flex:1;min-width:160px">
+</div>
+<small class="note" id="sum-by">${esc(by)}</small>
+<div class="row ask" id="ask" role="group" aria-labelledby="askq" hidden><span id="askq"></span><button type="button" id="ask-ok">OK</button><button type="button" id="ask-no">Not now</button></div>
+</section></div>
 </div>
 <div class="columns">
-<section class="sec kcard" id="sec-ex" aria-label="examples"><div class="row" id="ex"><span class="note label">examples <span class="exlang" role="group" aria-label="language of the examples"><button type="button" id="ex-en" lang="en" aria-pressed="true">EN</button><button type="button" id="ex-ja" lang="ja" aria-pressed="false">日本語</button></span></span></div>
-</section>
-<section class="sec kcard" id="sec-opts" aria-labelledby="h-opts"><h2 class="sech" id="h-opts" title="オプション">Options</h2>
-<div class="row">
-<div class="withhint hintgroup" id="hg-rank"><label>rank <select name="rank" aria-describedby="hint-rank"><option value="">off</option><option value="jev">jev</option><option value="match">match</option></select></label><span class="hintctl"><button type="button" class="qbtn" id="q-rank" aria-expanded="false" aria-controls="hint-rank" aria-label="more about rank">?</button><small class="hint" id="hint-rank" role="tooltip">off keeps file order</small></span></div>
-<div class="withhint hintgroup" id="hg-summarize"><label><input type="checkbox" name="summarize" aria-describedby="hint-summarize"> summarize</label><span class="hintctl"><button type="button" class="qbtn" id="q-summarize" aria-expanded="false" aria-controls="hint-summarize" aria-label="more about summarize">?</button><small class="hint" id="hint-summarize" role="tooltip">answers in a sentence or two after the search</small></span></div>
-<input type="text" name="summarize-prompt" placeholder="summary instruction" style="display:none;flex:1;min-width:160px">
-</div>
-<div class="row ask" id="ask" role="group" aria-labelledby="askq" hidden><span id="askq"></span><button type="button" id="ask-ok">OK</button><button type="button" id="ask-no">Not now</button></div>
+<section class="sec kcard" id="sec-ex" aria-label="examples"><div class="row" id="ex"><span class="note label" data-i18n="examples">${tr('examples')}</span></div>
 </section>
 </div>
-<section class="command" id="sec-cmd" aria-labelledby="h-cmd"><h2 class="sech" id="h-cmd">Command</h2>
-<div class="row"><pre id="cmd" title="the command line for the fields and controls as they are now; pasted in a terminal it runs the same search. The API key is never in it"></pre><button type="button" id="copy" title="copy the command line to the clipboard">Copy</button>${targets.demo ? '<span class="note" id="cmd-demo-note">here it searches the bundled <code>examples/</code>; pasted elsewhere it reads stdin instead &mdash; add a file or -r DIR</span>' : ''}</div>
+<section class="command" id="sec-cmd" aria-labelledby="h-cmd"><h2 class="sech" id="h-cmd" data-i18n="command">${tr('command')}</h2>
+<div class="row"><pre id="cmd" title="${tr('cmdTitle')}" data-i18n-title="cmdTitle"></pre><button type="button" id="copy" title="${tr('copyTitle')}" data-i18n="copy" data-i18n-title="copyTitle">${tr('copy')}</button>${targets.demo ? `<span class="note" id="cmd-demo-note" data-i18n-html="cmdDemoNote">${t(L, 'cmdDemoNote')}</span>` : ''}</div>
 </section>
-<details id="d"><summary id="ds" title="詳細: the other options; a dot means one differs from its launch value">Details</summary><div class="grid">
-${hg('level', '<label>level <select name="level"><option>loose</option><option>normal</option><option>strict</option></select></label>', 'how strict a match must be (--level): loose takes more lines, strict fewer')}
-${hg('t', '<label>-t <input name="t" size="5" inputmode="decimal"></label>', '-t: a line matches when its probability is at least this (0 to 1)')}${hg('T', '<label>-T <input name="T" size="5" inputmode="decimal"></label>', '-T: a negated meaning holds when the probability is below this (0 to 1)')}
-${hg('C', '<label>context lines (-C) <input name="C" size="3" inputmode="numeric"></label>', '-C: lines of context before and after each match')}
-${hg('A', '<label>-A <input name="A" size="3" inputmode="numeric"></label>', '-A: lines of context after each match (trailing only)')}${hg('B', '<label>-B <input name="B" size="3" inputmode="numeric"></label>', '-B: lines of context before each match (leading only)')}
-${hg('autoscope', '<label class="chk"><input type="checkbox" name="auto-scope"> auto-scope</label>', '--auto-scope: narrow the files by what Jev says the meaning restricts to (a language, a kind of file); off is --no-auto-scope')}
-${hg('n', '<label class="chk"><input type="checkbox" name="n"> -n line numbers</label>', '-n: show line numbers')}${hg('p', '<label class="chk"><input type="checkbox" name="p"> -p scores</label>', '-p: show the probability of each meaning on the matching lines')}
-${hg('dedup', '<label>dedup <select name="dedup"><option>never</option><option>auto</option><option>always</option></select></label>', '--dedup: judge one line per template (lines that differ only in ids, numbers, dates) and reuse the answer; auto does it when it pays')}
-${hg('unit', '<label>unit <select name="unit"><option>line</option><option>sentence-by-jev</option><option>sentence-by-rule</option><option>function</option></select></label>', '--unit: what one question judges: a line, a sentence (found by Jev or by a rule), or a function (git grep -W\'s boundaries). A multi-step walk is by function regardless of this. zero (-z, same as --unit=zero) is refused here, like -z itself')}
-${hg('o', '<label class="chk"><input type="checkbox" name="o"> -o matching sentences only</label>', '-o: with a sentence unit, print only the matching sentences, not the whole line')}
-${hg('j', '<label>-j <input name="j" size="3" inputmode="numeric"></label>', '-j: concurrent requests to the API')}${hg('maxcost', '<label>--max-cost <input name="max-cost" size="5" inputmode="decimal"></label>', '--max-cost: ask before sending when the estimated price is over this many USD')}
-${hg('include', '<label>--include <input name="include"></label>', '--include: only file names matching these globs, space separated. Applies to -r and git sys1grep; it narrows the launch targets, never widens them')}${hg('exclude', '<label>--exclude <input name="exclude"></label>', '--exclude: not file names matching these globs, space separated. Applies to -r and git sys1grep')}
-${hg('changed', '<label>--changed-within <input name="changed-within" placeholder="2h, 7d, a date"></label>', '--changed-within: only files modified within 30m, 2h, 7d, 2w, or since a date. Applies to -r and git sys1grep')}${hg('g', '<label class="chk"><input type="checkbox" name="g"> -g git log</label>', '-g: search git log\'s commits, one record each')}
+<details id="d"><summary id="ds" title="${tr('detailsTitle')}" data-i18n="details" data-i18n-title="detailsTitle">${tr('details')}</summary><div class="grid">
+${trh('level', `<label><span data-i18n="level">${tr('level')}</span> <select name="level"><option>loose</option><option>normal</option><option>strict</option></select></label>`, 'levelHint')}
+${trh('t', '<label>-t <input name="t" size="5" inputmode="decimal"></label>', 'tHint')}${trh('T', '<label>-T <input name="T" size="5" inputmode="decimal"></label>', 'THint')}
+${trh('C', `<label><span data-i18n="cLabel">${tr('cLabel')}</span> <input name="C" size="3" inputmode="numeric"></label>`, 'cHint')}
+${trh('A', '<label>-A <input name="A" size="3" inputmode="numeric"></label>', 'aHint')}${trh('B', '<label>-B <input name="B" size="3" inputmode="numeric"></label>', 'bHint')}
+${trh('autoscope', `<label class="chk"><input type="checkbox" name="auto-scope"> <span data-i18n="autoscope">${tr('autoscope')}</span></label>`, 'autoscopeHint')}
+${trh('n', `<label class="chk"><input type="checkbox" name="n"> <span data-i18n="nLabel">${tr('nLabel')}</span></label>`, 'nHint')}${trh('p', `<label class="chk"><input type="checkbox" name="p"> <span data-i18n="pLabel">${tr('pLabel')}</span></label>`, 'pHint')}
+${trh('dedup', `<label><span data-i18n="dedup">${tr('dedup')}</span> <select name="dedup"><option>never</option><option>auto</option><option>always</option></select></label>`, 'dedupHint')}
+${trh('unit', `<label><span data-i18n="unit">${tr('unit')}</span> <select name="unit"><option>line</option><option>sentence-by-jev</option><option>sentence-by-rule</option><option>function</option></select></label>`, 'unitHint')}
+${trh('o', `<label class="chk"><input type="checkbox" name="o"> <span data-i18n="oLabel">${tr('oLabel')}</span></label>`, 'oHint')}
+${trh('j', '<label>-j <input name="j" size="3" inputmode="numeric"></label>', 'jHint')}${trh('maxcost', '<label>--max-cost <input name="max-cost" size="5" inputmode="decimal"></label>', 'maxcostHint')}
+${trh('include', '<label>--include <input name="include"></label>', 'includeHint')}${trh('exclude', '<label>--exclude <input name="exclude"></label>', 'excludeHint')}
+${trh('changed', `<label>--changed-within <input name="changed-within" placeholder="2h, 7d, a date"></label>`, 'changedHint')}${trh('g', `<label class="chk"><input type="checkbox" name="g"> <span data-i18n="gLabel">${tr('gLabel')}</span></label>`, 'gHint')}
 </div></details></form>
 <main id="m"><div id="left" title="results"></div><div id="right" title="the summary of the results" hidden></div></main>
-<dialog id="sd" aria-labelledby="sdh"><div class="dlgbody"><div class="dlghead"><h2 id="sdh">Settings</h2><button type="button" class="dlgx" id="sdx" aria-label="Close" title="Close">&times;</button></div><form id="sf" autocomplete="off" onsubmit="return false"><div class="grid">
+<dialog id="sd" aria-labelledby="sdh"><div class="dlgbody"><div class="dlghead"><h2 id="sdh" data-i18n="settings">${tr('settings')}</h2><button type="button" class="dlgx" id="sdx" aria-label="${tr('close')}" title="${tr('close')}" data-i18n-aria-label="close" data-i18n-title="close">&times;</button></div><form id="sf" autocomplete="off" onsubmit="return false"><div class="grid">
 <label>url <input name="set-url" placeholder="https://api.typesafe.ai/v1/systemone" autofocus><small class="note" id="src-url"></small></label>
-<label>model <input name="set-model" placeholder="jev-latest"><small class="note" id="src-model"></small></label>
-<label>key <input type="password" name="set-key" autocomplete="new-password"><small class="note" id="src-key"></small><span class="chk"><input type="checkbox" name="clear-key"> remove</span></label>
-<label>opts, one argument per line <textarea name="set-opts" rows="3"></textarea><small class="note" id="src-opts"></small></label>
-<label>summarizer <input name="set-summarizer" placeholder="claude"><small class="note" id="src-summarizer"></small></label>
-<label>summarizerModel <input name="set-summarizerModel"><small class="note" id="src-summarizerModel"></small></label>
-<label>summarizerKey <input type="password" name="set-summarizerKey" autocomplete="new-password"><small class="note" id="src-summarizerKey"></small><span class="chk"><input type="checkbox" name="clear-summarizerKey"> remove</span></label>
-</div><div class="row"><button type="button" id="save">Save to ~/.config/sys1grep/settings.json</button><span class="note" id="sst"></span></div></form></div></dialog>
+<label><span data-i18n="fieldModel">${tr('fieldModel')}</span> <input name="set-model" placeholder="jev-latest"><small class="note" id="src-model"></small></label>
+<label><span data-i18n="fieldKey">${tr('fieldKey')}</span> <input type="password" name="set-key" autocomplete="new-password"><small class="note" id="src-key"></small><span class="chk"><input type="checkbox" name="clear-key"> <span data-i18n="remove">${tr('remove')}</span></span></label>
+<label><span data-i18n="fieldOpts">${tr('fieldOpts')}</span> <textarea name="set-opts" rows="3"></textarea><small class="note" id="src-opts"></small></label>
+<label><span data-i18n="fieldSummarizer">${tr('fieldSummarizer')}</span> <input name="set-summarizer" placeholder="claude"><small class="note" id="src-summarizer"></small></label>
+<label><span data-i18n="fieldSummarizerModel">${tr('fieldSummarizerModel')}</span> <input name="set-summarizerModel"><small class="note" id="src-summarizerModel"></small></label>
+<label><span data-i18n="fieldSummarizerKey">${tr('fieldSummarizerKey')}</span> <input type="password" name="set-summarizerKey" autocomplete="new-password"><small class="note" id="src-summarizerKey"></small><span class="chk"><input type="checkbox" name="clear-summarizerKey"> <span data-i18n="remove">${tr('remove')}</span></span></label>
+<label><span data-i18n="fieldLang">${tr('fieldLang')}</span> <select name="set-lang"><option value="">-</option><option value="en">English</option><option value="ja">日本語</option></select><small class="note" id="src-lang"></small></label>
+</div><div class="row"><button type="button" id="save" data-i18n="save">${tr('save')}</button><span class="note" id="sst"></span></div></form></div></dialog>
 </div>
 ${demo ? '<script src="demo.js"></script>' : ''}
 <script>
@@ -648,29 +779,54 @@ const answer = window.sys1demo
 const costRetryOf = ${costRetryOf};
 const quote = (s, force) => (!force && /^[\\w@%+=:,./-]+$/.test(s) ? s : "'" + s.replace(/'/g, "'\\\\''") + "'");
 const shown = argv => argv.map((t, i) => (/^-[eavQP]$/.test(argv[i - 1] ?? '') ? quote(t, t[0] === '-') : /^--[a-z-]+=/.test(t) ? t.replace(/=([\\s\\S]*)/, (_, v) => '=' + quote(v)) : quote(t)));
+// #270: the whole page's language. Precedence: localStorage (this browser) > the launch/env/settings default the
+// server rendered this page in (LANG_INIT, null if none) > navigator.language > en. A toggle click or a settings
+// save (fillSettings, below) can change it after load; applyI18n() re-renders every [data-i18n*] element in place.
+const STRINGS = ${json(STRINGS)}, LANG_INIT = ${json(lang)};
+let lang = LANG_INIT;
+try { const saved = localStorage.getItem('lang'); if (saved === 'en' || saved === 'ja') lang = saved; } catch {}
+if (!lang) lang = navigator.language && navigator.language.startsWith('ja') ? 'ja' : 'en';
+const t = key => STRINGS[key]?.[lang === 'ja' ? 1 : 0] ?? STRINGS[key]?.[0] ?? key;
+const moreAbout = label => (lang === 'ja' ? label + 'について' : 'more about ' + label);
+const applyI18n = () => {
+  document.documentElement.lang = lang;
+  for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
+  for (const el of document.querySelectorAll('[data-i18n-html]')) el.innerHTML = t(el.dataset.i18nHtml);
+  for (const el of document.querySelectorAll('[data-i18n-title]')) el.title = t(el.dataset.i18nTitle);
+  for (const el of document.querySelectorAll('[data-i18n-placeholder]')) el.placeholder = t(el.dataset.i18nPlaceholder);
+  for (const el of document.querySelectorAll('[data-i18n-aria-label]')) el.setAttribute('aria-label', t(el.dataset.i18nAriaLabel));
+  // the "?" hint buttons: their accessible name is derived from the (now re-rendered) label text beside them, not
+  // kept as a second translated string per hint (the label is the single source of truth for both). The label word
+  // itself is always the first [data-i18n] in its group, before the hint's own (also [data-i18n]) small -- never the
+  // whole <label>, which for rank/level/dedup/unit would otherwise drag in its <select>'s option text too.
+  for (const b of document.querySelectorAll('.hintctl .qbtn')) {
+    const label = [...(b.closest('.withhint, .hintgroup')?.querySelectorAll('[data-i18n]') ?? [])].find(e => !e.getAttribute('id')?.startsWith('hint-'))?.textContent.trim(); // a literal label (-t) has none: keep the server's
+    if (label) b.setAttribute('aria-label', moreAbout(label));
+  }
+  // the start/end term-type selects (-e meaning, -P regex, ...): built client-side, so not [data-i18n] themselves.
+  for (const r of [...(fields?.children ?? []), ...(ends?.children ?? [])]) retag(r);
+};
 const f = document.getElementById('f'), fields = document.getElementById('fields'), cmd = document.getElementById('cmd');
 const step = document.getElementById('step'), steps = document.getElementById('steps'), ends = document.getElementById('ends');
 const ALL = [...CONTROLS, { k: 'summarize', bool: true }, { k: 'rank' }, { k: 'summarize-prompt' }];
 const setControls = v => { for (const c of ALL) { const el = f.elements[c.k], x = v[c.k] ?? INIT[c.k]; if (c.bool) el.checked = !!x; else el.value = x; } };
-const LABELS = { e: '-e meaning', P: '-P regex', a: '-a and', v: '-v and not', Q: '-Q question' };
+const labels = () => ({ e: t('termE'), P: t('termP'), a: t('termA'), v: t('termV'), Q: t('termQ') });
 // A close icon, not text, so the button's accessible name comes from aria-label alone, in every browser.
 const DEL_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>';
-const TIPS = {
-  Q: ['a question', 'the lines that answer this question, not the lines asking it, e.g. why did it fail. A question is never a regex: use -P for /regex/'],
-  e: ['a meaning', 'lines that mean this, in any language; several -e are OR. e.g. an API key is read. Always a meaning: use -P for /regex/'],
-  P: ['/regex/flags', 'a regex term, matched locally, no request; several -P are OR, like -e. e.g. /catch/'],
-  a: ['and this meaning', 'AND onto the term before it: both must hold on the line'],
-  v: ['and not this meaning', 'AND NOT onto the term before it: this must not hold (as the first field, a bare negation)'],
-};
-const tip = r => { const [ph, t] = TIPS[r.firstChild.value]; r.firstChild.title = r.children[1].title = t; r.children[1].placeholder = ph; };
-const addField = (k = 'Q', t = '', into = fields) => {
+const tips = () => ({
+  Q: [t('tipQph'), t('tipQhint')], e: [t('tipEph'), t('tipEhint')], P: ['/regex/flags', t('tipPhint')],
+  a: [t('tipAph'), t('tipAhint')], v: [t('tipVph'), t('tipVhint')],
+});
+const tip = r => { const [ph, hint] = tips()[r.firstChild.value]; r.firstChild.title = r.children[1].title = hint; r.children[1].placeholder = ph; };
+const retag = r => { for (const [k, l] of Object.entries(labels())) r.firstChild.querySelector('option[value="' + k + '"]').textContent = l; tip(r); };
+const addField = (k = 'Q', val = '', into = fields) => {
   const r = document.createElement('div'); r.className = 'row';
-  r.innerHTML = '<select>' + Object.entries(LABELS).map(([k, l]) => '<option value="' + k + '">' + l + '</option>').join('') + '</select><input type="text" placeholder="meaning"><button type="button"></button>';
-  r.firstChild.value = k; r.children[1].value = t;
+  r.innerHTML = '<select>' + Object.entries(labels()).map(([k, l]) => '<option value="' + k + '">' + l + '</option>').join('') + '</select><input type="text"><button type="button"></button>';
+  r.firstChild.value = k; r.children[1].value = val;
   tip(r); r.firstChild.onchange = () => { tip(r); show(); };
   r.children[1].oninput = show; r.children[1].onkeydown = e => { if (e.key === 'Enter') go(); };
   const x = r.children[2];
-  x.className = 'del'; x.innerHTML = DEL_ICON; x.ariaLabel = 'remove'; x.title = 'remove';
+  x.className = 'del'; x.innerHTML = DEL_ICON; x.ariaLabel = t('remove'); x.title = t('remove');
   // every row gets this button; on the one row left in a group it clears the row instead of removing it, so a
   // group (start, or end while multi-step is on) is never left without a row to fill back in.
   x.onclick = () => { if (into.children.length > 1) r.remove(); else r.children[1].value = ''; show(); };
@@ -686,8 +842,9 @@ const show = () => {
   const p = read(), multi = p.x.some(x => x[0] === 'S');
   // a numbered, distinct accessible name per row ("remove start condition 2"), renumbered on every change so a
   // deletion in the middle doesn't leave a stale number on the rows after it.
-  for (const [box, label] of [[fields, 'start'], [ends, 'end']]) {
-    [...box.children].forEach((r, i) => { const d = r.children[2]; if (d) d.title = d.ariaLabel = 'remove ' + label + ' condition ' + (i + 1); });
+  for (const [box, key] of [[fields, 'termStart'], [ends, 'termEnd']]) {
+    const label = t(key);
+    [...box.children].forEach((r, i) => { const d = r.children[2]; if (d) d.title = d.ariaLabel = lang === 'ja' ? label + '条件 ' + (i + 1) + ' を削除' : 'remove ' + label + ' condition ' + (i + 1); });
   }
   steps.hidden = !multi;
   const g = p.g && !multi; // -g does not apply to a walk
@@ -702,6 +859,7 @@ const show = () => {
   if (!ask.hidden) drawAsk();
   document.getElementById('ds').className = CONTROLS.some(c => !['rank'].includes(c.k) && !c.step && p[c.k] !== INIT[c.k]
     && !(c.nostep && multi) && !(c.sentenceOnly && !/^sentence-by-/.test(p.unit))) ? 'dot' : '';
+  if (!running) busy(false);
   return p;
 };
 const query = p => { const q = new URLSearchParams({ k: TOKEN }); for (const x of p.x) q.append('x', x); for (const [k, v] of Object.entries(p)) if (k !== 'x') q.set(k, v === true ? '1' : v === false ? '0' : v); return q; };
@@ -715,7 +873,19 @@ const ansi = (text, into) => { // the SGR colors of --color=always, as spans; no
 };
 let gen = 0;
 let ctl = null, running = 0;
-const busy = on => { for (const id of ['go', 'est']) document.getElementById(id).disabled = on; document.getElementById('stop').disabled = !on; };
+// Search and Estimate cost wait for a field to search for (and, on the demo, for its recording). A search that starts
+// below the fold scrolls the results into view, so the answer is never written off screen.
+const ready = () => !window.sys1demo?.noRun && read().x.some(x => x[0] !== 'S');
+const busy = on => {
+  for (const id of ['go', 'est']) document.getElementById(id).disabled = on || !ready();
+  document.getElementById('stop').disabled = !on;
+  const m = document.getElementById('m'); m.classList.toggle('busy', on); m.setAttribute('aria-busy', String(on));
+  if (on) setTimeout(intoView); // after the caller's turn, once it has written "searching..." (an empty #m has no box to measure)
+};
+const intoView = () => {
+  const m = document.getElementById('m');
+  if (m.getBoundingClientRect?.().top > window.innerHeight * 0.6) m.scrollIntoView({ block: 'start', behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+};
 const get = async (kind, p, into, post) => {
   const mine = gen;
   running++;
@@ -737,7 +907,7 @@ const get = async (kind, p, into, post) => {
 const show1 = (j, into) => {
   into.textContent = '';
   if (j.error) { const e = document.createElement('div'); e.className = 'err'; e.textContent = j.error; into.append(e); return; }
-  if (j.none) { const e = document.createElement('div'); e.className = 'note'; e.textContent = 'no matches' + (j.note ? ' (' + j.note + ')' : ''); into.append(e); return; }
+  if (j.none) { const e = document.createElement('div'); e.className = 'note'; e.textContent = t('noMatches') + (j.note ? ' (' + j.note + ')' : ''); into.append(e); return; }
   if (j.html) {
     const i = document.createElement('iframe'); i.sandbox = 'allow-same-origin'; i.srcdoc = j.html;
     const ready = new Promise(r => { i.onload = () => { i.style.height = i.contentDocument.documentElement.scrollHeight + 'px'; r(); }; });
@@ -748,7 +918,7 @@ const show1 = (j, into) => {
 };
 document.getElementById('stop').onclick = () => {
   ctl.abort(); gen++; running = 0; busy(false);
-  for (const el of [document.getElementById('left'), document.getElementById('right')]) if (!el.hidden && /\.\.\.$/.test(el.textContent)) el.textContent = 'stopped';
+  for (const el of [document.getElementById('left'), document.getElementById('right')]) if (!el.hidden && /\.\.\.$/.test(el.textContent)) el.textContent = t('stopped');
 };
 // costRetryOf (shared, above): the bump a "Search anyway" button should use, or null for none (no match, or a
 // multi-step walk). Offers a button that reruns this one search, once, with --max-cost at that bump -- not a
@@ -756,10 +926,10 @@ document.getElementById('stop').onclick = () => {
 const addCostRetry = (j, p, into) => {
   const bump = costRetryOf(p, j.error);
   if (!bump) return;
-  const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Search anyway (--max-cost ' + bump + ')';
+  const b = document.createElement('button'); b.type = 'button'; b.textContent = lang === 'ja' ? '--max-cost ' + bump + ' で' + t('searchAnyway') : t('searchAnyway') + ' (--max-cost ' + bump + ')';
   b.onclick = () => {
     if (running) return;
-    gen++; ctl = new AbortController(); busy(true); into.textContent = 'searching...';
+    gen++; ctl = new AbortController(); busy(true); into.textContent = t('searching');
     get('results', { ...p, 'max-cost': bump }, into);
   };
   into.append(document.createElement('br'), b);
@@ -768,13 +938,14 @@ const run = kind => {
   const p = show(), left = document.getElementById('left'), right = document.getElementById('right');
   if (running) return;
   const s = p.x.indexOf('S:');
-  if (s === 0 || !p.x.length) { left.textContent = 'Enter a meaning.'; return; }
-  if (s === p.x.length - 1) { left.textContent = 'Enter an end (--step-to).'; return; }
+  if (s === 0 || !p.x.length) { left.textContent = t('enterMeaning'); return; }
+  if (!ready()) return; // Enter in a field must not run what the disabled Search would not
+  if (s === p.x.length - 1) { left.textContent = t('enterEnd'); return; }
   gen++; ctl = new AbortController(); busy(true); onScreen = null; ask.hidden = true;
-  left.textContent = 'searching...';
+  left.textContent = t('searching');
   const sum = kind === 'results' && p.summarize && !p.x.some(x => x[0] === 'S');
-  document.getElementById('m').className = sum ? 'two' : '';
-  right.hidden = !sum; right.textContent = sum ? 'summarizing...' : '';
+  document.getElementById('m').classList.toggle('two', !!sum);
+  right.hidden = !sum; right.textContent = sum ? t('summarizing') : '';
   const mine = gen;
   // #231: one search, not two. Reserve the summarize step's slot so busy(false) does not fire in the gap between the
   // results arriving and the summarize request starting; get('summarize', ...) below takes over the reservation (both
@@ -803,9 +974,9 @@ const ASK = {
 };
 const searchOf = p => { const q = query(p); q.delete('summarize'); q.delete('summarize-prompt'); return String(q); };
 const drawAsk = () => {
-  const p = read(), [q, stale, ok, no] = ASK[exLang];
+  const p = read(), [q, stale, ok, no] = ASK[lang];
   if (!p.summarize || !onScreen || running || p.x.some(x => x[0] === 'S')) { ask.hidden = true; return; }
-  ask.lang = exLang; askq.textContent = searchOf(p) === searchOf(onScreen) ? q : stale; askOk.textContent = ok; askNo.textContent = no;
+  ask.lang = lang; askq.textContent = searchOf(p) === searchOf(onScreen) ? q : stale; askOk.textContent = ok; askNo.textContent = no;
 };
 f.elements.summarize.addEventListener('change', () => { ask.hidden = !f.elements.summarize.checked; drawAsk(); });
 askNo.onclick = () => { ask.hidden = true; };
@@ -815,31 +986,31 @@ askOk.onclick = () => {
   const text = frame ? frame.contentDocument.body.innerText : left.textContent;
   ask.hidden = true;
   gen++; ctl = new AbortController(); busy(true);
-  document.getElementById('m').className = 'two'; right.hidden = false; right.textContent = 'summarizing...';
+  document.getElementById('m').classList.add('two'); right.hidden = false; right.textContent = t('summarizing');
   get('summarize', { ...onScreen, 'summarize-prompt': read()['summarize-prompt'] }, right, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: text });
 };
 f.onsubmit = e => { e.preventDefault(); go(); return false; };
 document.getElementById('est').onclick = () => run('dry');
 document.getElementById('add').onclick = () => addField('a').children[1].focus();
 document.getElementById('addend').onclick = () => addField('e', '', ends).children[1].focus();
-// The examples in English or Japanese (#215), remembered per browser; a blocked storage means English. --suggest's
-// pills are the user's own text and stay as given.
-const exRow = document.getElementById('ex'), exLangs = { en: document.getElementById('ex-en'), ja: document.getElementById('ex-ja') };
-let exLang = 'en';
-try { if (localStorage.getItem('exlang') === 'ja') exLang = 'ja'; } catch {}
+// The whole page, and the examples with it (#215, #270), in English or Japanese, remembered per browser; a blocked
+// storage means the server-rendered default (see LANG_INIT, above) holds. --suggest's pills are the user's own text
+// and stay as given.
+const exRow = document.getElementById('ex'), langBtns = { en: document.getElementById('lang-en'), ja: document.getElementById('lang-ja') };
 const drawEx = () => {
-  for (const k in exLangs) exLangs[k].setAttribute('aria-pressed', String(k === exLang));
+  for (const k in langBtns) langBtns[k].setAttribute('aria-pressed', String(k === lang));
   while (exRow.children.length > 1) exRow.lastChild.remove();
   let grp = null;
   for (const e of [...SUGGEST, ...EXAMPLES]) {
-    const ex = exLang === 'ja' ? { ...e, h: e.hj ?? e.h, x: e.xj ?? e.x } : e;
-    if (ex.x.includes('S:') && !grp) { grp = document.createElement('span'); grp.className = 'note grp'; grp.lang = exLang; grp.textContent = exLang === 'ja' ? '多段階' : 'multi-step'; exRow.append(grp); }
+    const ex = lang === 'ja' ? { ...e, h: e.hj ?? e.h, x: e.xj ?? e.x } : e;
+    if (ex.x.includes('S:') && !grp) { grp = document.createElement('span'); grp.className = 'note grp'; grp.lang = lang; grp.textContent = t('multiStep'); exRow.append(grp); }
     const b = exButton(ex);
-    if (!e.q) b.lang = exLang; // a --suggest pill is the user's text, in whatever language they wrote it
+    if (!e.q) b.lang = lang; // a --suggest pill is the user's text, in whatever language they wrote it
     exRow.append(b);
   }
 };
-for (const k in exLangs) exLangs[k].onclick = () => { exLang = k; try { localStorage.setItem('exlang', k); } catch {} drawEx(); if (!ask.hidden) drawAsk(); };
+const setLang = k => { lang = k; langFromStorage = true; try { localStorage.setItem('lang', k); } catch {} applyI18n(); drawEx(); if (!ask.hidden) drawAsk(); };
+for (const k in langBtns) langBtns[k].onclick = () => setLang(k);
 const exButton = ex => {
   const s = ex.x.indexOf('S:');
   const b = document.createElement('button'); b.type = 'button'; b.textContent = ex.h;
@@ -852,15 +1023,18 @@ const exButton = ex => {
   };
   return b;
 };
+if (lang !== (LANG_INIT ?? 'en')) applyI18n(); // localStorage or navigator.language picked a different language than the server rendered
 drawEx();
-document.getElementById('copy').onclick = e => navigator.clipboard.writeText(cmd.textContent).then(() => { e.target.textContent = 'Copied'; setTimeout(() => { e.target.textContent = 'Copy'; }, 1200); });
+document.getElementById('copy').onclick = e => navigator.clipboard.writeText(cmd.textContent).then(() => { e.target.textContent = t('copied'); setTimeout(() => { e.target.textContent = t('copy'); }, 1200); });
 f.addEventListener('input', show); f.addEventListener('change', show);
-setControls(INIT);
+setControls({ summarize: !LAUNCH.includes('--no-summarize') }); // summarize starts on (owner, 2026-11-03)
 addField().children[1].focus(); addField('e', '', ends);
 // the settings panel: read when opened, saved on the button; a key field stays empty (a key never comes back from the server)
 const sf = document.getElementById('sf'), sd = document.getElementById('sd'), sst = document.getElementById('sst'), gear = document.getElementById('gear');
-const SFIELDS = ['url', 'model', 'key', 'opts', 'summarizer', 'summarizerModel', 'summarizerKey'], SKEYS = ['key', 'summarizerKey'];
-const SAID = { cmd: () => 'the command line wins over this', env: n => n + ' in the environment wins over this', settings: () => 'in effect', '.env': () => 'in effect: ~/.config/sys1grep/.env', default: () => 'not set: the default' };
+const SFIELDS = ['url', 'model', 'key', 'opts', 'summarizer', 'summarizerModel', 'summarizerKey', 'lang'], SKEYS = ['key', 'summarizerKey'];
+const SAID = { cmd: () => t('saidCmd'), env: n => n + t('saidEnvSuffix'), settings: () => t('saidSettings'), '.env': () => t('saidDotEnv'), default: () => t('saidDefault') };
+let langFromStorage = false;
+try { langFromStorage = localStorage.getItem('lang') === 'en' || localStorage.getItem('lang') === 'ja'; } catch {}
 const fillSettings = view => {
   for (const k of SFIELDS) {
     const [saved, src, name] = view[k], el = sf.elements['set-' + k];
@@ -869,6 +1043,9 @@ const fillSettings = view => {
     document.getElementById('src-' + k).textContent = SAID[src](name);
   }
   document.getElementById('fake-jev').hidden = !view.fake; // a saved url can switch to or from the fake
+  document.getElementById('sum-by').textContent = view.by; // and a saved summarizer changes what summarize runs
+  // the page's own language default just changed (a save, #270): follow it, unless this browser already chose one.
+  if (!langFromStorage && view.pageLang && view.pageLang !== lang) { lang = view.pageLang; applyI18n(); drawEx(); }
 };
 const settingsReq = async (method, body) => {
   const r = await fetch('/settings', { method, body, headers: { 'x-sys1grep-token': TOKEN, 'content-type': 'application/json' } });
@@ -894,7 +1071,7 @@ document.getElementById('save').onclick = () => {
     if (SKEYS.includes(k)) { if (sf.elements['clear-' + k].checked) p[k] = null; else if (v) p[k] = v; }
     else p[k] = k === 'opts' ? v.split('\\n').map(a => a.trim()).filter(Boolean) : v.trim();
   }
-  return settingsReq('POST', JSON.stringify(p)).then(view => { fillSettings(view); sst.textContent = 'saved; the next search uses it'; }, e => { sst.textContent = 'not saved: ' + e.message; });
+  return settingsReq('POST', JSON.stringify(p)).then(view => { fillSettings(view); sst.textContent = t('saved'); }, e => { sst.textContent = t('notSaved') + e.message; });
 };
 // hint tooltips: hover (mouse only) and keyboard focus of the "?" are pure CSS; tap toggles .open on the icon's
 // group (a tap elsewhere or Esc closes every open one), so a touch screen reaches them without a pointer that hovers.
@@ -937,3 +1114,4 @@ document.addEventListener('click', () => closeHints());
 window.addEventListener('resize', () => closeHints());
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeHints(); });
 </script></body></html>`;
+};

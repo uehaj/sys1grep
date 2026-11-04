@@ -273,6 +273,7 @@ variable:
 | `summarizer` | `SYS1GREP_SUMMARIZER` |
 | `summarizerModel` | `SYS1GREP_SUMMARIZER_MODEL` |
 | `summarizerKey` | `SYS1GREP_SUMMARIZER_API_KEY` |
+| `lang` | `SYS1GREP_LANG` (`en` or `ja`: `--help`'s language, and `--serve`'s page default) |
 
 Every field is optional. A value of the wrong type is an error, as is a file that is not JSON. A field the file does
 not know only warns (on stderr, naming the field) and is ignored, so an older sys1grep keeps working once a newer one
@@ -896,6 +897,11 @@ The printed URL carries a token made fresh at launch (`?k=...`). Every route nee
 it (in the query, or in a header for the page's own requests) the server answers 404 to everything, so another local
 account or process cannot read the page, its token, or a search's results merely by knowing the port.
 
+`EN` / `日本語` in the title bar switches the whole page's language (headings, labels, buttons, hints, the settings
+dialog, the page's own messages), remembered in the browser; its default is the saved choice, else `--lang` /
+`SYS1GREP_LANG` / settings.json's `lang` (below), else the browser's own language, else English. What sys1grep itself
+prints (the results, the `--dry-run` estimate, an error), the command line and option names are never translated.
+
 The page is a set of cards under a blue header band: Target and Search conditions in one card with a large Search
 button (Estimate cost and Stop under it) at its right, the examples and Options side by side below it (one column on
 a phone), then the command line and Details. **Target** shows what every search reads: the files and folders given at launch
@@ -907,8 +913,7 @@ holds the meaning fields and multi-step, **Options** `rank` and `summarize`,
 and **Details** the other options; the results come below them. What they hold: the meaning fields (`+` adds one; each takes `-e`, `-P`, `-a`, `-v` or `-Q`), `rank`, `summarize`, a **multi-step**
 switch (on, it shows the end fields, `--step-to` and one or more meanings, and the edges, `--hops` and a reverse switch that makes it `--step-reverse-to`; off, they
 leave the command and the search and keep their values), example buttons (searches from this README and
-[docs/use-cases.md](docs/use-cases.md), then multi-step walks; one fills the fields and the controls it needs, puts the rest back to their launch values, and waits for Search; `EN` / `日本語` beside the label switches their labels and
-meanings, remembered in the browser), a
+[docs/use-cases.md](docs/use-cases.md), then multi-step walks; one fills the fields and the controls it needs, puts the rest back to their launch values, and waits for Search), a
 **Details** fold with the other options (`--level`, `-t`/`-T`, `-C`, `-A`/`-B`, `--auto-scope`, `-n`, `-p`, `--dedup`,
 `--unit`, `-o` (shown only with a sentence unit), `-j`, `--max-cost`, `--include`, `--exclude`, `--changed-within`,
 `-g`), and the
@@ -932,7 +937,7 @@ carries the same estimate `--dry-run` would show, and a button next to it reruns
 The meanings come from the page, so `-e -P -a -v -Q --step-to --step-reverse-to` and `-l -c -q -o -z --unit=zero -H -i --format --color --dry-run --verbose` are refused at launch.
 
 **Settings** edits `~/.config/sys1grep/settings.json` (see [Install](#install)): `url`, `model`, the key, `opts` (one argument
-per line) and the summarizer's three. Save writes the file, and the next search uses it, as does every later `sys1grep`
+per line), the summarizer's three and `lang` (the page's own default language). Save writes the file, and the next search uses it, as does every later `sys1grep`
 run. Next to each field the page says where the value a search uses comes from, and says so when an environment variable or a
 launch option wins over the file, since then saving does not change the search. A key comes back only as saved / not
 saved; type a new one to replace it, or tick remove. A `--sys1-api-key` inside `opts`, and a `url`'s userinfo, come back
@@ -1223,7 +1228,9 @@ usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION|-P /RE/FLAGS [-a MEANING] [-v
                yellow in between. NO_COLOR is honored
   --sys1-model=ID, --sys1-url=URL, --sys1-api-key=KEY
                the API settings, overriding SYS1GREP_MODEL, SYS1GREP_URL, SYS1GREP_API_KEY
-  -h, --help   this help (Japanese when the first set of LC_ALL / LC_MESSAGES / LANG starts with ja)
+  --lang=en|ja  this help's language, and --serve's page default; overrides SYS1GREP_LANG
+  -h, --help   this help (--lang / SYS1GREP_LANG when set, else Japanese when the first set of LC_ALL /
+               LC_MESSAGES / LANG starts with ja)
   -V, --version  print the version and exit
 ```
 
@@ -1232,7 +1239,7 @@ Exit codes follow grep: 0 matched, 1 no match, 2 error (bad arguments, unreadabl
 Exit 1 after lines were sent prints one line on stderr: the highest probability, its line, the option that
 loosens the threshold (unless even that would not match), and `-p -t 0` (`-T 1` too with a negation) to see every
 probability (`sys1grep: no line reached 0.5 for "…"; the highest was 0.42 (app.log:118). ...`).
-Not with `-q`, `--summarize` (except `--summarize=ask`), `--step-to` or `--step-reverse-to`, nor when only a negated meaning kept lines out.
+Not with `-q`, `--step-to` or `--step-reverse-to`, nor when only a negated meaning kept lines out.
 
 ### Expression grammar
 

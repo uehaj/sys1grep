@@ -71,7 +71,8 @@ const fromEnv = (name, ...more) => {
   return { value: process.env[n], name: n, file: shellEnv.has(n) ? null : tildeEnvFile };
 };
 const envURL = fromEnv('URL'), envMODEL = fromEnv('MODEL'), envAPI_KEY = fromEnv('API_KEY', 'TYPESAFE_API_KEY'), envOPTS = fromEnv('OPTS'),
-  envSUMMARIZER = fromEnv('SUMMARIZER'), envSUMMARIZER_MODEL = fromEnv('SUMMARIZER_MODEL'), envSUMMARIZER_API_KEY = fromEnv('SUMMARIZER_API_KEY');
+  envSUMMARIZER = fromEnv('SUMMARIZER'), envSUMMARIZER_MODEL = fromEnv('SUMMARIZER_MODEL'), envSUMMARIZER_API_KEY = fromEnv('SUMMARIZER_API_KEY'),
+  envLANG = fromEnv('LANG');
 const SYS1GREP_URL = envURL.value, SYS1GREP_MODEL = envMODEL.value,
   SYS1GREP_SUMMARIZER = envSUMMARIZER.value, SYS1GREP_SUMMARIZER_MODEL = envSUMMARIZER_MODEL.value;
 // The default options: SYS1GREP_OPTS split on spaces, or settings.json's opts as they are. OPTS_NAME names them in
@@ -126,12 +127,17 @@ for (const k of ['rank', 'summarize']) if (opt[k] === OFF) delete opt[k];
 // #229: --summarize=ask prints the matches, then asks whether to summarize them, with the TOOL a bare --summarize uses
 const askSummary = opt.summarize === 'ask';
 if (askSummary) opt.summarize = SYS1GREP_SUMMARIZER || 'claude';
+// --lang=en|ja (#270): --help's language, and (via SYS1GREP_PROBE below) --serve's page default. langValue is the
+// resolved value before any locale fallback, undefined when nothing set it.
+const langValue = opt.lang ?? envLANG.value;
+if (langValue !== undefined && !['en', 'ja'].includes(langValue))
+  die(`${opt.lang !== undefined ? '--lang' : envLabel(envLANG)}: '${langValue}' is not en or ja`);
 // #222: --serve's launch check. With the options settled (command line, SYS1GREP_OPTS, settings.json opts) and before
 // any check of how they combine, say whether a folder target would be searched: -r in effect, or -g / git sys1grep,
 // which read no target files. Nothing is read or sent.
 if (process.env.SYS1GREP_PROBE === 'recursive') {
   // url: the endpoint a search sends to (customUrl, below), null for the default; --serve asks a local one whether it is the fake
-  console.log(JSON.stringify({ r: !!opt.r, g: !!opt.gitlog, git: globalThis.SYS1GREP_GIT === true, url: opt['sys1-url'] || SYS1GREP_URL || null }));
+  console.log(JSON.stringify({ r: !!opt.r, g: !!opt.gitlog, git: globalThis.SYS1GREP_GIT === true, url: opt['sys1-url'] || SYS1GREP_URL || null, lang: langValue ?? null }));
   process.exit(0);
 }
 // --verbose / --dry-run (#90): where a parsed option's value came from. null: never set (caller says "default").
@@ -412,12 +418,14 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
   --sys1-model=ID, --sys1-url=URL, --sys1-api-key=KEY
                the API settings, overriding SYS1GREP_MODEL, SYS1GREP_URL, SYS1GREP_API_KEY below.
                A key on the command line shows up in ps and shell history; prefer settings.json (below)
-  -h, --help   this help (Japanese when the first set of LC_ALL / LC_MESSAGES / LANG starts with ja)
+  --lang=en|ja  this help's language, and --serve's page default; overrides SYS1GREP_LANG below
+  -h, --help   this help (--lang / SYS1GREP_LANG when set, else Japanese when the first set of LC_ALL /
+               LC_MESSAGES / LANG starts with ja)
   -V, --version  print the version and exit
 
 Exit status: 0 matched / 1 no match / 2 error (bad arguments, unreadable file, API failure)
   On 1, when lines were sent, stderr names the highest probability and its line (not with -q,
-  --summarize but =ask, --step-to, --step-reverse-to, or when only a negation failed)
+  --step-to, --step-reverse-to, or when only a negation failed)
 
 Environment (read from the environment, else from ~/.config/sys1grep/settings.json, else from
 ~/.config/sys1grep/.env; ./.env is never read):
@@ -434,16 +442,17 @@ Environment (read from the environment, else from ~/.config/sys1grep/settings.js
                      .env only, not settings.json
   SYS1GREP_CACHE      --cache's default: on, off or only (default off); the environment or .env only, not
                      settings.json
+  SYS1GREP_LANG       en or ja (default en): --help's language, and --serve's page default
   OLLAMA_HOST         the host:port --summarize=ollama talks to (default 127.0.0.1:11434), as for ollama
   SYS1GREP_OPTS       default options, split on spaces and put before the command line, which wins;
                      --no-X turns a boolean flag off (--color takes --color=never). Options only: no
                      meanings, files or --. e.g. SYS1GREP_OPTS='--level strict -n'. Scripts: SYS1GREP_OPTS= sys1grep
   The key goes to SYS1GREP_URL, whatever it is. With SYS1GREP_URL set and no key, no auth header is sent.
   ~/.config/sys1grep/settings.json: a JSON object, every field optional, each the default for one variable:
-    url key model opts summarizer summarizerModel summarizerKey = SYS1GREP_URL SYS1GREP_API_KEY SYS1GREP_MODEL
-    SYS1GREP_OPTS SYS1GREP_SUMMARIZER SYS1GREP_SUMMARIZER_MODEL SYS1GREP_SUMMARIZER_API_KEY. opts is an array, one
-    argument each. A variable set to empty counts as unset and falls through, except SYS1GREP_OPTS=, which still
-    drops opts. Keep the file at 0600.
+    url key model opts summarizer summarizerModel summarizerKey lang = SYS1GREP_URL SYS1GREP_API_KEY SYS1GREP_MODEL
+    SYS1GREP_OPTS SYS1GREP_SUMMARIZER SYS1GREP_SUMMARIZER_MODEL SYS1GREP_SUMMARIZER_API_KEY SYS1GREP_LANG. opts is
+    an array, one argument each. A variable set to empty counts as unset and falls through, except SYS1GREP_OPTS=,
+    which still drops opts. Keep the file at 0600.
   e.g.  {"key": "your-key", "opts": ["--level", "strict", "-n"]}`;
 const HELP_JA = `usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION|-P /RE/ [-a MEANING] [-v MEANING]... [FILE...]
        sys1grep [OPTION]... -e START1 [-e START2]... --step-to END1 [-e END2]... [FILE...]
@@ -707,12 +716,14 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
   --sys1-model=ID, --sys1-url=URL, --sys1-api-key=KEY
                API の設定。下の SYS1GREP_MODEL / SYS1GREP_URL / SYS1GREP_API_KEY より優先。
                コマンドラインのキーは ps やシェル履歴に残るので、なるべく settings.json (下) に書く
-  -h, --help   このヘルプ (LC_ALL / LC_MESSAGES / LANG のうち最初に設定されたものが ja 以外なら英語)
+  --lang=en|ja  このヘルプの言語、および --serve のページの既定言語。下の SYS1GREP_LANG より優先
+  -h, --help   このヘルプ (--lang / SYS1GREP_LANG が設定されていればそれ、無ければ LC_ALL / LC_MESSAGES /
+               LANG のうち最初に設定されたものが ja 以外なら英語)
   -V, --version  バージョンを表示して終了
 
 終了コード: 一致あり 0 / なし 1 / エラー 2 (引数・読めないファイル・API 障害)
-  行を送って 1 のときは、最も高かった確率とその行を stderr に出す (-q・--summarize (=ask を除く)・--step-to・
-  --step-reverse-to と、否定だけで落ちたときは出さない)
+  行を送って 1 のときは、最も高かった確率とその行を stderr に出す (-q・--step-to・--step-reverse-to と、
+  否定だけで落ちたときは出さない)
 
 環境変数 (環境、無ければ ~/.config/sys1grep/settings.json、それも無ければ ~/.config/sys1grep/.env から読む。
 ./.env は読まない):
@@ -728,6 +739,7 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
   SYS1GREP_TEMPLATE   --rank か --summarize の --format=html の --template の既定。環境か .env だけで、
                      settings.json には書けない
   SYS1GREP_CACHE      --cache の既定: on・off・only (既定 off)。環境か .env だけで、settings.json には書けない
+  SYS1GREP_LANG       en または ja (既定 en)。--help の言語、および --serve のページの既定言語
   OLLAMA_HOST         --summarize=ollama の接続先 host:port (既定 127.0.0.1:11434)。ollama と同じ
   SYS1GREP_OPTS       既定のオプション。空白で区切ってコマンドラインの前に置くので、コマンドラインが
                      優先する。--no-X で真偽のフラグを消せる (--color は --color=never)。書けるのは
@@ -735,8 +747,8 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                      スクリプトからは SYS1GREP_OPTS= sys1grep と空にして呼ぶ
   キーは SYS1GREP_URL の先へそのまま送られる。SYS1GREP_URL 指定時にキーが無ければ認証ヘッダを付けない。
   ~/.config/sys1grep/settings.json: JSON のオブジェクト。どの項目も省略でき、それぞれ 1 つの環境変数の既定値になる:
-    url key model opts summarizer summarizerModel summarizerKey = SYS1GREP_URL SYS1GREP_API_KEY SYS1GREP_MODEL
-    SYS1GREP_OPTS SYS1GREP_SUMMARIZER SYS1GREP_SUMMARIZER_MODEL SYS1GREP_SUMMARIZER_API_KEY。opts は配列で、
+    url key model opts summarizer summarizerModel summarizerKey lang = SYS1GREP_URL SYS1GREP_API_KEY SYS1GREP_MODEL
+    SYS1GREP_OPTS SYS1GREP_SUMMARIZER SYS1GREP_SUMMARIZER_MODEL SYS1GREP_SUMMARIZER_API_KEY SYS1GREP_LANG。opts は配列で、
     1 要素が 1 引数。環境変数は空だと未設定扱いでこの先へ進むが、SYS1GREP_OPTS= だけは空のまま勝ち、opts を外す。
     ファイルの権限は 0600 にしておく
   例:  {"key": "your-key", "opts": ["--level", "strict", "-n"]}`;
@@ -746,7 +758,8 @@ if (opt.version) {
 }
 if (opt.help) {
   const locale = process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || '';
-  console.log(locale.startsWith('ja') ? HELP_JA : HELP_EN);
+  const helpLang = langValue ?? (locale.startsWith('ja') ? 'ja' : 'en');
+  console.log(helpLang === 'ja' ? HELP_JA : HELP_EN);
   process.exit(0);
 }
 // --rank --format=html's document. A template is an HTML file split by <!--result--> and <!--/result--> into the
@@ -2713,7 +2726,7 @@ if (dry) {
 // process.exit() can drop buffered stdout when piped, so set exitCode instead.
 process.exitCode = dry ? (hadError ? 2 : 0) : matched && opt.quiet ? 0 : hadError || (summaryFailed && !askSummary) ? 2 : matched ? 0 : 1; // -q: a match wins over an error
 // #139: exit 1 is a threshold decision, not a fact; name the closest line so the caller does not rerun to see it.
-if (process.exitCode === 1 && sent.length && !opt.quiet && (!summarizer || askSummary) && !multiStep) {
+if (process.exitCode === 1 && sent.length && !opt.quiet && !multiStep) {
   // A term is as close as its lowest meaning: an AND holds only when every meaning in it clears the threshold.
   let best = { p: -1 };
   // the tNeg after following the advice: --level loose also loosens tNeg, a lower -t (or -T as given) does not
