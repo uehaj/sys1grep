@@ -2554,7 +2554,8 @@ eq "$(cat "$tmp/demo-core.out")" "$demo_core_ok" "demo: the bundled core prints 
 eq "$(node -e 'console.log(JSON.parse(require("fs").readFileSync("../docs/demo/cache.json","utf8")).url)')" "https://api.typesafe.ai/v1/systemone" "demo: the committed recording was made on the real endpoint"
 $E node demo-core.mjs "$tmp/demo2" "$tmp/demo2/cache.json" >"$tmp/demo-core2.out" 2>"$tmp/demo-core2.err" || fail "demo-core.mjs on the committed recording: $(cat "$tmp/demo-core2.err")"
 eq "$(cat "$tmp/demo-core2.out")" "$demo_core_ok" "demo: the committed recording answers all 24 pills, bundle = CLI, nothing sent$(head -c 2000 "$tmp/demo-core2.err")"
-# owner, 2026-10-18: the demo is reached at /demo/ but linked from nowhere until it is announced
-eq "$(grep -lE 'sys1grep\.js\.org/demo|href="/?demo/?"|\(/?demo/?\)' ../README.md ../README.ja.md ../docs/index.html ../sys1grep.mjs ../CHANGELOG.md)" "" "demo: no link to it from the README, the site, --help or the changelog"
+# owner, 2026-10-18: the demo is reached at /demo/ but linked from nowhere until it is announced; 2026-11-04: the site embeds it
+eq "$(grep -lE 'sys1grep\.js\.org/demo|href="/?demo/?"|\(/?demo/?\)' ../README.md ../README.ja.md ../sys1grep.mjs ../CHANGELOG.md)" "" "demo: no link to it from the README, --help or the changelog"
+eq "$(grep -c '<iframe class="try" src="demo/"' ../docs/index.html)" "1" "demo: the site embeds it"
 # offline-sections: end
 echo "OK: $n checks passed (and the grep-guarded ones)"
