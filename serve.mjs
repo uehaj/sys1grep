@@ -694,7 +694,7 @@ body { background: var(--band) top / 100% 64px no-repeat, var(--page); }
 .title .langsw button:focus-visible { outline-color: #fff; }
 #sec-opts { border-top: 1px solid var(--rule); padding-top: 8px; } #sec-opts .sech { font-size: 15px; } #sec-opts .row { flex-wrap: wrap; }
 .command { background: var(--cmd-bg); color: #fff; border-radius: 12px; padding: 10px 16px; margin-top: 12px; }
-.command .sech { color: #fff; } .command #cmd { background: #03162e; color: #dbe7ff; border: 1px solid #7799ca; }
+.command .sech { color: #fff; } .command #cmd { background: #03162e; color: #dbe7ff; border: 1px solid #7799ca; } #cmd-demo-note { flex-basis: 100%; } /* its own line under the box, never squeezing #cmd */
 .command #copy { background: transparent; color: #fff; border-color: #7f9fca; } .command .note, .command .note code { color: #c9dbf7; }
 #d { margin-top: 12px; } main { margin-top: 12px; border-color: var(--rule); border-radius: 12px; box-shadow: var(--shadow); }
 @media (max-width: 850px) { .search-layout { grid-template-columns: 1fr; } .actions { border-left: 0; border-top: 1px solid var(--rule); padding: 10px 0 0; } }
