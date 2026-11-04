@@ -2267,6 +2267,7 @@ x=P:/throw (e|err|error)\\b|^ *raise\$/m|S:|P:/^export (async )?function |^expor
 empty end: Enter an end (--step-to)., 0 sent
 groups: [] b b b b b b b b b b b [multi-step] b b b b
 pressing every example sends 0
+an example after summarize was checked: on
 on false, steps hidden: -e 'network or remote connection failure' -v 'a retry is happening or was attempted' -n
 x=e:network or remote connection failure|v:a retry is happening or was attempted hops=0.. reverse=0 -> 1 lines; busy/aria-busy=true then idle/aria-busy=false
 disk full: steps hidden: -e 'disk full' -> ok
