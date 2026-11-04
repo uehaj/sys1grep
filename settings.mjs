@@ -7,14 +7,15 @@ import { dirname } from 'node:path';
 export const SETTINGS_FILE = `${homedir()}/.config/sys1grep/settings.json`;
 export const SETTINGS_SHOWN = '~/.config/sys1grep/settings.json';
 // field: the variable it stands for (SYS1GREP_ + this). opts is an array, one argument each, not a string to split.
-export const FIELDS = { url: 'URL', key: 'API_KEY', model: 'MODEL', opts: 'OPTS', summarizer: 'SUMMARIZER', summarizerModel: 'SUMMARIZER_MODEL', summarizerKey: 'SUMMARIZER_API_KEY' };
+export const FIELDS = { url: 'URL', key: 'API_KEY', model: 'MODEL', opts: 'OPTS', summarizer: 'SUMMARIZER', summarizerModel: 'SUMMARIZER_MODEL', summarizerKey: 'SUMMARIZER_API_KEY', lang: 'LANG' };
 
 // The checked settings, or null when there is no file. Throws an Error that names the field, never a value, for
 // invalid JSON or a known field of the wrong type. An unknown field only warns (stderr) and is dropped: an older
 // sys1grep must not break on a settings.json a newer one added a field to.
 export const parseSettings = text => {
+  text = text.replace(/^\uFEFF/, ''); // Some editors prefix UTF-8 JSON with a BOM; an empty file means no defaults.
   let s;
-  try { s = JSON.parse(text); } catch { throw new Error('not valid JSON'); } // V8's message quotes the text, which may hold a key
+  try { s = JSON.parse(text || '{}'); } catch { throw new Error('not valid JSON'); } // V8's message quotes the text, which may hold a key
   if (s === null || typeof s !== 'object' || Array.isArray(s)) throw new Error('not a JSON object');
   for (const [k, v] of Object.entries(s)) {
     if (!Object.hasOwn(FIELDS, k)) {

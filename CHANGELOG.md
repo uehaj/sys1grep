@@ -5,12 +5,16 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 
 ## [Unreleased]
 
-### Fixed
-- `--serve`'s launch refusal now reads the options as parsed, not the raw arguments: a cluster like `-nq` or `-Hn`
-  and a long name like `--with-filename`, `--l` or `--z` were let through and the page started. A negation such as
-  `--no-verbose` still starts it, as before. `-h` is refused at launch too (it was missed).
+### Added
+- `--lang=en|ja` (`SYS1GREP_LANG`, settings.json `lang`): `--help`'s language, before `LC_ALL` / `LC_MESSAGES` /
+  `LANG`; and `--serve`'s page default. The whole `--serve` page (and the browser demo, which reuses it) is now in
+  English or Japanese, not only the examples: the `EN` / `日本語` toggle moved from the examples card to the title
+  bar and drives every heading, label, button, hint, the settings dialog and its source notes, and the page's own
+  messages. Default: the saved choice (browser `localStorage`), else the launch/env/settings `lang`, else the
+  browser's own language, else English. What sys1grep itself prints, the `#cmd` command line and option names are
+  never translated (#270). The old examples-only choice (`exlang`) is not carried over: pick the language once again.
 
-## [0.5.0] - 2026-10-19
+## [0.5.0] - 2026-10-26
 
 ### Added
 - `--serve`: when searches go to the fake Jev of the offline tests (`tests/fake-jev.mjs`), the page says so in a
@@ -269,6 +273,9 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   Estimate are disabled while one runs (#189).
 
 ### Fixed
+- `--serve`'s launch refusal now reads the options as parsed, not the raw arguments: a cluster like `-nq` or `-Hn`
+  and a long name like `--with-filename`, `--l` or `--z` were let through and the page started. A negation such as
+  `--no-verbose` still starts it, as before. `-h` is refused at launch too (it was missed). (#259)
 - `--level=constructor` / `toString` / `__proto__` (and the same names for `--summarize`) are refused with exit 2;
   they used to pass the lookup through a property every object inherits and search with a garbage threshold, or
   spawn a garbled command (#133).

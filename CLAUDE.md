@@ -4,7 +4,7 @@
 
 | command | what | needs |
 |---|---|---|
-| `npm run test:offline` | `tests/offline.sh`: sys1grep against a fake Jev (`tests/fake-jev.mjs`). Expression (`-e`/`-P`/`-a`/`-v`/`!`), output shapes, `-A/-B/-C`, `--level`/`-t`/`-T`, `-p`, `--color`, `--chunk`, `-j`, `-q` (including the stop at the first match), `-Q`, auto-scope and `--no-auto-scope`, `--dedup` (auto and always print what never prints on `tests/dedup`), `--step-to` and `--step-reverse-to` (hops, `--edges`, the refusals), `--cache`, `--unit=function`, `SYS1GREP_URL` and the auth header, settings.json, `--dry-run`/`--verbose` (and where each setting came from), `git sys1grep` (`--cached`, `--untracked`, `<tree>`, `-i`), `--summarize` (`=ask`, `--summarize-prompt`, llm / pi / ollama / lmstudio / URL), `--rank`, `--template` and `--format=html`, the `-M`/`--max-filesize`/`--max-cost` limits, the large-send warning, the package.json `files` list, `--serve` (page, demo corpus, launch options and refusals, cost guard, summarize endpoint), `--help`/`--version`, the browser demo (built twice, from the checkout and from its tracked files alone, byte-identical; its bundled core against the CLI on a recording made on the fake) | node, curl, git. No key, same result every run, ~5 min. The demo section builds with esbuild through `npx` (pinned in `scripts/demo-build.mjs`), so it needs the npm registry on a cold npx cache; a warm one builds with `npm_config_offline=true` |
+| `npm run test:offline` | `tests/offline.sh`: sys1grep against a fake Jev (`tests/fake-jev.mjs`). Expression (`-e`/`-P`/`-a`/`-v`/`!`), output shapes, `-A/-B/-C`, `--level`/`-t`/`-T`, `-p`, `--color`, `--chunk`, `-j`, `-q` (including the stop at the first match), `-Q`, auto-scope and `--no-auto-scope`, `--dedup` (auto and always print what never prints on `tests/dedup`), `--step-to` and `--step-reverse-to` (hops, `--edges`, the refusals), `--cache`, `--unit=function`, `SYS1GREP_URL` and the auth header, settings.json, `--dry-run`/`--verbose` (and where each setting came from), `git sys1grep` (`--cached`, `--untracked`, `<tree>`, `-i`), `--summarize` (`=ask`, `--summarize-prompt`, llm / pi / ollama / lmstudio / URL), `--rank`, `--template` and `--format=html`, the `-M`/`--max-filesize`/`--max-cost` limits, the large-send warning, the package.json `files` list, `--serve` (page, its language toggle, demo corpus, launch options and refusals, cost guard, summarize endpoint), `--help`/`--version`, `--lang`/`SYS1GREP_LANG`, the browser demo (built twice, from the checkout and from its tracked files alone, byte-identical; its bundled core against the CLI on a recording made on the fake) | node, curl, git. No key, same result every run, ~5 min. The demo section builds with esbuild through `npx` (pinned in `scripts/demo-build.mjs`), so it needs the npm registry on a cold npx cache; a warm one builds with `npm_config_offline=true` |
 | `OFFLINE_ONLY=PATTERN npm run test:offline` | #240: the same run's shared setup, then only the sections whose name contains PATTERN (case-insensitive, comma-separated for several; `tests/offline-sections.mjs` reads the `section 'NAME'` markers in `offline.sh`). Ends with `OK: N checks passed (only: PATTERN, K of M sections)`; no match exits 2 and lists the names; `OFFLINE_ONLY=list` just lists them. Iterate with this while editing `sys1grep.mjs`; run the plain `npm run test:offline` once before a push (CI runs it that way) | same as above; a few seconds per section |
 | `npm test` | `test:offline`, then `tests/check.sh`: the same options against real Jev on the fixtures | `SYS1GREP_API_KEY` (env, `./.env`, `~/.config/sys1grep/settings.json`'s `key` or `~/.config/sys1grep/.env`); sends the fixtures to Jev, costs a little |
 | `npm run scope-eval` | `tests/scope-eval.mjs`: auto-scope against real Jev on `tests/scope-corpus.tsv` (tune on this) and `tests/scope-holdout.tsv` (never tune on it): wrong / missed scopes per threshold, and the rows that differ | the key above; one small request per row (160), about 20 s |
@@ -37,6 +37,38 @@ so a PR never rebuilds or commits it. `node scripts/demo-build.mjs` builds it in
   `scope-holdout.tsv`, write a new holdout blind (without reading the code or the corpora).
 - `check.sh` asserts only clear positives and negatives: Jev's probabilities drift by about ±0.05 between runs.
   A failure there can be the model, not the code; if `test:offline` passes, rerun and look at `-p` first.
+
+## Architecture
+
+Plain Node ESM (`engines` >=20.16), no dependencies, no build or lint step for the CLI. Domain words (Unit, Target,
+Start/End/Edge/Hop, Index/Tree) are defined in `CONTEXT.md`; use them as defined there.
+
+- `sys1grep.mjs` is the whole CLI: one top-level script, not a library. It parses arguments, builds the expression
+  (`-e`/`-Q` OR'd terms, `-a`/`-v` AND / AND NOT onto the preceding term, `-P` regex terms judged locally), collects
+  Targets (files, `-r`, git paths), splits them into Units, filters by regex first, batches the rest into chunks
+  (`requestOf` → `post`: `POST /v1/systemone`, answers cached in `~/.config/sys1grep/cache` with `--cache`), then
+  prints. Because it runs once at import, anything that reuses it (the demo, `--serve`) runs it again in a fresh
+  realm or a child process instead of calling functions.
+- `options.mjs`: the `parseArgs` option table and `parseOpts`, shared with `serve.mjs` so the settings panel
+  validates opts with the same parser (#199). Add an option here, then its help text in both `HELP_EN` and `HELP_JA`
+  in `sys1grep.mjs`.
+- `settings.mjs`: `~/.config/sys1grep/settings.json` (one field per `SYS1GREP_*` variable). Precedence: command line,
+  environment, settings.json, `~/.config/sys1grep/.env`.
+- `git-sys1grep.mjs` only sets `globalThis.SYS1GREP_GIT` and imports `sys1grep.mjs`.
+- `serve.mjs` (`--serve`): an HTTP page on 127.0.0.1 that runs `sys1grep.mjs` as a child per search, launch
+  arguments plus what the page's controls changed; `REFUSED_LAUNCH` lists what the page owns. The page's HTML and
+  script are inline in `serve.mjs`; the demo build reuses them in demo mode. `npm run serve:portless -- <launch
+  args>` runs it behind portless (global install, `PORTLESS_HTTPS=0 PORTLESS_PORT=8080` from `~/.bashrc`) at
+  `http://sys1grep.localhost:8080`; `PORTLESS_URL`'s host is then accepted as Host/Origin. With `HOME=$(mktemp -d)`
+  also set `PORTLESS_STATE_DIR=$HOME_REAL/.portless`, or portless starts a second proxy. Stop it by the pid
+  `portless list` shows, not `$!`.
+- `templates/*.html`: `--template` / `--format=html` output; users can override them in `~/.config/sys1grep/templates`.
+- `demo/` + `scripts/demo-build.mjs`: the browser demo bundles the real `sys1grep.mjs` with esbuild, `node:*` swapped
+  for `demo/shims/` (an unshimmed import fails the build), run in a Web Worker (`demo/runner.mjs`) against the
+  recorded answers in `docs/demo/cache.json` (`scripts/record-demo-cache.mjs`). A new `node:` import in
+  `sys1grep.mjs` needs a shim.
+- `package.json` `files` is the exact publish list; CI's `pack` job fails if `npm pack` differs. A new runtime file
+  must be added there. Releases: `RELEASING.md` (`npm run release`, from an interactive terminal).
 
 ## Agent skills
 
