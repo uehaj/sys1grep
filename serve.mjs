@@ -1019,7 +1019,7 @@ const exButton = ex => {
     step.checked = s >= 0; fields.textContent = ''; ends.textContent = '';
     ex.x.forEach((t, i) => i !== s && addField(t[0], t.slice(2), s >= 0 && i > s ? ends : fields));
     if (s < 0) addField('e', '', ends);
-    setControls(ex); show();
+    setControls({ summarize: f.elements.summarize.checked, ...ex }); show(); // an example keeps the summarize choice unless it sets one
   };
   return b;
 };

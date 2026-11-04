@@ -335,6 +335,9 @@ console.log(`groups: ${byId.ex.children.map(b => (b.tagName === 'button' ? 'b' :
 const n0 = sent.length;
 for (const b of pills) b.onclick();
 console.log(`pressing every example sends ${sent.length - n0}`);
+elements.summarize.checked = true; example('exclude with -v');
+console.log(`an example after summarize was checked: ${elements.summarize.checked ? 'on' : 'off'}`);
+elements.summarize.checked = false;
 example('what reaches it (--step-reverse-to)');
 example('exclude with -v');
 console.log(`on ${byId.step.checked}, ${state()}`);
