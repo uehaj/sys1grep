@@ -16,7 +16,7 @@
 
 Run `OFFLINE_ONLY=PATTERN npm run test:offline` on the section a change touches while iterating; run the plain `npm run test:offline` once and `npm test` before a push. The demo at /demo/ (#200) is built by
 `.github/workflows/pages.yml` at deploy time; `docs/demo/` is git-ignored except the recording `docs/demo/cache.json`,
-so a PR never rebuilds or commits it. `node scripts/demo-build.mjs` builds it into `docs/demo/` for a local look.
+so a PR never rebuilds or commits it. `node scripts/demo-build.mjs` builds it into `docs/demo/`; `npm run demo [-- PORT]` builds it and serves it at `http://127.0.0.1:8000/`, no API called.
 
 - Never start `--serve`, or run a script that drives it (`tests/serve-page.mjs`, a browser or screenshot check), with
   the real `HOME`: the settings panel's Save writes `~/.config/sys1grep/settings.json`, and a test run once left its
