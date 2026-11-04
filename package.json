@@ -31,6 +31,7 @@
     "settings.mjs",
     "options.mjs",
     "git-sys1grep.mjs",
+    "lib/sentences.mjs",
     "examples/app.js",
     "examples/app.py",
     "examples/logs.txt",

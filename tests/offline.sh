@@ -115,6 +115,10 @@ section 'package.json files'
 # module that 404s (ERR_MODULE_NOT_FOUND) at runtime instead of failing a test (options.mjs was missed this way).
 code 0 "package.json's \"files\" lists every locally-imported .mjs" -- node check-files.mjs
 
+section 'lib unit tests'
+# The pure parts moved out of sys1grep.mjs into lib/, tested directly with node:test (see the output with node --test tests/unit/*.test.mjs)
+code 0 "node --test unit/*.test.mjs" -- node --test unit/*.test.mjs
+
 section 'expression'
 eq "$($J -n -e cat "$F" | nums)" "1 4 " "-e"
 eq "$($J -n -e cat -e dog "$F" | nums)" "1 2 4 " "-e -e is OR"
