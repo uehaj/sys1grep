@@ -58,9 +58,9 @@
     if (demo.noSummary) return { error: demo.noSummary };
     const meanings = p.x.filter(f => /^[eavQ]:/.test(f)).map(f => f.slice(2)).join('; ');
     // the browser's summarizer follows outputLanguage, not the instruction: read the language off the summary field
-    // first ("in Japanese"), then off the meanings' own script
+    // first ("in Japanese"), then the page's own language (EN / 日本語), not the meanings' script
     const prompt = p['summarize-prompt'] ?? '';
-    const outputLanguage = /japanese|日本語/i.test(prompt) ? 'ja' : /english|英語/i.test(prompt) ? 'en' : /[぀-ヿ一-鿿]/.test(meanings) ? 'ja' : 'en';
+    const outputLanguage = /japanese|日本語/i.test(prompt) ? 'ja' : /english|英語/i.test(prompt) ? 'en' : document.documentElement.lang === 'ja' ? 'ja' : 'en';
     const right = document.getElementById('right');
     try {
       const s = await Summarizer.create({
