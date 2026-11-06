@@ -13,7 +13,8 @@ const text = el => (el.children.length ? el.children.map(text).join('') : String
 // (no descendant combinator here -- querySelectorAll handles that one space itself).
 const matchesSimple = (el, sel) => {
   const m = /^([a-zA-Z][\w-]*)?((?:\.[\w-]+|\[[\w-]+(?:="[^"]*")?\]|#[\w-]+)*)$/.exec(sel.trim());
-  if (!m) return false;
+  // a selector this engine cannot read fails the run, so a check never passes by matching nothing
+  if (!m || !sel.trim()) throw new Error(`serve-page.mjs DOM: unsupported selector '${sel}'`);
   if (m[1] && el.tagName !== m[1]) return false;
   for (const p of m[2].matchAll(/\.([\w-]+)|\[([\w-]+)(?:="([^"]*)")?\]|#([\w-]+)/g)) {
     if (p[1] && !el.className.split(/\s+/).includes(p[1])) return false;
@@ -58,6 +59,8 @@ class El {
     return d;
   }
   get parentElement() { return this.parent; }
+  get id() { return this.attrMap.id ?? ''; }
+  set id(v) { this.attrMap.id = String(v); }
   get lastChild() { return this.children.at(-1); }
   addEventListener(t, fn) { (this.ls[t] ??= []).push(fn); }
   focus() { document.activeElement = this; }
