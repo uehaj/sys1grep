@@ -1780,9 +1780,9 @@ eq "$($E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve --lang=fr "$F" 2>&1)
 Try 'sys1grep --help' for more information." "--serve --lang=fr is refused before listening"
 code 2 "SYS1GREP_LANG=fr --serve" -- $E SYS1GREP_LANG=fr SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$F"
 eq "$($E SYS1GREP_LANG=fr SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$F" 2>&1 | head -1)" "sys1grep: SYS1GREP_LANG: 'fr' is not en or ja" "SYS1GREP_LANG=fr --serve is refused at launch, not on every search"
-$E SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= node ../sys1grep.mjs --serve --lang=ja "$F" >"$tmp/serve-lang.url" 2>/dev/null &
+$E SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= node ../sys1grep.mjs --serve --lang=ja "$F" >"$tmp/serve-lang.url" 2>"$tmp/serve-lang.err" &
 serve=$!
-i=0; while [ ! -s "$tmp/serve-lang.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve --lang=ja did not start"; sleep 0.05; done
+i=0; while [ ! -s "$tmp/serve-lang.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve --lang=ja did not start: $(tail -c 800 "$tmp/serve-lang.err" 2>/dev/null)"; sleep 0.05; done
 U=$(cat "$tmp/serve-lang.url")
 eq "$(curl -s "$U" | grep -o '<html lang="[^"]*"')" '<html lang="ja"' "--serve --lang=ja: the page's own <html lang> follows it"
 eq "$(curl -s "$U" | grep -c '<h2 class="sech" id="h-cond"[^>]*>検索条件<')" "1" "--serve --lang=ja: a heading is rendered in Japanese"
@@ -1833,9 +1833,9 @@ eq "$($J --rank=match --format=html -n -e cat -v dog -C1 "$tmp/mk.txt" | grep -c
 eq "$($J --rank=match --format=html --color=never -e cat "$tmp/mk.txt" | grep -c '<mark>')" "0" "html marks: --color=never"
 section 'serve: page'
 # --serve: a page on 127.0.0.1, each search a run of sys1grep against the fake
-$E SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= SYS1GREP_SUMMARIZER= SYS1GREP_SUMMARIZER_MODEL= node ../sys1grep.mjs --serve "$F" >"$tmp/serve.url" 2>/dev/null &
+$E SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= SYS1GREP_SUMMARIZER= SYS1GREP_SUMMARIZER_MODEL= node ../sys1grep.mjs --serve "$F" >"$tmp/serve.url" 2>"$tmp/serve.err" &
 serve=$!
-i=0; while [ ! -s "$tmp/serve.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve did not start"; sleep 0.05; done
+i=0; while [ ! -s "$tmp/serve.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve did not start: $(tail -c 800 "$tmp/serve.err" 2>/dev/null)"; sleep 0.05; done
 U=$(cat "$tmp/serve.url")
 case $U in http://127.0.0.1:*/\?k=*) ;; *) fail "--serve prints its URL, with its token: $U" ;; esac
 BASE=${U%%\?*} K=${U#*k=} PORT=${U%%/\?*} PORT=${PORT##*:}
@@ -2031,9 +2031,9 @@ node -e 'import("../serve.mjs").then(({ EXAMPLES }) => {
   require("fs").writeFileSync(process.argv[1], lines.join("\n") + "\n");
 }, e => { console.error(e); process.exit(1); })' "$tmp/step.qs"
 [ "$(wc -l <"$tmp/step.qs" | tr -d ' ')" -ge 4 ] || fail "--serve: demo corpus: expected at least 4 multi-step examples, got $(wc -l <"$tmp/step.qs")"
-$E SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= node ../sys1grep.mjs --serve >"$tmp/serve-demo.url" 2>/dev/null &
+$E SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= node ../sys1grep.mjs --serve >"$tmp/serve-demo.url" 2>"$tmp/serve-demo.err" &
 serve=$!
-i=0; while [ ! -s "$tmp/serve-demo.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (no target) did not start"; sleep 0.05; done
+i=0; while [ ! -s "$tmp/serve-demo.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (no target) did not start: $(tail -c 800 "$tmp/serve-demo.err" 2>/dev/null)"; sleep 0.05; done
 U=$(cat "$tmp/serve-demo.url"); BASE=${U%%\?*} K=${U#*k=}
 eq "$(curl -s "$U" | grep -o '<li class="note">[^<]*</li>')" '<li class="note">demo corpus (bundled): examples/</li>' "--serve: no target, Target says it searches the bundled corpus"
 eq "$(curl -s "$U" | grep -c 'id="cmd-demo-note"')" "1" "--serve: no target, the copy-command box notes the pasted command reads stdin instead"
@@ -2060,18 +2060,18 @@ errtxt=$(printf '%s' "$got" | node -pe "JSON.parse(require('fs').readFileSync(0)
 case $errtxt in *'cannot be combined with -r'*) fail "--serve: no target, Details -g=1: still conflicts with the demo corpus's -r: $errtxt" ;; esac
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 # a bare --serve -g (launch-level, not a per-search toggle) hits the same wall if demo ignores it; it must not
-$E SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= node ../sys1grep.mjs --serve -g >"$tmp/serve-demo-g.url" 2>/dev/null &
+$E SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= node ../sys1grep.mjs --serve -g >"$tmp/serve-demo-g.url" 2>"$tmp/serve-demo-g.err" &
 serve=$!
-i=0; while [ ! -s "$tmp/serve-demo-g.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve -g did not start"; sleep 0.05; done
+i=0; while [ ! -s "$tmp/serve-demo-g.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve -g did not start: $(tail -c 800 "$tmp/serve-demo-g.err" 2>/dev/null)"; sleep 0.05; done
 U=$(cat "$tmp/serve-demo-g.url"); BASE=${U%%\?*} K=${U#*k=}
 got=$(curl -s "${BASE}results?k=$K&x=e:cat&rank=")
 errtxt=$(printf '%s' "$got" | node -pe "JSON.parse(require('fs').readFileSync(0)).error ?? ''")
 case $errtxt in *'cannot be combined with -r'*) fail "--serve -g at launch: demo still adds -r: $errtxt" ;; esac
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 # SYS1GREP_OPTS=-r (not the launch argv) must also turn the demo corpus off: targetsOf's probe, not a bare o.r parse
-$E SYS1GREP_OPTS=-r SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= node ../sys1grep.mjs --serve >"$tmp/serve-demo-opts.url" 2>/dev/null &
+$E SYS1GREP_OPTS=-r SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= node ../sys1grep.mjs --serve >"$tmp/serve-demo-opts.url" 2>"$tmp/serve-demo-opts.err" &
 serve=$!
-i=0; while [ ! -s "$tmp/serve-demo-opts.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (SYS1GREP_OPTS=-r) did not start"; sleep 0.05; done
+i=0; while [ ! -s "$tmp/serve-demo-opts.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (SYS1GREP_OPTS=-r) did not start: $(tail -c 800 "$tmp/serve-demo-opts.err" 2>/dev/null)"; sleep 0.05; done
 eq "$(curl -s "$(cat "$tmp/serve-demo-opts.url")" | grep -o '<li class="note">[^<]*</li>')" '<li class="note">. (this folder, recursively: -r)</li>' "--serve: SYS1GREP_OPTS=-r, no launch -r: Target says ., not the demo corpus"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 
@@ -2089,9 +2089,9 @@ node -e 'import("../serve.mjs").then(({ EXAMPLES }) => {
   }));
   require("fs").writeFileSync(process.argv[1], lines.join("\n") + "\n");
 }, e => { console.error(e); process.exit(1); })' "$tmp/meaning.qs"
-$E SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= node ../sys1grep.mjs --serve -r "$tmp/sc/target" >"$tmp/serve-sc.url" 2>/dev/null &
+$E SYS1GREP_URL=$base/v1 SYS1GREP_MODEL= node ../sys1grep.mjs --serve -r "$tmp/sc/target" >"$tmp/serve-sc.url" 2>"$tmp/serve-sc.err" &
 serve=$!
-i=0; while [ ! -s "$tmp/serve-sc.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve on the serve-check fixture did not start"; sleep 0.05; done
+i=0; while [ ! -s "$tmp/serve-sc.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve on the serve-check fixture did not start: $(tail -c 800 "$tmp/serve-sc.err" 2>/dev/null)"; sleep 0.05; done
 U=$(cat "$tmp/serve-sc.url"); BASE=${U%%\?*} K=${U#*k=}
 i=0
 while IFS="$(printf '\t')" read -r name qs; do
@@ -2104,9 +2104,9 @@ kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 
 section 'serve: launch options'
 # launch values the page must carry: -g unchecked, a summary instruction, the key kept out of the page
-$E SYS1GREP_SUMMARIZE=stdin SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve -n --dedup=always --summarize=cat --summarize-prompt=hello --suggest 'Q:why is it slow' --suggest=e:disk\ full --suggest=plain --sys1-api-key=SECRETKEY123 "$F" >"$tmp/serve2.url" 2>/dev/null &
+$E SYS1GREP_SUMMARIZE=stdin SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve -n --dedup=always --summarize=cat --summarize-prompt=hello --suggest 'Q:why is it slow' --suggest=e:disk\ full --suggest=plain --sys1-api-key=SECRETKEY123 "$F" >"$tmp/serve2.url" 2>"$tmp/serve2.err" &
 serve=$!
-i=0; while [ ! -s "$tmp/serve2.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (launch options) did not start"; sleep 0.05; done
+i=0; while [ ! -s "$tmp/serve2.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (launch options) did not start: $(tail -c 800 "$tmp/serve2.err" 2>/dev/null)"; sleep 0.05; done
 U=$(cat "$tmp/serve2.url"); BASE=${U%%\?*} K=${U#*k=}
 eq "$(curl -s "$U" | grep -c SECRETKEY123 || true)" "0" "--serve: the key is not in the page"
 eq "$(curl -s -H "x-sys1grep-token: $K" "${BASE}settings" | field 'j.key')" '[false,"cmd"]' "--serve settings: a launch --sys1-api-key wins, by source only"
@@ -2120,9 +2120,9 @@ section 'serve: summarizer per launch'
 # screen, not a second search) still runs the launch's own TOOL, ask's bare summarizer or a launch TOOL alike
 printf '%s\n' '#!/bin/sh' 'cat >/dev/null' 'echo LLMSUMMARY' >"$tmp/bin/llm"; chmod +x "$tmp/bin/llm"
 for launch in --summarize=ask --summarize=llm; do
-  $E PATH=$tmp/bin:$PATH SUM=$tmp/sum SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve $launch "$F" >"$tmp/serve7.url" 2>/dev/null &
+  $E PATH=$tmp/bin:$PATH SUM=$tmp/sum SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve $launch "$F" >"$tmp/serve7.url" 2>"$tmp/serve7.err" &
   serve=$!
-  i=0; while [ ! -s "$tmp/serve7.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve $launch did not start"; sleep 0.05; done
+  i=0; while [ ! -s "$tmp/serve7.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve $launch did not start: $(tail -c 800 "$tmp/serve7.err" 2>/dev/null)"; sleep 0.05; done
   U=$(cat "$tmp/serve7.url"); BASE=${U%%\?*} K=${U#*k=}
   want=SUMMARY; [ $launch = --summarize=ask ] || want=LLMSUMMARY
   eq "$(curl -s -X POST -H "x-sys1grep-token: $K" -H "Origin: ${BASE%/}" -H 'content-type: text/plain' --data-binary 'cat' "${BASE}summarize?x=e:cat&rank=" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); (j.text || j.error).trim()")" "$want" "--serve $launch: /summarize over the results on screen"
@@ -2134,9 +2134,9 @@ section 'serve: abandoned search'
 node -e "const s = require('http').createServer(() => {}).listen(0, () => console.log(s.address().port))" >"$tmp/hang.port" &
 hang=$!
 i=0; while [ ! -s "$tmp/hang.port" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "hanging server did not start"; sleep 0.05; done
-$E SYS1GREP_URL="http://127.0.0.1:$(cat "$tmp/hang.port")/v1" node ../sys1grep.mjs --serve "$F" >"$tmp/serve3.url" 2>/dev/null &
+$E SYS1GREP_URL="http://127.0.0.1:$(cat "$tmp/hang.port")/v1" node ../sys1grep.mjs --serve "$F" >"$tmp/serve3.url" 2>"$tmp/serve3.err" &
 serve=$!
-i=0; while [ ! -s "$tmp/serve3.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (hanging) did not start"; sleep 0.05; done
+i=0; while [ ! -s "$tmp/serve3.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (hanging) did not start: $(tail -c 800 "$tmp/serve3.err" 2>/dev/null)"; sleep 0.05; done
 U=$(cat "$tmp/serve3.url"); BASE=${U%%\?*} K=${U#*k=}
 curl -s -m 2 "${BASE}results?k=$K&x=e:cat&rank=" >/dev/null &
 curl=$!
@@ -2161,9 +2161,9 @@ i=0; while [ ! -s "$tmp/redir.port" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "
 : >"$tmp/like.log"
 RD="http://127.0.0.1:$(cat "$tmp/redir.port")/v1"
 mkdir -p "$tmp/.config/sys1grep"; printf '{"url":"%s"}' "$RD" >"$HS"; chmod 600 "$HS"
-$E env -u SYS1GREP_URL node ../sys1grep.mjs --serve "$F" >"$tmp/serve10.url" 2>/dev/null &
+$E env -u SYS1GREP_URL node ../sys1grep.mjs --serve "$F" >"$tmp/serve10.url" 2>"$tmp/serve10.err" &
 serve=$!
-i=0; while [ ! -s "$tmp/serve10.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (url from settings.json) did not start"; sleep 0.05; done
+i=0; while [ ! -s "$tmp/serve10.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (url from settings.json) did not start: $(tail -c 800 "$tmp/serve10.err" 2>/dev/null)"; sleep 0.05; done
 U=$(cat "$tmp/serve10.url"); BASE=${U%%\?*} K=${U#*k=}
 SK="x-sys1grep-token: $K" SO="Origin: ${BASE%/}" SJ="content-type: application/json"
 seturl() { curl -s -X POST -H "$SK" -H "$SO" -H "$SJ" --data "{\"url\":\"$1\"}" "${BASE}settings" | field 'j.fake'; }
@@ -2186,9 +2186,9 @@ section 'serve: multi-step and summarize endpoint'
 # An empty end is refused before sending; pressing examples sends nothing, and each puts the page in its own state
 # (a plain example turns multi-step off and resets reverse), and its search runs without an error.
 printf '%s\n' 'def main():' '  helper()' 'def helper():' '  raise X' >"$tmp/m.py"
-$E PATH=$tmp/bin:$PATH SUM=$tmp/sum SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve --suggest=e:disk\ full "$tmp/m.py" >"$tmp/serve4.url" 2>/dev/null &
+$E PATH=$tmp/bin:$PATH SUM=$tmp/sum SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve --suggest=e:disk\ full "$tmp/m.py" >"$tmp/serve4.url" 2>"$tmp/serve4.err" &
 serve=$!
-i=0; while [ ! -s "$tmp/serve4.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (multi-step) did not start"; sleep 0.05; done
+i=0; while [ ! -s "$tmp/serve4.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (multi-step) did not start: $(tail -c 800 "$tmp/serve4.err" 2>/dev/null)"; sleep 0.05; done
 eq "$(HOME="$tmp" node serve-page.mjs "$(cat "$tmp/serve4.url")")" "card children: #title #fake-jev #f #m #sd
 form children: #search .columns #sec-cmd #d
 sections: Target | Search conditions | Options | Command; Details stays the fold
@@ -2439,9 +2439,9 @@ section 'serve: --unit=function control'
 # multi-step is on), so a launch's --unit=function must survive a walk unchanged (sys1grep.mjs's own step-mode
 # default) rather than being forced back to --unit=line, which would die for want of --edges
 printf '%s\n' 'def main():' '  helper()' 'def helper():' '  raise X' >"$tmp/m.py"
-$E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve --unit=function "$tmp/m.py" >"$tmp/serve8.url" 2>/dev/null &
+$E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve --unit=function "$tmp/m.py" >"$tmp/serve8.url" 2>"$tmp/serve8.err" &
 serve=$!
-i=0; while [ ! -s "$tmp/serve8.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve --unit=function did not start"; sleep 0.05; done
+i=0; while [ ! -s "$tmp/serve8.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve --unit=function did not start: $(tail -c 800 "$tmp/serve8.err" 2>/dev/null)"; sleep 0.05; done
 U=$(cat "$tmp/serve8.url"); BASE=${U%%\?*} K=${U#*k=}
 eq "$(curl -s "$U" | grep -Fc '<select aria-describedby="hint-unit" name="unit"><option>line</option><option>sentence-by-jev</option><option>sentence-by-rule</option><option>function</option></select>')" "1" "--serve: Details' unit select offers function"
 eq "$(curl -s "${BASE}results?k=$K&x=e:main&x=S:&x=e:raise&rank=" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); j.error || 'ok'")" "ok" "--serve: a launch --unit=function still walks with multi-step on (not forced back to --unit=line)"
@@ -2456,9 +2456,9 @@ section 'serve: cost guard (--max-cost)'
 # #234 (Q1, measured 2026-10-12): a search over --max-cost is refused at once (--serve has no /dev/tty to ask on),
 # naming -y and --max-cost, neither of which the page can set; Details' own --max-cost control (above) lets a later
 # search clear it, once, for that search. JN's host (0.0.0.0) is not counted as local, so --max-cost 0 always asks.
-$E SYS1GREP_URL=http://0.0.0.0:${base##*:}/v1 node ../sys1grep.mjs --serve --max-cost 0 "$F" >"$tmp/serve9.url" 2>/dev/null &
+$E SYS1GREP_URL=http://0.0.0.0:${base##*:}/v1 node ../sys1grep.mjs --serve --max-cost 0 "$F" >"$tmp/serve9.url" 2>"$tmp/serve9.err" &
 serve=$!
-i=0; while [ ! -s "$tmp/serve9.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve --max-cost 0 did not start"; sleep 0.05; done
+i=0; while [ ! -s "$tmp/serve9.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve --max-cost 0 did not start: $(tail -c 800 "$tmp/serve9.err" 2>/dev/null)"; sleep 0.05; done
 U=$(cat "$tmp/serve9.url"); BASE=${U%%\?*} K=${U#*k=}
 GOT=$(curl -s "${BASE}results?k=$K&x=e:cat&rank=")
 eq "$(printf '%s' "$GOT" | node -pe "/needs a terminal to confirm on/.test(JSON.parse(require('fs').readFileSync(0)).error)")" "true" "--serve: a search over --max-cost is refused at once, naming the guard"
@@ -2475,9 +2475,9 @@ kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 section 'serve: --serve=PORT'
 # two --serve (npm run serve adds one): the last one's port is used and neither reaches the child
 PORT=$(node -e "const s = require('net').createServer().listen(0, '127.0.0.1', () => { console.log(s.address().port); s.close(); })")
-$E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve --serve=$PORT "$F" >"$tmp/serve5.url" 2>/dev/null &
+$E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve --serve=$PORT "$F" >"$tmp/serve5.url" 2>"$tmp/serve5.err" &
 serve=$!
-i=0; while [ ! -s "$tmp/serve5.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve --serve=PORT did not start"; sleep 0.05; done
+i=0; while [ ! -s "$tmp/serve5.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve --serve=PORT did not start: $(tail -c 800 "$tmp/serve5.err" 2>/dev/null)"; sleep 0.05; done
 U=$(cat "$tmp/serve5.url"); BASE=${U%%\?*}; K=${U##*k=}
 case $U in http://127.0.0.1:$PORT/*) ;; *) fail "--serve --serve=PORT: the port: $U" ;; esac
 eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=" | node -pe "JSON.parse(require('fs').readFileSync(0)).text")" "cat
@@ -2487,9 +2487,9 @@ section 'serve: targets display'
 # #216/#237: with no target the Target section says what a search reads instead: the bundled demo corpus, or . with
 # -r; -g shows git log in its place
 for launch in '' -r -g; do
-  $E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve $launch >"$tmp/serve6.url" 2>/dev/null &
+  $E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve $launch >"$tmp/serve6.url" 2>"$tmp/serve6.err" &
   serve=$!
-  i=0; while [ ! -s "$tmp/serve6.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve $launch (no target) did not start"; sleep 0.05; done
+  i=0; while [ ! -s "$tmp/serve6.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve $launch (no target) did not start: $(tail -c 800 "$tmp/serve6.err" 2>/dev/null)"; sleep 0.05; done
   curl -s "$(cat "$tmp/serve6.url")" >"$tmp/serve6.html"
   grep -o '<ul class="targets"[^>]*><li class="note">[^<]*' "$tmp/serve6.html" | sed 's/.*>//' >"$tmp/target.txt"
   grep -c '<ul class="targets" id="tg-files" hidden>.*<p class="note" id="tg-git">git log' "$tmp/serve6.html" >"$tmp/target.html" || true
@@ -2503,9 +2503,9 @@ done
 # six targets, one after --: five shown, the rest in a "+N more" fold; a name is shown as text, never as markup
 mkdir -p "$tmp/tg" && for t in a b c d '<x&y>' f g; do : >"$tmp/tg/$t.txt"; done
 sg="$PWD/../sys1grep.mjs"
-(cd "$tmp/tg" && exec $E SYS1GREP_URL=$base/v1 node "$sg" --serve a.txt b.txt c.txt d.txt '<x&y>.txt' f.txt -- g.txt) >"$tmp/serve6.url" 2>/dev/null &
+(cd "$tmp/tg" && exec $E SYS1GREP_URL=$base/v1 node "$sg" --serve a.txt b.txt c.txt d.txt '<x&y>.txt' f.txt -- g.txt) >"$tmp/serve6.url" 2>"$tmp/serve6.err" &
 serve=$!
-i=0; while [ ! -s "$tmp/serve6.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve with six targets did not start"; sleep 0.05; done
+i=0; while [ ! -s "$tmp/serve6.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve with six targets did not start: $(tail -c 800 "$tmp/serve6.err" 2>/dev/null)"; sleep 0.05; done
 eq "$(curl -s "$(cat "$tmp/serve6.url")" | grep -o 'id="tg-files">.*</ul><p' | sed 's/<\/*code>/|/g; s/<[^>]*>//g; s/^id="tg-files">//; s/<p$//' | tr -s '|')" \
   "|a.txt|b.txt|c.txt|d.txt|&lt;x&amp;y&gt;.txt|+2 more|f.txt|g.txt|" "--serve: six targets and one after --: five, then +2 more holding the rest, names escaped"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true; : >"$tmp/serve6.url"
@@ -2551,13 +2551,13 @@ code 2 "--serve --no-r DIR with -r in SYS1GREP_OPTS" -- limit $E SYS1GREP_OPTS=-
 mkdir -p "$tmp/.config/sys1grep"
 for launch in -r -g opts settings unchecked; do
   case $launch in
-    opts) $E SYS1GREP_OPTS=-r SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$tmp/sd" >"$tmp/serve6.url" 2>/dev/null & ;;
-    settings) printf '{"opts":["-r"]}' >"$HS"; chmod 600 "$HS"; $ES SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$tmp/sd" >"$tmp/serve6.url" 2>/dev/null & ;;
+    opts) $E SYS1GREP_OPTS=-r SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$tmp/sd" >"$tmp/serve6.url" 2>"$tmp/serve6.err" & ;;
+    settings) printf '{"opts":["-r"]}' >"$HS"; chmod 600 "$HS"; $ES SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$tmp/sd" >"$tmp/serve6.url" 2>"$tmp/serve6.err" & ;;
     unchecked) $E SYS1GREP_OPTS=--nonsense SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$tmp/sd" >"$tmp/serve6.url" 2>"$tmp/serve6.err" & ;; # no answer: start, and say so
-    *) $J --serve $launch "$tmp/sd" >"$tmp/serve6.url" 2>/dev/null & ;;
+    *) $J --serve $launch "$tmp/sd" >"$tmp/serve6.url" 2>"$tmp/serve6.err" & ;;
   esac
   serve=$!
-  i=0; while [ ! -s "$tmp/serve6.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve DIR ($launch) did not start"; sleep 0.05; done
+  i=0; while [ ! -s "$tmp/serve6.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve DIR ($launch) did not start: $(tail -c 800 "$tmp/serve6.err" 2>/dev/null)"; sleep 0.05; done
   kill $serve 2>/dev/null; wait $serve 2>/dev/null || true; : >"$tmp/serve6.url"; rm -f "$HS"
 done
 eq "$(head -1 "$tmp/serve6.err")" "sys1grep: --serve: could not check whether -r is in effect" "--serve: a check with no answer is reported, not fatal"

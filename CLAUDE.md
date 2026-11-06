@@ -25,7 +25,8 @@ so a PR never rebuilds or commits it. `node scripts/demo-build.mjs` builds it in
   the file's existence, size and mtime, never its content). Never print a real settings file or `.env`.
 - `--serve` work: run the `serve-check` skill and put its result in the PR. A worktree-isolated subagent cannot
   set `HOME`, so it cannot run this skill end to end; the coordinator dispatches a non-isolated subagent to run it
-  instead (owner decision, 2026-10-13).
+  instead (owner decision, 2026-10-13). A CSS or layout change that cannot run it: `node scripts/page-shot.mjs OUTDIR
+  [SELECTOR]` screenshots the page's markup at 1280/800/375, ja/en, light/dark, with no server and no `HOME`.
 - The fake scores a line 0.9 when it contains the meaning verbatim, `N` when the line also carries `@N`, else 0.05.
   It understands the judging question (`Does line L000 match the meaning: "…"?`) and the auto-scope question
   (`Does the meaning "…" restrict its matches to …?`: 0.9 when the meaning carries `@s:KEY` for that question's

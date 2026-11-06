@@ -13,6 +13,9 @@ repeatable.
 It does not replace `tests/offline.sh` or `tests/serve-page.mjs`. They check logic fast and for free; this skill
 checks what only a real browser shows, and costs a server start and a few seconds of Chromium.
 
+For a CSS or layout change where starting `--serve` is not possible, `node scripts/page-shot.mjs OUTDIR [SELECTOR]`
+covers item 9 (widths, light and dark) from the page's own markup, with no server; it does not cover items 1-8 or 10.
+
 ## 1. Start the server safely
 
 Never with the real `HOME` (#206: the settings dialog's Save writes `~/.config/sys1grep/settings.json`, and a run
