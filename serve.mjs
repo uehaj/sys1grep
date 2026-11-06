@@ -689,7 +689,7 @@ body { background: var(--band) top / 100% 64px no-repeat, var(--page); }
 #fake-jev { margin: 12px 0 0; }
 #demo-note { margin: 12px 0 0; padding: 10px 14px; background: var(--bg); border: 1px solid var(--accent); border-left-width: 6px; border-radius: 10px; } #demo-note p { margin: 0; } #demo-note p + p { margin-top: 4px; } #demo-note code { font: 13px ui-monospace, Menlo, monospace; } #demo-missing { font-weight: 700; color: var(--warn-fg); }
 .kcard { background: var(--bg); border: 1px solid var(--rule); border-radius: 12px; padding: 12px 16px; box-shadow: var(--shadow); margin-top: 12px; }
-.search-layout { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 16px; }
+.search-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; }
 .actions { border-left: 1px solid var(--rule); padding-left: 16px; display: flex; flex-direction: column; justify-content: center; gap: 8px; }
 #go { width: 100%; min-height: 40px; border: 0; border-radius: 10px; background: var(--go); color: #fff; font-size: 16px; font-weight: 700; box-shadow: 0 7px 16px rgba(20,105,250,.15); }
 .actions .row { margin: 0; flex-wrap: nowrap; } .actions .row > button { flex: 1; padding: 6px; white-space: nowrap; }
