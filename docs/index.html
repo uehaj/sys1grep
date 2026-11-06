@@ -16,7 +16,10 @@
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif}
 a{color:inherit}
 .wrap{max-width:1040px;margin:0 auto;padding:0 16px}
-header{padding:72px 0 32px;text-align:center}
+header{padding:72px 0 32px;text-align:center;position:relative}
+#langsw{position:absolute;top:16px;right:16px;display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--card)}
+#langsw button{border:0;background:none;color:var(--mute);font:600 .85rem/1 inherit;padding:7px 12px;cursor:pointer}
+#langsw button[aria-pressed=true]{background:var(--fg);color:var(--bg)}
 h1{font-size:clamp(2.4rem,7vw,4.2rem);line-height:1.05;margin:0 0 12px;letter-spacing:-.03em}
 .sub{font-size:clamp(1.5rem,4vw,2.2rem);font-weight:700;line-height:1.1;margin:0 0 16px;letter-spacing:-.02em}
 .sub .w{display:inline-block;background:linear-gradient(90deg,var(--accent),#66d9e8,#f38ba8,var(--accent));background-size:300%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:hue 8s linear infinite}
@@ -106,6 +109,7 @@ footer{padding:32px 0 56px;color:var(--mute);font-size:.9rem;text-align:center;b
 </head>
 <body>
 <header class="wrap">
+  <div id="langsw" role="group" aria-label="Language / 言語"><button type="button" data-l="en" aria-pressed="true">EN</button><button type="button" data-l="ja" lang="ja" aria-pressed="false">日本語</button></div>
   <h1>sys1grep</h1>
   <p class="sub" data-ja="&lt;span class=&quot;w&quot;&gt;意味&lt;/span&gt;で探す grep">grep by <span class="w">meaning</span></p>
   <p class="lead" data-ja="正規表現ではなく、&lt;b&gt;行が何を意味するか&lt;/b&gt;で行を探します。どの言語でも使え、AND / OR / NOT を組み合わせられます。各行は &lt;a href=&quot;https://typesafe.ai/&quot;&gt;TypeSafe Jev&lt;/a&gt; が判定し、「この行は当てはまるか」に較正済みの確率で答えます。">It finds lines by <b>what they mean</b>, not by regular expressions — in any language, with AND / OR / NOT. Every line is judged by <a href="https://typesafe.ai/">TypeSafe Jev</a>, which answers “does this line match?” with a calibrated probability.</p>
@@ -198,8 +202,17 @@ claude plugin install uehaj@uehaj-marketplace
 <footer>MIT License · <a href="https://github.com/uehaj/sys1grep">uehaj/sys1grep</a> · <a href="https://github.com/uehaj/sys1grep/blob/main/README.ja.md">日本語 README</a></footer>
 
 <script>
-const JA = /^ja\b/i.test(navigator.language || "");
-if (JA) { document.documentElement.lang = "ja"; document.title = "sys1grep — 意味で探す grep"; document.querySelectorAll("[data-ja]").forEach(e => { e.innerHTML = e.dataset.ja; }); }
+// The page's language: a choice saved by the EN / 日本語 switch (the same "lang" key the embedded demo uses, so the
+// two agree), else the browser's language. Each [data-ja] element keeps its English HTML in data-en once switched.
+let JA = false;
+const savedJa = () => { try { const v = localStorage.getItem("lang"); if (v === "en" || v === "ja") return v === "ja"; } catch {} return /^ja\b/i.test(navigator.language || ""); };
+function applyLang(ja) {
+  JA = ja; document.documentElement.lang = ja ? "ja" : "en";
+  document.title = ja ? "sys1grep — 意味で探す grep" : "sys1grep — grep by meaning";
+  document.querySelectorAll("[data-ja]").forEach(e => { if (e.dataset.en === undefined) e.dataset.en = e.innerHTML; e.innerHTML = ja ? e.dataset.ja : e.dataset.en; });
+  document.querySelectorAll("#langsw button").forEach(b => b.setAttribute("aria-pressed", String((b.dataset.l === "ja") === ja)));
+}
+applyLang(savedJa());
 // rows: [line, text, prob|null, keep, ask?]. <m>…</m> is what --color paints; <u>…</u> is a page annotation.
 const S = [
  {h:"Ask in one language, find every language",
@@ -276,12 +289,21 @@ const S = [
 // the Japanese text of each scene, in S's order; the page itself switches by navigator.language (data-ja above)
 const SJ = [{"h": "1つの言語で聞き、すべての言語で見つける","c": "日本語の意味「顧客が返金を求めている」ひとつで、フランス語・ロシア語・ドイツ語・スペイン語・中国語・韓国語の返金要求が見つかり、お礼のメッセージは外れます。"},{"h": "話題ではなく命題","c": "この中の 6 行は「返金について」の行です。顧客が返金を求めているのは 2 行だけ。ベクトル検索には近い行が 6 つ見え、Jev には正しい文が 2 つ見えます。","note": "しきい値は 0.5。確率が較正されているので、検索ごとの調整は要りません。"},{"h": "-Q は答えを探す","c": "問いは、人に聞くときのまま書けます。-e X は X と述べている行を、-Q X は X に答えている行を探します。「The job failed.」はジョブが成功したとは述べていませんが、成功したかという問いには「いいえ」と答えています。","note": "yes/no の問いには「いいえ」も答えになります。問いそのものを書いた行（13）は何にも答えていません。-Q X は -e \"the line answers: X\" の略記です。"},{"h": "AND / NOT はただのブール演算","c": "誰かが怒っていて、かつ動いているのが店員ではなく顧客である行。7 行目と 8 行目の違いは電話を切ったのが誰かだけで、埋め込みはほとんど同じです。","note": "サポート担当者が怒って電話を切った 7 行目は、2 つ目の意味に当てはまらないので外れます。"},{"h": "正規表現で足りるところは正規表現で","c": "-P で /…/flags と書いた正規表現の項は手元で照合し、問い合わせを送りません。-a と組み合わせると正規表現に当たった行だけを Jev に送り、名前付きグループを $<name> として意味に渡します。","note": "問い合わせは 0 件。grep -E と同じ行です。"},{"h": "キャプチャを意味に渡す","c": "-P の正規表現の名前付きグループは、同じ AND 項の意味（-a でも -v でも）に渡されます。各行はその行専用の問いと一緒に送られ、正規表現に当たらない行は送られません。","note": "51 行のうち 5 行を、それぞれ展開した問いで送り、3 行が当たりました。09:00 と 09:30 は営業時間内です。$<name> は sh / bash / zsh のダブルクォートの中でも残りますが、$1 は残りません。"},{"h": "英語の意味で日本語の行も当たる","c": "どの行にも “angry” や “frustrated” という語はありません。うち 2 行は日本語です。ログ・問い合わせ・コード・雑談の 51 行から 5 行が当たります。"},{"h": "改行をまたぐ文","c": "--unit=sentence-by-jev は、英語でも日本語でも改行をまたいで文を切り出し、1 文ずつ判定します。--color を付けると、行の中で当たった文だけに色が付きます。"},{"h": "テンプレートごとに 1 回だけ払う","c": "--dedup は ID・ハッシュ・数値・日付・パス・URL を伏せ、テンプレートごとに 1 行だけ送って答えを使い回します。Jev には先に、どの値が一致を変えうるかを尋ねるので、「ディスク使用率が 90% を超えている」では 95% と 12% を別々に扱います。","note": "6 行中 3 行が当たり。Jev に送ったのは 4 行（--dedup が 2 行をまとめ、入力約 235 トークン・約 $0.000010、21% を節約）、問い合わせ 2 回、入力 907 トークン、約 $0.000038"},{"h": "行だけでなくレコードも","c": "-z は grep -z と同じく NUL 区切りのレコードを判定します。「利用者から見える動作を変える」はコミット全体について言えることで、その中のどの 1 行についても言えません。"},{"h": "git が管理するファイルを検索","c": "npm install -g で git-sys1grep も入るので、git から git sys1grep として呼べます。git grep と同じく git が管理するファイルだけを検索し、無視されたファイルやビルド成果物は送りません。"}];
 console.assert(SJ.length === S.length, "SJ: one entry per scene");
-if (JA) S.forEach((s, i) => Object.assign(s, SJ[i]));
+const SE = S.map(s => ({ h: s.h, c: s.c, note: s.note }));
+const sceneLang = () => S.forEach((s, i) => Object.assign(s, SE[i], JA ? SJ[i] : {}));
+sceneLang();
 const $=id=>document.getElementById(id), still=matchMedia("(prefers-reduced-motion: reduce)").matches;
 let cur=0, playing=!still, token=0, ended=false;
 const wait=(ms,t)=>new Promise((ok,ng)=>setTimeout(()=>t===token?ok():ng(),ms));
 const esc=s=>s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/&lt;(\/?[mu])>/g,"<$1>");
 S.forEach((s,i)=>{const b=document.createElement("button");b.innerHTML='<i class="f"></i><span>'+(i+1)+". "+(s.new?"★ ":"")+s.h+"</span>";b.title=s.h;b.onclick=()=>go(i);$("chap").append(b)});
+const chapLabels = () => [...$("chap").children].forEach((b, i) => { b.lastChild.textContent = (i + 1) + ". " + (S[i].new ? "★ " : "") + S[i].h; b.title = S[i].h; });
+document.querySelectorAll("#langsw button").forEach(b => b.onclick = () => {
+  const ja = b.dataset.l === "ja"; if (ja === JA) return;
+  try { localStorage.setItem("lang", b.dataset.l); } catch {}
+  applyLang(ja); sceneLang(); chapLabels(); go(cur);
+  const f = document.querySelector("iframe.try"); if (f) f.src = f.src; // the demo reads the same saved choice on load
+});
 function row([n,tx,p,k,ask],bars){
   const d=document.createElement("div");d.className="row";
   const ok=p!=null&&p>=.5, pv=p==null?"":'<span class="pv '+(ok?"ok":"ng")+'">['+p.toFixed(2)+"]</span>";
