@@ -107,14 +107,14 @@ footer{padding:32px 0 56px;color:var(--mute);font-size:.9rem;text-align:center;b
 <body>
 <header class="wrap">
   <h1>sys1grep</h1>
-  <p class="sub">grep by <span class="w">meaning</span></p>
-  <p class="lead">It finds lines by <b>what they mean</b>, not by regular expressions — in any language, with AND / OR / NOT. Every line is judged by <a href="https://typesafe.ai/">TypeSafe Jev</a>, which answers “does this line match?” with a calibrated probability.</p>
+  <p class="sub" data-ja="&lt;span class=&quot;w&quot;&gt;意味&lt;/span&gt;で探す grep">grep by <span class="w">meaning</span></p>
+  <p class="lead" data-ja="正規表現ではなく、&lt;b&gt;行が何を意味するか&lt;/b&gt;で行を探します。どの言語でも使え、AND / OR / NOT を組み合わせられます。各行は &lt;a href=&quot;https://typesafe.ai/&quot;&gt;TypeSafe Jev&lt;/a&gt; が判定し、「この行は当てはまるか」に較正済みの確率で答えます。">It finds lines by <b>what they mean</b>, not by regular expressions — in any language, with AND / OR / NOT. Every line is judged by <a href="https://typesafe.ai/">TypeSafe Jev</a>, which answers “does this line match?” with a calibrated probability.</p>
   <div class="cta">
-    <a class="p" href="#demo">▶ Watch the demo</a>
-    <a class="p" href="#try">Try it in your browser</a>
+    <a class="p" href="#demo" data-ja="▶ デモを見る">▶ Watch the demo</a>
+    <a class="p" href="#try" data-ja="ブラウザで試す">Try it in your browser</a>
     <a href="https://github.com/uehaj/sys1grep">GitHub</a>
     <a href="https://www.npmjs.com/package/@uehaj/sys1grep">npm</a>
-    <a href="https://zenn.dev/uehaj/articles/jev-semgrep-grep-by-meaning">Design notes (日本語)</a>
+    <a href="https://zenn.dev/uehaj/articles/jev-semgrep-grep-by-meaning" data-ja="設計メモ（Zenn）">Design notes (日本語)</a>
   </div>
   <div class="install">npx @uehaj/sys1grep -n -e "customer is angry or frustrated" tickets.txt</div>
 </header>
@@ -138,66 +138,68 @@ footer{padding:32px 0 56px;color:var(--mute);font-size:.9rem;text-align:center;b
       <div class="chap" id="chap"></div>
     </div>
   </div>
-  <p style="text-align:center;color:var(--mute);font-size:.85rem">Outputs are real runs, copied from the <a href="https://github.com/uehaj/sys1grep#readme">README</a>. Scenes marked ★ <span class="new" style="vertical-align:1px">new</span> are new since 0.4.0.</p>
+  <p style="text-align:center;color:var(--mute);font-size:.85rem" data-ja="出力はすべて実際の実行結果で、&lt;a href=&quot;https://github.com/uehaj/sys1grep#readme&quot;&gt;README&lt;/a&gt; から写したものです。★ &lt;span class=&quot;new&quot; style=&quot;vertical-align:1px&quot;&gt;new&lt;/span&gt; の付いたシーンは 0.4.0 以降の新機能です。">Outputs are real runs, copied from the <a href="https://github.com/uehaj/sys1grep#readme">README</a>. Scenes marked ★ <span class="new" style="vertical-align:1px">new</span> are new since 0.4.0.</p>
 
   <section id="try">
-    <h2>Try it in your browser</h2>
-    <p style="color:var(--mute)">The real sys1grep, running in this page on a small sample folder. Jev's answers are a recording, so the examples cost nothing and need no key; a meaning you type yourself finds nothing it was not recorded for. <a href="demo/">Open it full page</a>.</p>
+    <h2 data-ja="ブラウザで試す">Try it in your browser</h2>
+    <p style="color:var(--mute)" data-ja="本物の sys1grep を、このページの中で小さなサンプルフォルダに対して動かします。Jev の答えは事前に記録したものなので、例はキーなし・費用なしで試せます。自分で入力した意味は、記録にないので何も見つかりません。&lt;a href=&quot;demo/&quot;&gt;全画面で開く&lt;/a&gt;。">The real sys1grep, running in this page on a small sample folder. Jev's answers are a recording, so the examples cost nothing and need no key; a meaning you type yourself finds nothing it was not recorded for. <a href="demo/">Open it full page</a>.</p>
     <iframe class="try" src="demo/" title="sys1grep demo" loading="lazy"></iframe>
   </section>
 
   <section>
-    <h2>Why it is different</h2>
+    <h2 data-ja="ほかと何が違うか">Why it is different</h2>
     <div class="grid">
-      <a class="card" href="https://github.com/uehaj/sys1grep#search-across-languages"><h3>🌐 Language-agnostic</h3><p>A Japanese meaning finds French, Russian, Chinese and Korean lines. No translation step, same speed, same cost.</p></a>
-      <a class="card" href="https://github.com/uehaj/sys1grep#how-this-differs-from-vector-search"><h3>⚖️ Propositions, not topics</h3><p>Jev reads the line and the question together, so negation and “asked for” vs “already done” change the answer. Embeddings can only measure closeness.</p></a>
-      <a class="card" href="https://github.com/uehaj/sys1grep#expression-grammar"><h3>🧮 Real booleans</h3><p>Each meaning yields an independent probability, so AND / OR / NOT are plain boolean operations. One threshold (0.5) works across queries.</p></a>
-      <a class="card" href="https://github.com/uehaj/sys1grep#how-it-works"><h3>📦 Zero dependencies</h3><p>Node.js 20.16+ and <code>fetch</code>. 30 lines per request, 8 requests in parallel (1 for a local URL). No index to build.</p></a>
-      <a class="card" href="https://github.com/uehaj/sys1grep#one-sentence-at-a-time---unitsentence-by-"><h3>✂️ Lines, sentences, records <span class="new card-b">new</span></h3><p><code>--unit=sentence-by-jev</code> finds sentences across line breaks and, with <code>--color</code>, colors just the matching sentence inside a line; <code>-z</code> judges NUL-terminated records like <code>git log -z</code>.</p></a>
-      <a class="card" href="https://github.com/uehaj/sys1grep#lines-that-answer-a-question--q"><h3>🎯 Find the answer <span class="new card-b">new</span></h3><p><code>-Q</code> / <code>--question</code> finds lines that <em>answer</em> X, where <code>-e X</code> finds lines that <em>say</em> X. <code>-q</code> stops at the first match, like <code>grep -q</code>.</p></a>
-      <a class="card" href="https://github.com/uehaj/sys1grep#regex-terms"><h3>🔣 Regex terms <span class="new card-b">new</span></h3><p><code>-P '/ERROR|FATAL/'</code> runs locally for free, prefilters what Jev sees, and hands captures to meanings as <code>$&lt;name&gt;</code>: <code>-a '$&lt;time&gt; is at night'</code> asks each line about its own time.</p></a>
-      <a class="card" href="https://github.com/uehaj/sys1grep#one-line-per-template---dedup"><h3>🗜️ One request per template <span class="new card-b">new</span></h3><p><code>--dedup</code> folds machine logs by skeleton: a 43,071-line system log becomes 550 templates, 1.2% of the bytes.</p></a>
-      <a class="card" href="https://github.com/uehaj/sys1grep#sending-less"><h3>💸 Send only what matters <span class="new card-b">new</span></h3><p>Narrow before you pay: <code>--include</code> / <code>--exclude</code>, <code>--changed-within=7d</code>, <code>.gitignore</code>, binary and secret skips, regex terms, <code>--dedup</code>, <code>--cache</code> (a request sent before costs nothing). <code>--dry-run</code> / <code>-i</code> show the totals first.</p></a>
-      <a class="card" href="https://github.com/uehaj/sys1grep#sending-less"><h3>♻️ Never pay twice <span class="new card-b">new</span></h3><p><code>--cache</code> keeps Jev’s answers on your machine, so the same search again sends nothing and costs nothing. <code>--cache=only</code> answers from the cache alone.</p></a>
-      <a class="card" href="https://github.com/uehaj/sys1grep#as-a-git-subcommand-git-sys1grep"><h3>🌿 git sys1grep <span class="new card-b">new</span></h3><p><code>git sys1grep</code> searches tracked files like <code>git grep</code>. <code>SYS1GREP_OPTS</code> sets default options; <code>--sys1-url</code> / <code>--sys1-model</code> override the endpoint per run.</p></a>
-      <a class="card" href="https://github.com/uehaj/sys1grep#commits-instead-of-files--g"><h3>📜 Commits too <span class="new card-b">new</span></h3><p><code>-g</code> searches <code>git log</code>'s commits, one record each; a time, language or author in the meaning becomes <code>git log</code>'s own arguments.</p></a>
-      <a class="card" href="https://github.com/uehaj/sys1grep#one-function-at-a-time---unitfunction"><h3>🧩 One function at a time <span class="new card-b">new</span></h3><p><code>--unit=function</code> judges each function as one unit and prints its lines. Ask about what a function does, not what one line says.</p></a>
-      <a class="card" href="https://github.com/uehaj/sys1grep#from-one-function-to-another---step-to"><h3>🧭 Function to function <span class="new card-b">new</span></h3><p><code>--step-to</code> walks the calls from the functions one expression matches to those another matches; <code>--step-reverse-to</code> walks back.</p></a>
-      <a class="card" href="https://github.com/uehaj/sys1grep#best-first---rank"><h3>🏅 Best first, or a summary <span class="new card-b">new</span></h3><p><code>--rank</code> prints the results best first, as text, Markdown or an HTML page; <code>--summarize</code> hands the matches to a small model and prints its answer instead (<code>--summarize=ask</code> decides after seeing them).</p></a>
-      <a class="card" href="https://github.com/uehaj/sys1grep#a-summary-instead-of-the-lines---summarize"><h3>🏠 Summaries on your machine <span class="new card-b">new</span></h3><p><code>--summarize=ollama</code> or <code>=lmstudio</code> hands the matches to a local model, so the summary step runs on your machine.</p></a>
-      <a class="card" href="https://github.com/uehaj/sys1grep#a-search-page---serve"><h3>🔍 A search page <span class="new card-b">new</span></h3><p><code>--serve</code> opens a page on 127.0.0.1 with the meanings, options and the command line to copy; with no target it searches a small bundled sample.</p></a>
-      <a class="card" href="https://github.com/uehaj/sys1grep#other-endpoints"><h3>🔑 Any endpoint</h3><p>TypeSafe by default; OpenRouter, Vercel AI Gateway or any server that speaks <code>POST /v1/systemone</code> via <code>SYS1GREP_URL</code>.</p></a>
-      <a class="card" href="https://github.com/uehaj/sys1grep#use-it-from-claude-code"><h3>🤖 Claude Code skill</h3><p>Describe what you want in plain words; the skill builds the expression, runs it and reports <code>file:line</code> hits.</p></a>
+      <a class="card" href="https://github.com/uehaj/sys1grep#search-across-languages"><h3 data-ja="🌐 言語を問わない">🌐 Language-agnostic</h3><p data-ja="日本語の意味で、フランス語・ロシア語・中国語・韓国語の行が見つかります。翻訳の手順はなく、速さも費用も変わりません。">A Japanese meaning finds French, Russian, Chinese and Korean lines. No translation step, same speed, same cost.</p></a>
+      <a class="card" href="https://github.com/uehaj/sys1grep#how-this-differs-from-vector-search"><h3 data-ja="⚖️ 話題ではなく命題">⚖️ Propositions, not topics</h3><p data-ja="Jev は行と問いを一緒に読むので、否定や「依頼している」と「もう済んだ」の違いで答えが変わります。埋め込みにできるのは近さを測ることだけです。">Jev reads the line and the question together, so negation and “asked for” vs “already done” change the answer. Embeddings can only measure closeness.</p></a>
+      <a class="card" href="https://github.com/uehaj/sys1grep#expression-grammar"><h3 data-ja="🧮 本物のブール演算">🧮 Real booleans</h3><p data-ja="意味ごとに独立した確率が出るので、AND / OR / NOT はただのブール演算です。しきい値は 0.5 ひとつで、どの検索にも使えます。">Each meaning yields an independent probability, so AND / OR / NOT are plain boolean operations. One threshold (0.5) works across queries.</p></a>
+      <a class="card" href="https://github.com/uehaj/sys1grep#how-it-works"><h3 data-ja="📦 依存ゼロ">📦 Zero dependencies</h3><p data-ja="Node.js 20.16 以上と &lt;code&gt;fetch&lt;/code&gt; だけ。1 回の問い合わせで 30 行、8 件を並列に送ります（ローカルの URL では 1 件ずつ）。インデックスは作りません。">Node.js 20.16+ and <code>fetch</code>. 30 lines per request, 8 requests in parallel (1 for a local URL). No index to build.</p></a>
+      <a class="card" href="https://github.com/uehaj/sys1grep#one-sentence-at-a-time---unitsentence-by-"><h3 data-ja="✂️ 行・文・レコード &lt;span class=&quot;new card-b&quot;&gt;new&lt;/span&gt;">✂️ Lines, sentences, records <span class="new card-b">new</span></h3><p data-ja="&lt;code&gt;--unit=sentence-by-jev&lt;/code&gt; は改行をまたいで文を見つけ、&lt;code&gt;--color&lt;/code&gt; を付けると行の中で当たった文だけに色を付けます。&lt;code&gt;-z&lt;/code&gt; は &lt;code&gt;git log -z&lt;/code&gt; のような NUL 区切りのレコードを判定します。"><code>--unit=sentence-by-jev</code> finds sentences across line breaks and, with <code>--color</code>, colors just the matching sentence inside a line; <code>-z</code> judges NUL-terminated records like <code>git log -z</code>.</p></a>
+      <a class="card" href="https://github.com/uehaj/sys1grep#lines-that-answer-a-question--q"><h3 data-ja="🎯 答えを探す &lt;span class=&quot;new card-b&quot;&gt;new&lt;/span&gt;">🎯 Find the answer <span class="new card-b">new</span></h3><p data-ja="&lt;code&gt;-Q&lt;/code&gt; / &lt;code&gt;--question&lt;/code&gt; は X に&lt;em&gt;答えている&lt;/em&gt;行を、&lt;code&gt;-e X&lt;/code&gt; は X と&lt;em&gt;述べている&lt;/em&gt;行を探します。&lt;code&gt;-q&lt;/code&gt; は &lt;code&gt;grep -q&lt;/code&gt; と同じく最初の一致で止まります。"><code>-Q</code> / <code>--question</code> finds lines that <em>answer</em> X, where <code>-e X</code> finds lines that <em>say</em> X. <code>-q</code> stops at the first match, like <code>grep -q</code>.</p></a>
+      <a class="card" href="https://github.com/uehaj/sys1grep#regex-terms"><h3 data-ja="🔣 正規表現の項 &lt;span class=&quot;new card-b&quot;&gt;new&lt;/span&gt;">🔣 Regex terms <span class="new card-b">new</span></h3><p data-ja="&lt;code&gt;-P &#x27;/ERROR|FATAL/&#x27;&lt;/code&gt; は手元で無料で照合して Jev に送る行を先に絞り、キャプチャを &lt;code&gt;$&amp;lt;name&amp;gt;&lt;/code&gt; として意味に渡します。&lt;code&gt;-a &#x27;$&amp;lt;time&amp;gt; is at night&#x27;&lt;/code&gt; なら、各行にその行の時刻について尋ねます。"><code>-P '/ERROR|FATAL/'</code> runs locally for free, prefilters what Jev sees, and hands captures to meanings as <code>$&lt;name&gt;</code>: <code>-a '$&lt;time&gt; is at night'</code> asks each line about its own time.</p></a>
+      <a class="card" href="https://github.com/uehaj/sys1grep#one-line-per-template---dedup"><h3 data-ja="🗜️ テンプレートごとに 1 回 &lt;span class=&quot;new card-b&quot;&gt;new&lt;/span&gt;">🗜️ One request per template <span class="new card-b">new</span></h3><p data-ja="&lt;code&gt;--dedup&lt;/code&gt; は機械が出すログを骨組みでまとめます。43,071 行のシステムログが 550 個のテンプレート、バイト数で 1.2% になります。"><code>--dedup</code> folds machine logs by skeleton: a 43,071-line system log becomes 550 templates, 1.2% of the bytes.</p></a>
+      <a class="card" href="https://github.com/uehaj/sys1grep#sending-less"><h3 data-ja="💸 必要なものだけ送る &lt;span class=&quot;new card-b&quot;&gt;new&lt;/span&gt;">💸 Send only what matters <span class="new card-b">new</span></h3><p data-ja="払う前に絞り込めます。&lt;code&gt;--include&lt;/code&gt; / &lt;code&gt;--exclude&lt;/code&gt;、&lt;code&gt;--changed-within=7d&lt;/code&gt;、&lt;code&gt;.gitignore&lt;/code&gt;、バイナリと秘密情報の除外、正規表現の項、&lt;code&gt;--dedup&lt;/code&gt;、&lt;code&gt;--cache&lt;/code&gt;（一度送った問い合わせは無料）。&lt;code&gt;--dry-run&lt;/code&gt; / &lt;code&gt;-i&lt;/code&gt; で先に合計を見られます。">Narrow before you pay: <code>--include</code> / <code>--exclude</code>, <code>--changed-within=7d</code>, <code>.gitignore</code>, binary and secret skips, regex terms, <code>--dedup</code>, <code>--cache</code> (a request sent before costs nothing). <code>--dry-run</code> / <code>-i</code> show the totals first.</p></a>
+      <a class="card" href="https://github.com/uehaj/sys1grep#sending-less"><h3 data-ja="♻️ 二度払わない &lt;span class=&quot;new card-b&quot;&gt;new&lt;/span&gt;">♻️ Never pay twice <span class="new card-b">new</span></h3><p data-ja="&lt;code&gt;--cache&lt;/code&gt; は Jev の答えを手元に保存するので、同じ検索をもう一度しても何も送らず、費用もかかりません。&lt;code&gt;--cache=only&lt;/code&gt; はキャッシュだけで答えます。"><code>--cache</code> keeps Jev’s answers on your machine, so the same search again sends nothing and costs nothing. <code>--cache=only</code> answers from the cache alone.</p></a>
+      <a class="card" href="https://github.com/uehaj/sys1grep#as-a-git-subcommand-git-sys1grep"><h3>🌿 git sys1grep <span class="new card-b">new</span></h3><p data-ja="&lt;code&gt;git sys1grep&lt;/code&gt; は &lt;code&gt;git grep&lt;/code&gt; と同じく、git が管理するファイルを検索します。&lt;code&gt;SYS1GREP_OPTS&lt;/code&gt; で既定のオプションを決め、&lt;code&gt;--sys1-url&lt;/code&gt; / &lt;code&gt;--sys1-model&lt;/code&gt; で実行ごとに接続先を変えられます。"><code>git sys1grep</code> searches tracked files like <code>git grep</code>. <code>SYS1GREP_OPTS</code> sets default options; <code>--sys1-url</code> / <code>--sys1-model</code> override the endpoint per run.</p></a>
+      <a class="card" href="https://github.com/uehaj/sys1grep#commits-instead-of-files--g"><h3 data-ja="📜 コミットも &lt;span class=&quot;new card-b&quot;&gt;new&lt;/span&gt;">📜 Commits too <span class="new card-b">new</span></h3><p data-ja="&lt;code&gt;-g&lt;/code&gt; は &lt;code&gt;git log&lt;/code&gt; のコミットを 1 件ずつ検索します。意味に含まれる時期・言語・作者は &lt;code&gt;git log&lt;/code&gt; 自身の引数になります。"><code>-g</code> searches <code>git log</code>'s commits, one record each; a time, language or author in the meaning becomes <code>git log</code>'s own arguments.</p></a>
+      <a class="card" href="https://github.com/uehaj/sys1grep#one-function-at-a-time---unitfunction"><h3 data-ja="🧩 関数ごとに &lt;span class=&quot;new card-b&quot;&gt;new&lt;/span&gt;">🧩 One function at a time <span class="new card-b">new</span></h3><p data-ja="&lt;code&gt;--unit=function&lt;/code&gt; は関数を 1 単位として判定し、その行を出力します。1 行が何を述べているかではなく、関数が何をしているかを尋ねられます。"><code>--unit=function</code> judges each function as one unit and prints its lines. Ask about what a function does, not what one line says.</p></a>
+      <a class="card" href="https://github.com/uehaj/sys1grep#from-one-function-to-another---step-to"><h3 data-ja="🧭 関数から関数へ &lt;span class=&quot;new card-b&quot;&gt;new&lt;/span&gt;">🧭 Function to function <span class="new card-b">new</span></h3><p data-ja="&lt;code&gt;--step-to&lt;/code&gt; は、ある式に当たる関数から別の式に当たる関数まで呼び出しをたどります。&lt;code&gt;--step-reverse-to&lt;/code&gt; は逆向きにたどります。"><code>--step-to</code> walks the calls from the functions one expression matches to those another matches; <code>--step-reverse-to</code> walks back.</p></a>
+      <a class="card" href="https://github.com/uehaj/sys1grep#best-first---rank"><h3 data-ja="🏅 よい順に、または要約で &lt;span class=&quot;new card-b&quot;&gt;new&lt;/span&gt;">🏅 Best first, or a summary <span class="new card-b">new</span></h3><p data-ja="&lt;code&gt;--rank&lt;/code&gt; は結果を関連の高い順に、テキスト・Markdown・HTML ページで出力します。&lt;code&gt;--summarize&lt;/code&gt; は当たった行を小さなモデルに渡し、代わりにその答えを出力します（&lt;code&gt;--summarize=ask&lt;/code&gt; は結果を見てから決めます）。"><code>--rank</code> prints the results best first, as text, Markdown or an HTML page; <code>--summarize</code> hands the matches to a small model and prints its answer instead (<code>--summarize=ask</code> decides after seeing them).</p></a>
+      <a class="card" href="https://github.com/uehaj/sys1grep#a-summary-instead-of-the-lines---summarize"><h3 data-ja="🏠 要約も手元で &lt;span class=&quot;new card-b&quot;&gt;new&lt;/span&gt;">🏠 Summaries on your machine <span class="new card-b">new</span></h3><p data-ja="&lt;code&gt;--summarize=ollama&lt;/code&gt; や &lt;code&gt;=lmstudio&lt;/code&gt; は当たった行をローカルのモデルに渡すので、要約も手元のマシンで済みます。"><code>--summarize=ollama</code> or <code>=lmstudio</code> hands the matches to a local model, so the summary step runs on your machine.</p></a>
+      <a class="card" href="https://github.com/uehaj/sys1grep#a-search-page---serve"><h3 data-ja="🔍 検索ページ &lt;span class=&quot;new card-b&quot;&gt;new&lt;/span&gt;">🔍 A search page <span class="new card-b">new</span></h3><p data-ja="&lt;code&gt;--serve&lt;/code&gt; は 127.0.0.1 に、意味・オプション・コピーできるコマンドラインを並べたページを開きます。対象を指定しなければ、同梱の小さなサンプルを検索します。"><code>--serve</code> opens a page on 127.0.0.1 with the meanings, options and the command line to copy; with no target it searches a small bundled sample.</p></a>
+      <a class="card" href="https://github.com/uehaj/sys1grep#other-endpoints"><h3 data-ja="🔑 どの接続先でも">🔑 Any endpoint</h3><p data-ja="既定は TypeSafe です。&lt;code&gt;SYS1GREP_URL&lt;/code&gt; で、OpenRouter、Vercel AI Gateway など &lt;code&gt;POST /v1/systemone&lt;/code&gt; を受け付ける任意のサーバーを使えます。">TypeSafe by default; OpenRouter, Vercel AI Gateway or any server that speaks <code>POST /v1/systemone</code> via <code>SYS1GREP_URL</code>.</p></a>
+      <a class="card" href="https://github.com/uehaj/sys1grep#use-it-from-claude-code"><h3 data-ja="🤖 Claude Code スキル">🤖 Claude Code skill</h3><p data-ja="やりたいことを普通の言葉で書けば、スキルが式を組み立てて実行し、当たった &lt;code&gt;file:line&lt;/code&gt; を報告します。">Describe what you want in plain words; the skill builds the expression, runs it and reports <code>file:line</code> hits.</p></a>
     </div>
   </section>
 
   <section>
-    <h2>Get started</h2>
-<pre><span class="c"># install (or just use npx)</span>
+    <h2 data-ja="はじめかた">Get started</h2>
+<pre><span class="c" data-ja="# インストール（npx で直接使ってもよい）"># install (or just use npx)</span>
 npm install -g @uehaj/sys1grep
 
-<span class="c"># API key from https://console.typesafe.ai/</span>
+<span class="c" data-ja="# API キーは https://console.typesafe.ai/ で取得"># API key from https://console.typesafe.ai/</span>
 export SYS1GREP_API_KEY=your-key
 
-<span class="c"># search the files git tracks, like git grep</span>
+<span class="c" data-ja="# git grep のように、git が管理するファイルを検索"># search the files git tracks, like git grep</span>
 git sys1grep -l -e "customer is asking for a refund"
 
-<span class="c"># other endpoints: set the URL and its key together</span>
+<span class="c" data-ja="# ほかの接続先: URL とそのキーを一緒に設定"># other endpoints: set the URL and its key together</span>
 export SYS1GREP_URL=https://openrouter.ai/api/v1/systemone SYS1GREP_API_KEY=sk-or-...
 
-<span class="c"># meanings combine: (A and B) or C, and NOT with -v</span>
+<span class="c" data-ja="# 意味は組み合わせられる: (A かつ B) または C、-v で NOT"># meanings combine: (A and B) or C, and NOT with -v</span>
 sys1grep -n -e "network or remote connection failure" -v "a retry is happening" app.log</pre>
-<pre><span class="c"># as a Claude Code skill</span>
+<pre><span class="c" data-ja="# Claude Code のスキルとして"># as a Claude Code skill</span>
 claude plugin marketplace add uehaj/uehaj-marketplace
 claude plugin install uehaj@uehaj-marketplace
-<span class="c"># then, inside Claude Code</span>
+<span class="c" data-ja="# そのあと Claude Code の中で"># then, inside Claude Code</span>
 /uehaj:sys1grep customer is asking for a refund tickets/*.txt</pre>
-    <p style="color:var(--mute);font-size:.9rem">Every line searched is sent to the TypeSafe API (or the endpoint in <code>SYS1GREP_URL</code>).</p>
+    <p style="color:var(--mute);font-size:.9rem" data-ja="検索した行はすべて TypeSafe API（または &lt;code&gt;SYS1GREP_URL&lt;/code&gt; の接続先）に送られます。">Every line searched is sent to the TypeSafe API (or the endpoint in <code>SYS1GREP_URL</code>).</p>
   </section>
 </main>
 <footer>MIT License · <a href="https://github.com/uehaj/sys1grep">uehaj/sys1grep</a> · <a href="https://github.com/uehaj/sys1grep/blob/main/README.ja.md">日本語 README</a></footer>
 
 <script>
+const JA = /^ja\b/i.test(navigator.language || "");
+if (JA) { document.documentElement.lang = "ja"; document.title = "sys1grep — 意味で探す grep"; document.querySelectorAll("[data-ja]").forEach(e => { e.innerHTML = e.dataset.ja; }); }
 // rows: [line, text, prob|null, keep, ask?]. <m>…</m> is what --color paints; <u>…</u> is a page annotation.
 const S = [
  {h:"Ask in one language, find every language",
@@ -271,6 +273,10 @@ const S = [
   cmd:'cd tests && git sys1grep -l -e "customer is asking for a refund" fixture.txt tickets',
   rows:[[null,"fixture.txt",null,1],[null,"tickets/a.txt",null,1],[null,"tickets/sub/b.txt",null,1]]},
 ];
+// the Japanese text of each scene, in S's order; the page itself switches by navigator.language (data-ja above)
+const SJ = [{"h": "1つの言語で聞き、すべての言語で見つける","c": "日本語の意味「顧客が返金を求めている」ひとつで、フランス語・ロシア語・ドイツ語・スペイン語・中国語・韓国語の返金要求が見つかり、お礼のメッセージは外れます。"},{"h": "話題ではなく命題","c": "この中の 6 行は「返金について」の行です。顧客が返金を求めているのは 2 行だけ。ベクトル検索には近い行が 6 つ見え、Jev には正しい文が 2 つ見えます。","note": "しきい値は 0.5。確率が較正されているので、検索ごとの調整は要りません。"},{"h": "-Q は答えを探す","c": "問いは、人に聞くときのまま書けます。-e X は X と述べている行を、-Q X は X に答えている行を探します。「The job failed.」はジョブが成功したとは述べていませんが、成功したかという問いには「いいえ」と答えています。","note": "yes/no の問いには「いいえ」も答えになります。問いそのものを書いた行（13）は何にも答えていません。-Q X は -e \"the line answers: X\" の略記です。"},{"h": "AND / NOT はただのブール演算","c": "誰かが怒っていて、かつ動いているのが店員ではなく顧客である行。7 行目と 8 行目の違いは電話を切ったのが誰かだけで、埋め込みはほとんど同じです。","note": "サポート担当者が怒って電話を切った 7 行目は、2 つ目の意味に当てはまらないので外れます。"},{"h": "正規表現で足りるところは正規表現で","c": "-P で /…/flags と書いた正規表現の項は手元で照合し、問い合わせを送りません。-a と組み合わせると正規表現に当たった行だけを Jev に送り、名前付きグループを $<name> として意味に渡します。","note": "問い合わせは 0 件。grep -E と同じ行です。"},{"h": "キャプチャを意味に渡す","c": "-P の正規表現の名前付きグループは、同じ AND 項の意味（-a でも -v でも）に渡されます。各行はその行専用の問いと一緒に送られ、正規表現に当たらない行は送られません。","note": "51 行のうち 5 行を、それぞれ展開した問いで送り、3 行が当たりました。09:00 と 09:30 は営業時間内です。$<name> は sh / bash / zsh のダブルクォートの中でも残りますが、$1 は残りません。"},{"h": "英語の意味で日本語の行も当たる","c": "どの行にも “angry” や “frustrated” という語はありません。うち 2 行は日本語です。ログ・問い合わせ・コード・雑談の 51 行から 5 行が当たります。"},{"h": "改行をまたぐ文","c": "--unit=sentence-by-jev は、英語でも日本語でも改行をまたいで文を切り出し、1 文ずつ判定します。--color を付けると、行の中で当たった文だけに色が付きます。"},{"h": "テンプレートごとに 1 回だけ払う","c": "--dedup は ID・ハッシュ・数値・日付・パス・URL を伏せ、テンプレートごとに 1 行だけ送って答えを使い回します。Jev には先に、どの値が一致を変えうるかを尋ねるので、「ディスク使用率が 90% を超えている」では 95% と 12% を別々に扱います。","note": "6 行中 3 行が当たり。Jev に送ったのは 4 行（--dedup が 2 行をまとめ、入力約 235 トークン・約 $0.000010、21% を節約）、問い合わせ 2 回、入力 907 トークン、約 $0.000038"},{"h": "行だけでなくレコードも","c": "-z は grep -z と同じく NUL 区切りのレコードを判定します。「利用者から見える動作を変える」はコミット全体について言えることで、その中のどの 1 行についても言えません。"},{"h": "git が管理するファイルを検索","c": "npm install -g で git-sys1grep も入るので、git から git sys1grep として呼べます。git grep と同じく git が管理するファイルだけを検索し、無視されたファイルやビルド成果物は送りません。"}];
+console.assert(SJ.length === S.length, "SJ: one entry per scene");
+if (JA) S.forEach((s, i) => Object.assign(s, SJ[i]));
 const $=id=>document.getElementById(id), still=matchMedia("(prefers-reduced-motion: reduce)").matches;
 let cur=0, playing=!still, token=0, ended=false;
 const wait=(ms,t)=>new Promise((ok,ng)=>setTimeout(()=>t===token?ok():ng(),ms));
@@ -300,7 +306,7 @@ function stepEl(st){
 async function play(i){
   const t=++token, s=S[i];
   [...$("chap").children].forEach((b,j)=>{b.classList.toggle("done",j<i);b.classList.toggle("cur-c",j===i);b.firstChild.style.width=j===i?"0":""});
-  $("sh").innerHTML=esc(s.h)+(s.new?'<span class="new">new since 0.4.0</span>':""); $("sc").textContent=s.c; $("ttl").textContent="sys1grep — "+(i+1)+"/"+S.length;
+  $("sh").innerHTML=esc(s.h)+(s.new?'<span class="new">'+(JA?"0.4.0 からの新機能":"new since 0.4.0")+'</span>':""); $("sc").textContent=s.c; $("ttl").textContent="sys1grep — "+(i+1)+"/"+S.length;
   $("rows").innerHTML=""; $("sents").innerHTML=""; $("side").className="side"; $("side").innerHTML=s.side||""; $("note").className="note"; $("note").textContent=s.note||"";
   if(s.steps) return playSteps(i,t,s);
   const els=s.rows.map(r=>row(r,s.bars)); $("rows").append(...els);
